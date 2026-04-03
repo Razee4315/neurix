@@ -1,7 +1,6 @@
 dist/
 node_modules/
 src-tauri/target/
-src-tauri/gen/
 .env
 .env.local
 .env.*.local
@@ -11,3 +10,8 @@ Thumbs.db
 *.log
 test-results/
 coverage/
+
+# Android signing — NEVER commit these
+*.keystore
+*.jks
+src-tauri/gen/android/keystore.properties
