@@ -1,0 +1,32 @@
+:root {
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+}
+
+html { height: 100vh; margin: 0; padding: 0; }
+body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
+* { box-sizing: border-box; }
+#root { height: 100vh; display: flex; flex-direction: column; }
+
+.app-container {
+  position: fixed !important;
+  inset: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.app-container > * {
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
+input:not([disabled]),
+textarea:not([disabled]) {
+  cursor: text !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
