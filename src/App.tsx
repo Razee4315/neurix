@@ -1,3 +1,5 @@
+import { DownloadingPage } from "@/pages/DownloadingPage";
+import { ModelStorePage } from "@/pages/ModelStorePage";
 import { OnboardingScreen } from "@/pages/OnboardingScreen";
 import { SplashScreen } from "@/pages/SplashScreen";
 import { GlobalStyles, theme } from "@/theme";
@@ -15,7 +17,8 @@ function App() {
 					<Routes>
 						<Route path="/" element={<SplashScreen />} />
 						<Route path="/onboarding" element={<OnboardingScreen />} />
-						<Route path="/store" element={<Placeholder name="Model Store" />} />
+						<Route path="/store" element={<ModelStorePage />} />
+						<Route path="/downloading" element={<DownloadingPage />} />
 						<Route path="/models" element={<Placeholder name="My Models" />} />
 						<Route path="/chat" element={<Placeholder name="Chat" />} />
 						<Route
