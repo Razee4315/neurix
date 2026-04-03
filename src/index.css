@@ -5,28 +5,44 @@
   --safe-area-right: env(safe-area-inset-right, 0px);
 }
 
-html { height: 100vh; margin: 0; padding: 0; }
-body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
-* { box-sizing: border-box; }
-#root { height: 100vh; display: flex; flex-direction: column; }
-
-.app-container {
-  position: fixed !important;
-  inset: 0 !important;
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
+html {
+  height: 100dvh;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
 }
 
-.app-container > * {
-  flex: 1 !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
+body {
+  margin: 0;
+  padding: 0;
+  height: 100dvh;
+  height: 100vh;
+  overflow: hidden;
+  background: #0e0e0f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+#root {
+  height: 100dvh;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-container {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 input:not([disabled]),
 textarea:not([disabled]) {
-  cursor: text !important;
-  user-select: text !important;
-  -webkit-user-select: text !important;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
 }
