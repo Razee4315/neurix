@@ -13,7 +13,7 @@ Run powerful 1B language models directly on your Android device — fully offlin
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![Tauri](https://img.shields.io/badge/Tauri-2.0-orange?style=flat-square)](https://tauri.app)
 
-**Android** · **Windows** · **macOS** · **Linux**
+**Android** · **Windows**
 
 </div>
 
@@ -53,12 +53,10 @@ You open the app, browse a curated list of 1B parameter models, tap download, an
 
 ## Installation
 
-Download the latest release for your platform:
+Download the latest release:
 
 - **Android**: `.apk` (sideload) or `.aab` (Play Store)
-- **Windows**: `.exe` installer or `.msi`
-- **macOS**: `.dmg`
-- **Linux**: `.AppImage` or `.deb`
+- **Windows**: `.msi` (recommended) or `.exe`
 
 See [Releases](https://github.com/Razee4315/neurix/releases) for all downloads.
 

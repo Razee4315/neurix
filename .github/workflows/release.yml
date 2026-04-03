@@ -1,35 +1,18 @@
 name: Release
 
 # Triggers on every push to main and on manual dispatch.
-# Flow:
-#   1. check-and-bump  — reads version, auto-bumps patch if tag exists, commits [skip ci]
-#   2. release-desktop — builds Windows (.msi + .exe) and Linux (.deb + .AppImage) in parallel
-#   3. release-android — builds Android APK + AAB, uploads to the same GitHub Release
+# Builds: Windows (.msi + .exe) and Android (APK + AAB)
 #
-# ─── SETUP REQUIRED BEFORE THIS WORKS ────────────────────────────────────────
-#
-# GitHub repo settings:
-#   Settings > Actions > General > Workflow permissions
-#   → Select "Read and write permissions"
-#
-# GitHub Secrets (Settings > Secrets and variables > Actions > New repository secret):
-#   ANDROID_KEYSTORE_BASE64    base64-encoded .keystore file
-#   ANDROID_KEY_ALIAS          key alias used when generating the keystore
-#   ANDROID_KEY_PASSWORD       key password
-#   ANDROID_STORE_PASSWORD     keystore password
-#
-# Generate your keystore locally (one-time):
-#   keytool -genkey -v -keystore neurix-release.keystore \
-#     -alias neurix -keyalg RSA -keysize 2048 -validity 10000
-#   base64 -i neurix-release.keystore | pbcopy   # macOS
-#   certutil -encodehex -f neurix-release.keystore encoded.txt 0x40000001  # Windows
-#   → Paste the base64 output as the ANDROID_KEYSTORE_BASE64 secret
-#
-# Android gen/ folder:
-#   Run once locally: npm run android:init
-#   Commit the generated src-tauri/gen/android/ folder to the repo.
-#   The CI cannot run tauri android init (it needs a connected device context).
-#
+# ─── ONE-TIME SETUP REQUIRED ──────────────────────────────────────────────────
+# 1. Repo settings → Actions → General → Workflow permissions → Read and write
+# 2. Add GitHub Secrets (Settings → Secrets and variables → Actions):
+#      ANDROID_KEYSTORE_BASE64   base64-encoded .keystore file
+#      ANDROID_KEY_ALIAS         key alias
+#      ANDROID_KEY_PASSWORD      key password
+#      ANDROID_STORE_PASSWORD    keystore store password
+# 3. Run locally once: npm run android:init
+#    Then commit the generated src-tauri/gen/android/ folder.
+#    Android CI job is skipped gracefully until that folder exists.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -42,7 +25,7 @@ permissions:
   contents: write
 
 jobs:
-  # ─── Job 1: Version check and auto-bump ────────────────────────────────────
+  # ─── Job 1: Auto-bump patch version ────────────────────────────────────────
   check-and-bump:
     name: Version check and bump
     runs-on: ubuntu-latest
@@ -59,41 +42,29 @@ jobs:
       - name: Check for changes and bump version
         id: bump
         run: |
-          # Read version from tauri.conf.json (source of truth)
           CURRENT_VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
           echo "Current version: $CURRENT_VERSION"
 
-          # Check if a git tag for this version already exists
           if git tag -l "v$CURRENT_VERSION" | grep -q "v$CURRENT_VERSION"; then
-            echo "Tag v$CURRENT_VERSION already exists"
-
-            # Count commits since the last tag
+            echo "Tag v$CURRENT_VERSION exists"
             COMMITS_SINCE=$(git rev-list "v$CURRENT_VERSION"..HEAD --count 2>/dev/null || echo "0")
-            echo "Commits since v$CURRENT_VERSION: $COMMITS_SINCE"
+            echo "Commits since tag: $COMMITS_SINCE"
 
             if [ "$COMMITS_SINCE" -eq "0" ]; then
-              echo "No new commits since last release — skipping"
+              echo "Nothing new — skipping release"
               echo "should_release=false" >> $GITHUB_OUTPUT
               echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
               exit 0
             fi
 
-            # Auto-bump patch version: 0.1.0 → 0.1.1
             IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
-            NEW_PATCH=$((PATCH + 1))
-            NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+            NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
             echo "Bumping: $CURRENT_VERSION → $NEW_VERSION"
 
-            # Update tauri.conf.json
             jq --arg v "$NEW_VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
-
-            # Update package.json
             jq --arg v "$NEW_VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
-
-            # Update Cargo.toml
             sed -i "s/^version = \"$CURRENT_VERSION\"/version = \"$NEW_VERSION\"/" src-tauri/Cargo.toml
 
-            # Commit and push — [skip ci] prevents an infinite loop
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
@@ -103,43 +74,23 @@ jobs:
             echo "should_release=true" >> $GITHUB_OUTPUT
             echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           else
-            echo "No tag for v$CURRENT_VERSION — first release, using current version"
+            echo "No tag for v$CURRENT_VERSION — first release"
             echo "should_release=true" >> $GITHUB_OUTPUT
             echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
           fi
 
-  # ─── Job 2: Desktop builds (Windows + Linux, parallel matrix) ──────────────
-  release-desktop:
-    name: Release desktop (${{ matrix.platform }})
+  # ─── Job 2: Windows build ──────────────────────────────────────────────────
+  release-windows:
+    name: Release Windows
     needs: check-and-bump
     if: needs.check-and-bump.outputs.should_release == 'true'
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-latest
-            label: Windows
-          - platform: ubuntu-22.04
-            label: Linux
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository (post-bump)
         uses: actions/checkout@v4
         with:
           ref: main
-
-      - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
@@ -158,7 +109,7 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build and publish release
+      - name: Build and publish Windows release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -179,22 +130,17 @@ jobs:
             |----------|------|-------|
             | Windows | `.msi` | Recommended installer |
             | Windows | `.exe` | NSIS installer |
-            | Linux | `.deb` | Debian/Ubuntu |
-            | Linux | `.AppImage` | Universal Linux |
-            | Android | `.apk` | Sideload (see below) |
-            | Android | `.aab` | Play Store |
+            | Android | `.apk` | Sideload (enable unknown sources) |
+            | Android | `.aab` | Play Store upload |
 
-            ### Android Sideload Instructions
+            ### Android Sideload
             1. Enable **Install unknown apps** in Android settings
-            2. Download the `.apk` file
-            3. Tap to install
-
-            ### Offline Usage
-            After installing a model in-app, Neurix works with zero internet connection.
+            2. Download `.apk` and tap to install
+            3. Download a model inside the app — works fully offline after that
           releaseDraft: false
           prerelease: false
 
-  # ─── Job 3: Android build ───────────────────────────────────────────────────
+  # ─── Job 3: Android build ──────────────────────────────────────────────────
   release-android:
     name: Release Android (APK + AAB)
     needs: check-and-bump
@@ -207,30 +153,46 @@ jobs:
         with:
           ref: main
 
-      # Java 17 is required by the Android Gradle toolchain
+      # Skip Android build gracefully if android:init hasn't been run yet
+      - name: Check Android project is initialized
+        id: android-check
+        run: |
+          if [ -d "src-tauri/gen/android" ]; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+            echo "Android project found — proceeding with build"
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+            echo "src-tauri/gen/android not found."
+            echo "Run: npm run android:init — then commit the generated folder."
+          fi
+
       - name: Setup Java 17
+        if: steps.android-check.outputs.ready == 'true'
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      # Android SDK with NDK 28 (matches local dev setup)
       - name: Setup Android SDK
+        if: steps.android-check.outputs.ready == 'true'
         uses: android-actions/setup-android@v3
 
       - name: Install Android NDK 28
+        if: steps.android-check.outputs.ready == 'true'
         run: sdkmanager "ndk;28.0.13004108"
 
       - name: Install Rust (stable)
+        if: steps.android-check.outputs.ready == 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache Rust build artifacts
+        if: steps.android-check.outputs.ready == 'true'
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
 
-      # Add all Android cross-compile targets
       - name: Add Rust Android targets
+        if: steps.android-check.outputs.ready == 'true'
         run: |
           rustup target add aarch64-linux-android
           rustup target add armv7-linux-androideabi
@@ -238,76 +200,86 @@ jobs:
           rustup target add x86_64-linux-android
 
       - name: Setup Node.js
+        if: steps.android-check.outputs.ready == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
 
       - name: Install frontend dependencies
+        if: steps.android-check.outputs.ready == 'true'
         run: npm ci
 
-      # Decode the base64 keystore secret and write it to disk
+      # Decode keystore if secret is set — otherwise builds a debug APK
       - name: Setup Android signing keystore
+        if: steps.android-check.outputs.ready == 'true'
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/neurix-release.keystore
+          mkdir -p src-tauri/gen/android
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/neurix-release.keystore
+            echo "Keystore decoded successfully"
+          else
+            echo "No keystore secret set — will produce unsigned/debug build"
+          fi
 
-      # Write keystore.properties so Gradle picks up signing config
       - name: Write keystore.properties
+        if: steps.android-check.outputs.ready == 'true'
         env:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
         run: |
-          cat > src-tauri/gen/android/keystore.properties << EOF
+          if [ -f "src-tauri/gen/android/neurix-release.keystore" ]; then
+            cat > src-tauri/gen/android/keystore.properties << EOF
           storeFile=neurix-release.keystore
           storePassword=$ANDROID_STORE_PASSWORD
           keyAlias=$ANDROID_KEY_ALIAS
           keyPassword=$ANDROID_KEY_PASSWORD
           EOF
+            echo "keystore.properties written"
+          else
+            echo "Skipping keystore.properties — no keystore available"
+          fi
 
-      # Build signed APK (ARM64 — most modern phones)
       - name: Build Android APK (ARM64)
+        if: steps.android-check.outputs.ready == 'true'
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
         run: npm run build:android -- --target aarch64-linux-android
 
-      # Build universal AAB for Play Store
-      - name: Build Android AAB (universal)
+      - name: Build Android AAB
+        if: steps.android-check.outputs.ready == 'true'
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
         run: npm run build:android -- --bundles aab
 
-      # Rename outputs to include version number
-      - name: Rename Android outputs
+      - name: Rename Android artifacts
+        if: steps.android-check.outputs.ready == 'true'
         run: |
           VERSION=${{ needs.check-and-bump.outputs.version }}
-          APK_PATH="src-tauri/gen/android/app/build/outputs/apk/universal/release"
-          AAB_PATH="src-tauri/gen/android/app/build/outputs/bundle/universalRelease"
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
+          AAB_DIR="src-tauri/gen/android/app/build/outputs/bundle/universalRelease"
 
-          # Rename APK if it exists
-          if [ -f "$APK_PATH/app-universal-release.apk" ]; then
-            mv "$APK_PATH/app-universal-release.apk" "$APK_PATH/Neurix_${VERSION}_android.apk"
-          fi
+          [ -f "$APK_DIR/app-universal-release.apk" ] && \
+            mv "$APK_DIR/app-universal-release.apk" "$APK_DIR/Neurix_${VERSION}_android.apk"
 
-          # Rename AAB if it exists
-          if [ -f "$AAB_PATH/app-universal-release.aab" ]; then
-            mv "$AAB_PATH/app-universal-release.aab" "$AAB_PATH/Neurix_${VERSION}.aab"
-          fi
+          [ -f "$AAB_DIR/app-universal-release.aab" ] && \
+            mv "$AAB_DIR/app-universal-release.aab" "$AAB_DIR/Neurix_${VERSION}.aab"
 
-      # Wait for the desktop job to create the GitHub Release, then upload APK/AAB
       - name: Upload Android artifacts to release
+        if: steps.android-check.outputs.ready == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=${{ needs.check-and-bump.outputs.version }}
-          APK_PATH="src-tauri/gen/android/app/build/outputs/apk/universal/release"
-          AAB_PATH="src-tauri/gen/android/app/build/outputs/bundle/universalRelease"
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
+          AAB_DIR="src-tauri/gen/android/app/build/outputs/bundle/universalRelease"
 
-          # Wait for the release to be created by the desktop job (max 5 min)
+          # Wait for Windows job to create the release (max 5 min)
           for i in $(seq 1 30); do
             if gh release view "v$VERSION" &>/dev/null; then
               echo "Release v$VERSION found"
@@ -317,14 +289,8 @@ jobs:
             sleep 10
           done
 
-          # Upload APK
-          if [ -f "$APK_PATH/Neurix_${VERSION}_android.apk" ]; then
-            gh release upload "v$VERSION" "$APK_PATH/Neurix_${VERSION}_android.apk" --clobber
-            echo "APK uploaded"
-          fi
+          [ -f "$APK_DIR/Neurix_${VERSION}_android.apk" ] && \
+            gh release upload "v$VERSION" "$APK_DIR/Neurix_${VERSION}_android.apk" --clobber
 
-          # Upload AAB
-          if [ -f "$AAB_PATH/Neurix_${VERSION}.aab" ]; then
-            gh release upload "v$VERSION" "$AAB_PATH/Neurix_${VERSION}.aab" --clobber
-            echo "AAB uploaded"
-          fi
+          [ -f "$AAB_DIR/Neurix_${VERSION}.aab" ] && \
+            gh release upload "v$VERSION" "$AAB_DIR/Neurix_${VERSION}.aab" --clobber
