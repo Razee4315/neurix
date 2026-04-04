@@ -145,7 +145,7 @@ export function AboutPage() {
 				<LogoSection>
 					<NeurixLogo size={64} />
 					<AppName>NEU<span>RIX</span></AppName>
-					<Version>v{import.meta.env.VITE_APP_VERSION}</Version>
+					<Version>v{import.meta.env.VITE_APP_VERSION || "0.1.2"}</Version>
 				</LogoSection>
 
 				<Tagline>
@@ -171,7 +171,7 @@ export function AboutPage() {
 						</LinkIcon>
 						<LinkText>
 							<LinkTitle>LinkedIn</LinkTitle>
-							<LinkSub>Saqlain Razee</LinkSub>
+							<LinkSub>Saqlain Abbas</LinkSub>
 						</LinkText>
 						<Icon name="open_in_new" size={16} color={tokens.colors.onSurfaceVariant} />
 					</LinkRow>
@@ -213,7 +213,7 @@ export function AboutPage() {
 				</Section>
 
 				<Footer>
-					Made with determination by Saqlain Razee
+					Made with determination by Saqlain Abbas
 				</Footer>
 			</Page>
 		</AppLayout>

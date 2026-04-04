@@ -4,6 +4,7 @@ import { DownloadProvider } from "@/context/DownloadContext";
 import { ChatHistoryPage } from "@/pages/ChatHistoryPage";
 import { ChatPage } from "@/pages/ChatPage";
 import { DownloadingPage } from "@/pages/DownloadingPage";
+import { ModelDetailPage } from "@/pages/ModelDetailPage";
 import { ModelStorePage } from "@/pages/ModelStorePage";
 import { MyModelsPage } from "@/pages/MyModelsPage";
 import { OnboardingScreen } from "@/pages/OnboardingScreen";
@@ -27,6 +28,7 @@ function App() {
 							<Route path="/" element={<SplashScreen />} />
 							<Route path="/onboarding" element={<OnboardingScreen />} />
 							<Route path="/store" element={<ModelStorePage />} />
+							<Route path="/store/model" element={<ModelDetailPage />} />
 							<Route path="/downloading" element={<DownloadingPage />} />
 							<Route path="/models" element={<MyModelsPage />} />
 							<Route path="/chat" element={<ChatPage />} />

@@ -190,6 +190,6 @@ MIT License. See [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-Built by [Saqlain Razee](https://github.com/Razee4315)
+Built by [Saqlain Abbas](https://github.com/Razee4315)
 
 </div>

@@ -59,7 +59,7 @@ pub async fn run_inference(
 
     info!("Running inference, prompt length: {} chars", formatted.len());
 
-    let mut sampler = LogitsSampler::new(temperature, top_p, 1.1);
+    let mut sampler = LogitsSampler::new(temperature, top_p, 1.3);
 
     let result = tokio::task::spawn_blocking(move || {
         let res = engine::run_generation(

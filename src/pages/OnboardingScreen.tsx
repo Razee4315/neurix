@@ -45,7 +45,7 @@ const STEPS: OnboardingStep[] = [
 		headline: "Total",
 		highlightWord: "privacy.",
 		description:
-			"Your conversations never leave your device. Zero data collection, zero tracking, zero surveillance.",
+			"Your conversations never leave your device. Zero data collection, zero tracking, zero surveillance. Pick a model to get started — we recommend Llama 3.2 1B for your first try.",
 		badge: "ZERO DATA COLLECTION",
 	},
 ];

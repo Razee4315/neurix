@@ -190,7 +190,7 @@ const DownloadingBadge = styled.span`
 
 export function ModelStorePage() {
 	const navigate = useNavigate();
-	const { downloads, startDownload } = useDownloads();
+	const { downloads } = useDownloads();
 	const [filter, setFilter] = useState(0);
 	const [search, setSearch] = useState("");
 	const [catalog, setCatalog] = useState<ModelInfo[]>([]);
@@ -213,13 +213,10 @@ export function ModelStorePage() {
 	});
 
 	const handleModelClick = (model: ModelInfo) => {
-		if (downloadedIds.has(model.id)) {
-			navigate("/models");
-		} else if (downloads[model.id]?.status === "downloading" || downloads[model.id]?.status === "paused") {
+		if (downloads[model.id]?.status === "downloading" || downloads[model.id]?.status === "paused") {
 			navigate("/downloading", { state: { model } });
 		} else {
-			startDownload(model);
-			navigate("/downloading", { state: { model } });
+			navigate("/store/model", { state: { model } });
 		}
 	};
 

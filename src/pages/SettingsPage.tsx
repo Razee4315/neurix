@@ -348,9 +348,9 @@ export function SettingsPage() {
 			save_history: true,
 			show_speed: true,
 			system_prompt: "",
-			temperature: 0.7,
+			temperature: 0.4,
 			top_p: 0.9,
-			max_tokens: 2048,
+			max_tokens: 512,
 			last_model_id: settings?.last_model_id ?? null,
 		};
 		await settingsService.updateSettings(defaults);
@@ -503,7 +503,7 @@ export function SettingsPage() {
 
 				<VersionCard>
 					<VersionInfo>
-						<VersionNumber>v{import.meta.env.VITE_APP_VERSION}</VersionNumber>
+						<VersionNumber>v{import.meta.env.VITE_APP_VERSION || "0.1.2"}</VersionNumber>
 						<VersionSub>Neurix</VersionSub>
 					</VersionInfo>
 					<UpdateBtn onClick={() => navigate("/about")}>

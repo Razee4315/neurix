@@ -65,4 +65,4 @@ If we update this privacy policy, the changes will be posted here with an update
 If you have questions about this privacy policy:
 
 - GitHub: https://github.com/Razee4315/neurix
-- Developer: Saqlain Razee
+- Developer: Saqlain Abbas

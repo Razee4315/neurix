@@ -34,14 +34,24 @@ const Message = styled.p`
   max-width: 220px;
 `;
 
+const Subtitle = styled.p`
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.outline};
+  max-width: 260px;
+  margin-top: 0.375rem;
+  line-height: ${tokens.typography.lineHeight.relaxed};
+`;
+
 interface EmptyStateProps {
 	icon?: string;
 	message?: string;
+	subtitle?: string;
 }
 
 export function EmptyState({
 	icon = "search_off",
 	message = "No results found",
+	subtitle,
 }: EmptyStateProps) {
 	return (
 		<Container>
@@ -49,6 +59,7 @@ export function EmptyState({
 				<Icon name={icon} size={24} color={tokens.colors.outline} />
 			</IconWrap>
 			<Message>{message}</Message>
+			{subtitle && <Subtitle>{subtitle}</Subtitle>}
 		</Container>
 	);
 }

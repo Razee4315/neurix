@@ -1,11 +1,12 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Icon } from "@/components/ui/Icon";
 import { useDownloads } from "@/context/DownloadContext";
 import type { ModelInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
-import { Icon } from "@/components/ui/Icon";
 
 const shimmer = keyframes`
   0% { background-position: -200% 0; }
@@ -171,6 +172,7 @@ function formatEta(bytesRemaining: number, speedBps: number): string {
 export function DownloadingPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
+	const { showConfirm } = useConfirm();
 	const model = (location.state as { model?: ModelInfo })?.model;
 	const { downloads, pauseDownload, resumeDownload, cancelDownload, removeDownload } = useDownloads();
 
@@ -200,7 +202,15 @@ export function DownloadingPage() {
 
 	const handlePause = () => pauseDownload(model.id);
 	const handleResume = () => resumeDownload(model);
-	const handleCancel = () => {
+	const handleCancel = async () => {
+		const ok = await showConfirm({
+			title: "Cancel Download",
+			message: `Cancel downloading ${model.name}? Your progress will be lost.`,
+			confirmLabel: "Cancel Download",
+			cancelLabel: "Keep Downloading",
+			danger: true,
+		});
+		if (!ok) return;
 		cancelDownload(model.id);
 		navigate("/store");
 	};

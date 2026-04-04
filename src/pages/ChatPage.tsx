@@ -681,9 +681,9 @@ export function ChatPage() {
 				text,
 				settings?.system_prompt ?? "",
 				history,
-				settings?.temperature ?? 0.7,
+				settings?.temperature ?? 0.4,
 				settings?.top_p ?? 0.9,
-				settings?.max_tokens ?? 2048,
+				settings?.max_tokens ?? 512,
 				handleEvent,
 			);
 		} catch (err) {
@@ -728,9 +728,9 @@ export function ChatPage() {
 				userText,
 				settings?.system_prompt ?? "",
 				history,
-				settings?.temperature ?? 0.7,
+				settings?.temperature ?? 0.4,
 				settings?.top_p ?? 0.9,
-				settings?.max_tokens ?? 2048,
+				settings?.max_tokens ?? 512,
 				handleEvent,
 			);
 		} catch (err) {
@@ -792,7 +792,11 @@ export function ChatPage() {
 			<ChatContainer>
 				<MessagesArea>
 					{messages.length === 0 && !isGenerating && !streamedText && (
-						<EmptyState icon="chat_bubble" message="Start a conversation" />
+						<EmptyState
+						icon="chat_bubble"
+						message="Start a conversation"
+						subtitle="Tip: Larger models (3B) give better answers but run slower. Smaller models (1B) are faster."
+					/>
 					)}
 					{messages.map((msg, i) => (
 						<BubbleWrap key={`msg-${i}-${msg.role}`}>

@@ -9,9 +9,13 @@ export interface ModelInfo {
 	hf_filename: string;
 	tokenizer_repo: string;
 	chat_template: ChatTemplate;
+	company: string;
+	parameters: string;
+	quantization: string;
+	best_for: string[];
 }
 
-export type ChatTemplate = "Llama3" | "SmolLM" | "Gemma" | "Phi3";
+export type ChatTemplate = "Llama3" | "SmolLM" | "Gemma" | "Phi3" | "Qwen";
 
 export interface DownloadEvent {
 	event: "Started" | "Progress" | "Finished" | "Failed" | "Cancelled";

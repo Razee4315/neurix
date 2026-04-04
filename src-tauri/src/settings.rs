@@ -19,10 +19,10 @@ impl Default for Settings {
             wifi_only: false,
             save_history: true,
             show_speed: true,
-            system_prompt: String::new(),
-            temperature: 0.7,
+            system_prompt: "You are a helpful assistant. Give clear, concise answers. Do not repeat yourself.".to_string(),
+            temperature: 0.4,
             top_p: 0.9,
-            max_tokens: 2048,
+            max_tokens: 512,
             last_model_id: None,
         }
     }
