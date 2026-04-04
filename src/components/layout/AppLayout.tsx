@@ -16,6 +16,7 @@ const Shell = styled.div`
   height: 100vh;
   background: ${tokens.colors.background};
   overflow: hidden;
+  padding-top: env(safe-area-inset-top, 0px);
 `;
 
 const TopBar = styled.header`

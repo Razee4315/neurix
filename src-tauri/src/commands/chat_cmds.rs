@@ -32,16 +32,13 @@ pub async fn run_inference(
     on_event: Channel<InferenceEvent>,
 ) -> Result<(), String> {
     let cancel_token = CancellationToken::new();
-    {
+
+    // Take the model out briefly to format prompt, then run generation WITHOUT holding the lock
+    let (mut model, formatted) = {
         let mut s = state.lock().await;
         s.inference_cancel = Some(cancel_token.clone());
-    }
 
-    let result = {
-        let mut s = state.lock().await;
-        let model = s
-            .loaded_model
-            .as_mut()
+        let model = s.loaded_model.take()
             .ok_or_else(|| "No model loaded".to_string())?;
 
         let history_pairs: Vec<(String, String)> = history
@@ -56,26 +53,38 @@ pub async fn run_inference(
             &prompt,
         );
 
-        info!("Running inference, prompt length: {} chars", formatted.len());
+        (model, formatted)
+    };
+    // Lock is released here -- other commands (stop_inference, get_active_model) can proceed
 
-        let mut sampler = LogitsSampler::new(temperature, top_p, 1.1);
+    info!("Running inference, prompt length: {} chars", formatted.len());
 
-        engine::run_generation(
-            model,
+    let mut sampler = LogitsSampler::new(temperature, top_p, 1.1);
+
+    let result = tokio::task::spawn_blocking(move || {
+        let res = engine::run_generation(
+            &mut model,
             &formatted,
             max_tokens,
             &mut sampler,
             &on_event,
             &cancel_token,
-        )
-    };
+        );
+        (model, res)
+    })
+    .await
+    .map_err(|e| format!("Inference task failed: {}", e))?;
 
+    let (model, gen_result) = result;
+
+    // Put model back and clear cancel token
     {
         let mut s = state.lock().await;
+        s.loaded_model = Some(model);
         s.inference_cancel = None;
     }
 
-    result
+    gen_result
 }
 
 #[tauri::command]

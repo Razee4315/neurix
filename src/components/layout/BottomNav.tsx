@@ -15,7 +15,7 @@ const Nav = styled.nav`
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLowest};
   box-shadow: ${tokens.shadows.nav};
-  padding-bottom: var(--safe-area-bottom, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 `;
 
 const TabList = styled.div`

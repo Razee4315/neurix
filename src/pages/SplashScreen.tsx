@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
-import { modelService } from "@/services";
+import { modelService, settingsService } from "@/services";
 import { tokens } from "@/theme/tokens";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
@@ -265,8 +265,22 @@ export function SplashScreen() {
 	useEffect(() => {
 		const timer = setTimeout(async () => {
 			try {
-				const models = await modelService.getDownloadedModels();
+				const [models, settings] = await Promise.all([
+					modelService.getDownloadedModels(),
+					settingsService.getSettings(),
+				]);
 				if (models.length > 0) {
+					// Try to auto-load last used model
+					if (settings.last_model_id) {
+						const exists = models.find((m) => m.id === settings.last_model_id);
+						if (exists) {
+							try {
+								await modelService.loadModel(exists.id);
+							} catch {
+								// model load failed — still navigate
+							}
+						}
+					}
 					navigate("/chat", { replace: true });
 				}
 			} catch {

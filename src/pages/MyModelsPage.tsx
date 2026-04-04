@@ -276,10 +276,23 @@ export function MyModelsPage() {
 		(m) => !search || m.name.toLowerCase().includes(search.toLowerCase()),
 	);
 
+	const [loadingModelId, setLoadingModelId] = useState<string | null>(null);
+
 	const handleUse = async (model: DownloadedModel) => {
-		await modelService.loadModel(model.id);
-		await refreshActiveModel();
-		navigate("/chat");
+		if (activeModel === model.name) {
+			navigate("/chat");
+			return;
+		}
+		setLoadingModelId(model.id);
+		try {
+			await modelService.loadModel(model.id);
+			await refreshActiveModel();
+			navigate("/chat");
+		} catch (err) {
+			alert(`Failed to load model: ${String(err)}`);
+		} finally {
+			setLoadingModelId(null);
+		}
 	};
 
 	const handleDelete = async (model: DownloadedModel) => {
@@ -364,8 +377,16 @@ export function MyModelsPage() {
 										<span>{m.tag}</span>
 									</CardMeta>
 									<CardActions>
-										<UseBtn $active={isActive} onClick={() => handleUse(m)}>
-											{isActive ? "Engaged" : "Use Model"}
+										<UseBtn
+											$active={isActive}
+											onClick={() => handleUse(m)}
+											disabled={loadingModelId !== null}
+										>
+											{loadingModelId === m.id
+												? "Loading..."
+												: isActive
+													? "Engaged"
+													: "Use Model"}
 										</UseBtn>
 										<DeleteBtn onClick={() => handleDelete(m)}>
 											<Icon name="delete" size={16} color={tokens.colors.error} />

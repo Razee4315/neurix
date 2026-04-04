@@ -9,6 +9,8 @@ pub struct Settings {
     pub temperature: f64,
     pub top_p: f64,
     pub max_tokens: u32,
+    #[serde(default)]
+    pub last_model_id: Option<String>,
 }
 
 impl Default for Settings {
@@ -21,6 +23,7 @@ impl Default for Settings {
             temperature: 0.7,
             top_p: 0.9,
             max_tokens: 2048,
+            last_model_id: None,
         }
     }
 }

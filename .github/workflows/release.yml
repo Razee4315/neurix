@@ -243,41 +243,30 @@ jobs:
             echo "Skipping keystore.properties — no keystore available"
           fi
 
-      - name: Build Android APK (ARM64)
-        if: steps.android-check.outputs.ready == 'true'
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-        run: npm run build:android -- --target aarch64-linux-android
-
-      - name: Build Android AAB
-        if: steps.android-check.outputs.ready == 'true'
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
-        run: npm run build:android -- --bundles aab
-
-      - name: Rename Android artifacts
+      - name: Set NDK_HOME
         if: steps.android-check.outputs.ready == 'true'
         run: |
-          VERSION=${{ needs.check-and-bump.outputs.version }}
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
-          AAB_DIR="src-tauri/gen/android/app/build/outputs/bundle/universalRelease"
+          NDK_DIR=$(ls -d $ANDROID_HOME/ndk/*/ 2>/dev/null | head -1 | sed 's:/$::')
+          echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "Using NDK at: $NDK_DIR"
 
-          [ -f "$APK_DIR/app-universal-release.apk" ] && \
-            mv "$APK_DIR/app-universal-release.apk" "$APK_DIR/Neurix_${VERSION}_android.apk"
+      - name: Build Android APK + AAB (ARM64)
+        if: steps.android-check.outputs.ready == 'true'
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.NDK_HOME }}
+        run: npx tauri android build -- --target aarch64
 
-          [ -f "$AAB_DIR/app-universal-release.aab" ] && \
-            mv "$AAB_DIR/app-universal-release.aab" "$AAB_DIR/Neurix_${VERSION}.aab"
-
-      - name: Upload Android artifacts to release
+      - name: Rename and upload Android artifacts
         if: steps.android-check.outputs.ready == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=${{ needs.check-and-bump.outputs.version }}
-          APK_DIR="src-tauri/gen/android/app/build/outputs/apk/universal/release"
-          AAB_DIR="src-tauri/gen/android/app/build/outputs/bundle/universalRelease"
+
+          # Find the APK and AAB (debug or release depending on signing)
+          APK=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
+          AAB=$(find src-tauri/gen/android -name "*.aab" -type f | head -1)
 
           # Wait for Windows job to create the release (max 5 min)
           for i in $(seq 1 30); do
@@ -289,8 +278,12 @@ jobs:
             sleep 10
           done
 
-          [ -f "$APK_DIR/Neurix_${VERSION}_android.apk" ] && \
-            gh release upload "v$VERSION" "$APK_DIR/Neurix_${VERSION}_android.apk" --clobber
+          if [ -n "$APK" ]; then
+            cp "$APK" "Neurix_${VERSION}_android.apk"
+            gh release upload "v$VERSION" "Neurix_${VERSION}_android.apk" --clobber
+          fi
 
-          [ -f "$AAB_DIR/Neurix_${VERSION}.aab" ] && \
-            gh release upload "v$VERSION" "$AAB_DIR/Neurix_${VERSION}.aab" --clobber
+          if [ -n "$AAB" ]; then
+            cp "$AAB" "Neurix_${VERSION}.aab"
+            gh release upload "v$VERSION" "Neurix_${VERSION}.aab" --clobber
+          fi

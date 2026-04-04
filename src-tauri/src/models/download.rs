@@ -41,33 +41,71 @@ pub async fn download_model_files(
     let part_path = model_dir.join("model.gguf.part");
     let final_path = model_dir.join("model.gguf");
 
-    let response = client
-        .get(&model_url)
+    // Resume support: check if .part file exists and get its size
+    let mut existing_bytes: u64 = 0;
+    if part_path.exists() {
+        if let Ok(meta) = fs::metadata(&part_path).await {
+            existing_bytes = meta.len();
+            info!("Resuming download from {} bytes", existing_bytes);
+        }
+    }
+
+    let mut request = client.get(&model_url);
+    if existing_bytes > 0 {
+        request = request.header("Range", format!("bytes={}-", existing_bytes));
+    }
+
+    let response = request
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;
 
-    if !response.status().is_success() {
+    if !response.status().is_success() && response.status().as_u16() != 206 {
         let status = response.status();
         return Err(format!("Download failed: HTTP {}", status));
     }
 
-    let total_bytes = response.content_length().unwrap_or(model.size_bytes);
+    let is_resumed = response.status().as_u16() == 206;
+    let total_bytes = if is_resumed {
+        existing_bytes + response.content_length().unwrap_or(model.size_bytes - existing_bytes)
+    } else {
+        existing_bytes = 0;
+        response.content_length().unwrap_or(model.size_bytes)
+    };
+
     let _ = channel.send(DownloadEvent::Started { total_bytes });
 
-    let mut file = fs::File::create(&part_path)
-        .await
-        .map_err(|e| format!("Failed to create file: {}", e))?;
+    let mut file = if is_resumed && existing_bytes > 0 {
+        tokio::fs::OpenOptions::new()
+            .append(true)
+            .open(&part_path)
+            .await
+            .map_err(|e| format!("Failed to open part file: {}", e))?
+    } else {
+        fs::File::create(&part_path)
+            .await
+            .map_err(|e| format!("Failed to create file: {}", e))?
+    };
 
-    let mut downloaded: u64 = 0;
+    let mut downloaded: u64 = existing_bytes;
     let start = Instant::now();
     let mut last_update = Instant::now();
+
+    // Send initial progress for resumed downloads
+    if existing_bytes > 0 {
+        let _ = channel.send(DownloadEvent::Progress {
+            bytes_downloaded: downloaded,
+            total_bytes,
+            speed_bps: 0,
+        });
+    }
+
     let mut response = response;
 
     loop {
         if cancel_token.is_cancelled() {
             drop(file);
-            let _ = fs::remove_file(&part_path).await;
+            // Keep .part file for resume — don't delete
             let _ = channel.send(DownloadEvent::Cancelled);
             return Ok(());
         }
@@ -80,9 +118,10 @@ pub async fn download_model_files(
                 downloaded += chunk.len() as u64;
 
                 if last_update.elapsed().as_millis() >= 150 {
+                    let new_bytes = downloaded - existing_bytes;
                     let elapsed = start.elapsed().as_secs_f64();
                     let speed = if elapsed > 0.0 {
-                        (downloaded as f64 / elapsed) as u64
+                        (new_bytes as f64 / elapsed) as u64
                     } else {
                         0
                     };
@@ -97,7 +136,7 @@ pub async fn download_model_files(
             Ok(None) => break,
             Err(e) => {
                 drop(file);
-                let _ = fs::remove_file(&part_path).await;
+                // Keep .part file for resume — don't delete
                 let _ = channel.send(DownloadEvent::Failed {
                     error: e.to_string(),
                 });

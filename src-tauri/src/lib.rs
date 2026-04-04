@@ -11,7 +11,7 @@ mod state;
 use commands::{
     chat_cmds::{get_active_model, run_inference, stop_inference},
     history_cmds::{clear_all_conversations, delete_conversation, get_conversations, load_conversation, save_conversation},
-    model_cmds::{cancel_download, delete_model, download_model, get_downloaded_models, get_model_catalog, load_model},
+    model_cmds::{cancel_download, delete_model, download_model, get_active_downloads, get_downloaded_models, get_model_catalog, load_model},
     settings_cmds::{get_settings, get_storage_info, update_settings},
 };
 use state::SharedState;
@@ -55,6 +55,7 @@ pub fn run() {
             download_model,
             cancel_download,
             get_downloaded_models,
+            get_active_downloads,
             delete_model,
             load_model,
             get_active_model,

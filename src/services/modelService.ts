@@ -33,3 +33,7 @@ export async function loadModel(modelId: string): Promise<void> {
 export async function getActiveModel(): Promise<string | null> {
 	return invoke("get_active_model");
 }
+
+export async function getActiveDownloads(): Promise<string[]> {
+	return invoke("get_active_downloads");
+}

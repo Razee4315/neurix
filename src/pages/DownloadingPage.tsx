@@ -1,10 +1,11 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { modelService } from "@/services";
-import type { DownloadEvent, ModelInfo } from "@/services/types";
+import { useDownloads } from "@/context/DownloadContext";
+import type { ModelInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
+import { Icon } from "@/components/ui/Icon";
 
 const shimmer = keyframes`
   0% { background-position: -200% 0; }
@@ -19,7 +20,7 @@ const Page = styled.div`
   padding: 1.5rem 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.25rem;
 `;
 
 const Header = styled.div``;
@@ -102,20 +103,47 @@ const Hint = styled.p`
   line-height: ${tokens.typography.lineHeight.relaxed};
 `;
 
-const CancelBtn = styled.button`
-  width: 100%;
+const ActionRow = styled.div`
+  display: flex;
+  gap: 0.5rem;
+`;
+
+const ActionBtn = styled.button<{ $variant?: "danger" | "primary" }>`
+  flex: 1;
   padding: 0.75rem;
   border-radius: ${tokens.borderRadius.md};
-  background: transparent;
-  border: 1px solid ${tokens.colors.error}33;
-  color: ${tokens.colors.error};
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
   text-transform: uppercase;
   letter-spacing: ${tokens.typography.letterSpacing.wider};
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: all ${tokens.transitions.fast};
 
-  &:hover { background: ${tokens.colors.error}0d; }
+  ${({ $variant }) =>
+		$variant === "danger"
+			? `
+    background: transparent;
+    border: 1px solid ${tokens.colors.error}33;
+    color: ${tokens.colors.error};
+    &:hover { background: ${tokens.colors.error}0d; }
+  `
+			: $variant === "primary"
+				? `
+    background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+    border: none;
+    color: ${tokens.colors.onPrimaryFixed};
+  `
+				: `
+    background: ${tokens.colors.surfaceContainerHighest};
+    border: none;
+    color: ${tokens.colors.onSurface};
+    &:hover { background: ${tokens.colors.surfaceBright}; }
+  `}
+
   &:active { transform: scale(0.98); }
 `;
 
@@ -127,6 +155,7 @@ function formatBytes(bytes: number): string {
 }
 
 function formatSpeed(bps: number): string {
+	if (bps <= 0) return "--";
 	if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
 	return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
 }
@@ -143,77 +172,45 @@ export function DownloadingPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const model = (location.state as { model?: ModelInfo })?.model;
+	const { downloads, startDownload, pauseDownload, resumeDownload, cancelDownload, removeDownload } = useDownloads();
 
-	const [totalBytes, setTotalBytes] = useState(0);
-	const [downloaded, setDownloaded] = useState(0);
-	const [speed, setSpeed] = useState(0);
-	const [status, setStatus] = useState<"idle" | "downloading" | "finished" | "failed" | "cancelled">("idle");
-	const [error, setError] = useState("");
-	const startedRef = useRef(false);
+	const dl = model ? downloads[model.id] : undefined;
 
-	const pct = totalBytes > 0 ? (downloaded / totalBytes) * 100 : 0;
-
-	const handleEvent = useCallback((event: DownloadEvent) => {
-		switch (event.event) {
-			case "Started":
-				if (event.data && "total_bytes" in event.data) {
-					setTotalBytes(event.data.total_bytes);
-				}
-				setStatus("downloading");
-				break;
-			case "Progress":
-				if (event.data && "bytes_downloaded" in event.data) {
-					setDownloaded(event.data.bytes_downloaded);
-					setTotalBytes(event.data.total_bytes);
-					setSpeed(event.data.speed_bps);
-				}
-				break;
-			case "Finished":
-				setStatus("finished");
-				break;
-			case "Failed":
-				setStatus("failed");
-				if (event.data && "error" in event.data) {
-					setError(event.data.error);
-				}
-				break;
-			case "Cancelled":
-				setStatus("cancelled");
-				break;
+	// Start download if not already tracked
+	useEffect(() => {
+		if (model && !dl) {
+			startDownload(model);
 		}
-	}, []);
+	}, [model, dl, startDownload]);
 
+	// Auto-redirect on finish
 	useEffect(() => {
-		if (!model || startedRef.current) return;
-		startedRef.current = true;
-		setStatus("downloading");
-		modelService.downloadModel(model.id, handleEvent).catch((err) => {
-			setStatus("failed");
-			setError(String(err));
-		});
-	}, [model, handleEvent]);
-
-	useEffect(() => {
-		if (status === "finished") {
-			const timer = setTimeout(() => navigate("/models"), 1000);
+		if (dl?.status === "finished") {
+			const timer = setTimeout(() => {
+				removeDownload(dl.modelId);
+				navigate("/models");
+			}, 1000);
 			return () => clearTimeout(timer);
 		}
-		if (status === "cancelled") {
-			const timer = setTimeout(() => navigate("/store"), 500);
-			return () => clearTimeout(timer);
-		}
-	}, [status, navigate]);
-
-	const handleCancel = () => {
-		if (model) {
-			modelService.cancelDownload(model.id);
-		}
-	};
+	}, [dl, navigate, removeDownload]);
 
 	if (!model) {
 		navigate("/store");
 		return null;
 	}
+
+	const totalBytes = dl?.totalBytes || model.size_bytes;
+	const downloaded = dl?.downloadedBytes || 0;
+	const speed = dl?.speedBps || 0;
+	const status = dl?.status || "downloading";
+	const pct = totalBytes > 0 ? (downloaded / totalBytes) * 100 : 0;
+
+	const handlePause = () => pauseDownload(model.id);
+	const handleResume = () => resumeDownload(model);
+	const handleCancel = () => {
+		cancelDownload(model.id);
+		navigate("/store");
+	};
 
 	return (
 		<AppLayout>
@@ -225,7 +222,9 @@ export function DownloadingPage() {
 							? "Download Complete"
 							: status === "failed"
 								? "Download Failed"
-								: "Downloading Model"}
+								: status === "paused"
+									? "Download Paused"
+									: "Downloading Model"}
 					</Title>
 				</Header>
 
@@ -257,14 +256,19 @@ export function DownloadingPage() {
 					</BarInfo>
 				</ProgressSection>
 
-				{status === "failed" && error && (
-					<Hint style={{ color: tokens.colors.error }}>{error}</Hint>
+				{status === "failed" && dl?.error && (
+					<Hint style={{ color: tokens.colors.error }}>{dl.error}</Hint>
 				)}
 
 				{status === "downloading" && (
 					<Hint>
-						You can leave this screen. The download will continue in the
-						background.
+						You can leave this screen. The download will continue in the background.
+					</Hint>
+				)}
+
+				{status === "paused" && (
+					<Hint>
+						Download paused. Your progress is saved and will resume from where it left off.
 					</Hint>
 				)}
 
@@ -275,13 +279,38 @@ export function DownloadingPage() {
 				)}
 
 				{status === "downloading" && (
-					<CancelBtn onClick={handleCancel}>Cancel Download</CancelBtn>
+					<ActionRow>
+						<ActionBtn onClick={handlePause}>
+							<Icon name="pause" size={16} />
+							Pause
+						</ActionBtn>
+						<ActionBtn $variant="danger" onClick={handleCancel}>
+							Cancel
+						</ActionBtn>
+					</ActionRow>
+				)}
+
+				{status === "paused" && (
+					<ActionRow>
+						<ActionBtn $variant="primary" onClick={handleResume}>
+							<Icon name="play_arrow" size={16} />
+							Resume
+						</ActionBtn>
+						<ActionBtn $variant="danger" onClick={handleCancel}>
+							Cancel
+						</ActionBtn>
+					</ActionRow>
 				)}
 
 				{status === "failed" && (
-					<CancelBtn onClick={() => navigate("/store")}>
-						Back to Store
-					</CancelBtn>
+					<ActionRow>
+						<ActionBtn $variant="primary" onClick={handleResume}>
+							Retry
+						</ActionBtn>
+						<ActionBtn onClick={() => navigate("/store")}>
+							Back to Store
+						</ActionBtn>
+					</ActionRow>
 				)}
 			</Page>
 		</AppLayout>

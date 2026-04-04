@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { useDownloads } from "@/context/DownloadContext";
 import { modelService } from "@/services";
 import type { ModelInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
@@ -176,8 +177,20 @@ const DownloadedBadge = styled.span`
   color: ${tokens.colors.secondary};
 `;
 
+const DownloadingBadge = styled.span`
+  font-size: 10px;
+  font-weight: ${tokens.typography.fontWeight.bold};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.125rem 0.375rem;
+  border-radius: ${tokens.borderRadius.sm};
+  background: ${tokens.colors.primary}18;
+  color: ${tokens.colors.primary};
+`;
+
 export function ModelStorePage() {
 	const navigate = useNavigate();
+	const { downloads, startDownload } = useDownloads();
 	const [filter, setFilter] = useState(0);
 	const [search, setSearch] = useState("");
 	const [catalog, setCatalog] = useState<ModelInfo[]>([]);
@@ -202,7 +215,10 @@ export function ModelStorePage() {
 	const handleModelClick = (model: ModelInfo) => {
 		if (downloadedIds.has(model.id)) {
 			navigate("/models");
+		} else if (downloads[model.id]?.status === "downloading" || downloads[model.id]?.status === "paused") {
+			navigate("/downloading", { state: { model } });
 		} else {
+			startDownload(model);
 			navigate("/downloading", { state: { model } });
 		}
 	};
@@ -249,6 +265,12 @@ export function ModelStorePage() {
 									<CardSize>{m.size_label}</CardSize>
 									{downloadedIds.has(m.id) ? (
 										<DownloadedBadge>Downloaded</DownloadedBadge>
+									) : downloads[m.id]?.status === "downloading" ? (
+										<DownloadingBadge>
+											{Math.round((downloads[m.id].downloadedBytes / Math.max(downloads[m.id].totalBytes, 1)) * 100)}%
+										</DownloadingBadge>
+									) : downloads[m.id]?.status === "paused" ? (
+										<DownloadingBadge>Paused</DownloadingBadge>
 									) : (
 										<DlIcon>
 											<Icon

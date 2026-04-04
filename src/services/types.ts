@@ -67,6 +67,7 @@ export interface Settings {
 	temperature: number;
 	top_p: number;
 	max_tokens: number;
+	last_model_id?: string | null;
 }
 
 export interface StorageInfo {

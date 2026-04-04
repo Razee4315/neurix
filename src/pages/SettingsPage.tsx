@@ -5,6 +5,7 @@ import type { Settings } from "@/services/types";
 import { settingsService } from "@/services";
 import { tokens } from "@/theme/tokens";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
 /* ── Styles ── */
@@ -136,6 +137,52 @@ const PromptArea = styled.textarea`
   &:focus { box-shadow: inset 0 -2px 0 ${tokens.colors.primary}; }
 `;
 
+/* ── Slider ── */
+
+const SliderRow = styled.div`
+  padding: 0.75rem 1rem;
+`;
+
+const SliderLabel = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+`;
+
+const SliderTitle = styled.span`
+  font-size: ${tokens.typography.fontSize.base};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  color: ${tokens.colors.onSurface};
+`;
+
+const SliderValue = styled.span`
+  font-family: ${tokens.typography.fontFamily.mono};
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.primary};
+  font-weight: ${tokens.typography.fontWeight.bold};
+`;
+
+const SliderInput = styled.input`
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  outline: none;
+  appearance: none;
+  background: ${tokens.colors.surfaceContainerHighest};
+  cursor: pointer;
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: ${tokens.colors.primary};
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  }
+`;
+
 /* ── Version ── */
 
 const VersionCard = styled.div`
@@ -183,12 +230,17 @@ const UpdateBtn = styled.button`
 /* ── Component ── */
 
 export function SettingsPage() {
+	const navigate = useNavigate();
 	const { settings, refreshSettings } = useAppContext();
 	const [wifiOnly, setWifiOnly] = useState(false);
 	const [saveHistory, setSaveHistory] = useState(true);
 	const [showSpeed, setShowSpeed] = useState(true);
 	const [prompt, setPrompt] = useState("");
+	const [temperature, setTemperature] = useState(0.7);
+	const [topP, setTopP] = useState(0.9);
+	const [maxTokens, setMaxTokens] = useState(2048);
 	const promptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const sliderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	useEffect(() => {
 		if (settings) {
@@ -196,6 +248,9 @@ export function SettingsPage() {
 			setSaveHistory(settings.save_history);
 			setShowSpeed(settings.show_speed);
 			setPrompt(settings.system_prompt);
+			setTemperature(settings.temperature);
+			setTopP(settings.top_p);
+			setMaxTokens(settings.max_tokens);
 		}
 	}, [settings]);
 
@@ -233,6 +288,32 @@ export function SettingsPage() {
 		promptTimerRef.current = setTimeout(() => {
 			persist({ system_prompt: val });
 		}, 500);
+	};
+
+	const debouncedSliderPersist = useCallback(
+		(patch: Partial<Settings>) => {
+			if (sliderTimerRef.current) clearTimeout(sliderTimerRef.current);
+			sliderTimerRef.current = setTimeout(() => persist(patch), 300);
+		},
+		[persist],
+	);
+
+	const handleTemperature = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const val = Number.parseFloat(e.target.value);
+		setTemperature(val);
+		debouncedSliderPersist({ temperature: val });
+	};
+
+	const handleTopP = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const val = Number.parseFloat(e.target.value);
+		setTopP(val);
+		debouncedSliderPersist({ top_p: val });
+	};
+
+	const handleMaxTokens = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const val = Number.parseInt(e.target.value);
+		setMaxTokens(val);
+		debouncedSliderPersist({ max_tokens: val });
 	};
 
 	return (
@@ -288,14 +369,60 @@ export function SettingsPage() {
 					onChange={handlePromptChange}
 				/>
 
+				<SectionLabel style={{ marginTop: "1rem" }}>Inference</SectionLabel>
+				<Section>
+					<SliderRow>
+						<SliderLabel>
+							<SliderTitle>Temperature</SliderTitle>
+							<SliderValue>{temperature.toFixed(2)}</SliderValue>
+						</SliderLabel>
+						<SliderInput
+							type="range"
+							min="0"
+							max="2"
+							step="0.05"
+							value={temperature}
+							onChange={handleTemperature}
+						/>
+					</SliderRow>
+					<SliderRow>
+						<SliderLabel>
+							<SliderTitle>Top P</SliderTitle>
+							<SliderValue>{topP.toFixed(2)}</SliderValue>
+						</SliderLabel>
+						<SliderInput
+							type="range"
+							min="0.1"
+							max="1"
+							step="0.05"
+							value={topP}
+							onChange={handleTopP}
+						/>
+					</SliderRow>
+					<SliderRow>
+						<SliderLabel>
+							<SliderTitle>Max Tokens</SliderTitle>
+							<SliderValue>{maxTokens}</SliderValue>
+						</SliderLabel>
+						<SliderInput
+							type="range"
+							min="256"
+							max="4096"
+							step="256"
+							value={maxTokens}
+							onChange={handleMaxTokens}
+						/>
+					</SliderRow>
+				</Section>
+
 				<VersionCard>
 					<VersionInfo>
 						<VersionNumber>v{import.meta.env.VITE_APP_VERSION}</VersionNumber>
 						<VersionSub>Alpha build</VersionSub>
 					</VersionInfo>
-					<UpdateBtn>
-						<Icon name="update" size={16} color={tokens.colors.onSurface} />
-						Check updates
+					<UpdateBtn onClick={() => navigate("/about")}>
+						<Icon name="info" size={16} color={tokens.colors.onSurface} />
+						About
 					</UpdateBtn>
 				</VersionCard>
 			</Page>

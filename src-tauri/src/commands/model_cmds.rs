@@ -1,6 +1,7 @@
 use log::info;
 use tauri::{AppHandle, Manager, State};
 use tauri::ipc::Channel;
+use tauri_plugin_store::StoreExt;
 use tokio_util::sync::CancellationToken;
 
 use crate::models::catalog::{self, ModelInfo};
@@ -85,6 +86,14 @@ pub async fn delete_model(app: AppHandle, model_id: String) -> Result<(), String
 }
 
 #[tauri::command]
+pub async fn get_active_downloads(
+    state: State<'_, SharedState>,
+) -> Result<Vec<String>, String> {
+    let s = state.lock().await;
+    Ok(s.active_downloads.keys().cloned().collect())
+}
+
+#[tauri::command]
 pub async fn load_model(
     app: AppHandle,
     state: State<'_, SharedState>,
@@ -134,6 +143,19 @@ pub async fn load_model(
     let mut s = state.lock().await;
     s.loaded_model = Some(loaded);
     info!("Model loaded and ready");
+
+    // Persist last used model ID
+    if let Ok(store) = app.store("settings.json") {
+        let current = store.get("settings");
+        let mut settings = current
+            .and_then(|v| serde_json::from_value::<crate::settings::Settings>(v).ok())
+            .unwrap_or_default();
+        settings.last_model_id = Some(model_id);
+        if let Ok(v) = serde_json::to_value(&settings) {
+            store.set("settings", v);
+            let _ = store.save();
+        }
+    }
 
     Ok(())
 }

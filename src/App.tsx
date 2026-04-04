@@ -1,4 +1,5 @@
 import { AppProvider } from "@/context/AppContext";
+import { DownloadProvider } from "@/context/DownloadContext";
 import { ChatHistoryPage } from "@/pages/ChatHistoryPage";
 import { ChatPage } from "@/pages/ChatPage";
 import { DownloadingPage } from "@/pages/DownloadingPage";
@@ -6,6 +7,7 @@ import { ModelStorePage } from "@/pages/ModelStorePage";
 import { MyModelsPage } from "@/pages/MyModelsPage";
 import { OnboardingScreen } from "@/pages/OnboardingScreen";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { AboutPage } from "@/pages/AboutPage";
 import { SplashScreen } from "@/pages/SplashScreen";
 import { GlobalStyles, theme } from "@/theme";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
@@ -16,6 +18,7 @@ function App() {
 		<ThemeProvider theme={theme}>
 			<GlobalStyles />
 			<AppProvider>
+				<DownloadProvider>
 				<HashRouter>
 					<div className="app-container">
 						<Routes>
@@ -27,10 +30,12 @@ function App() {
 							<Route path="/chat" element={<ChatPage />} />
 							<Route path="/chat/history" element={<ChatHistoryPage />} />
 							<Route path="/settings" element={<SettingsPage />} />
+							<Route path="/about" element={<AboutPage />} />
 							<Route path="*" element={<Navigate to="/" replace />} />
 						</Routes>
 					</div>
 				</HashRouter>
+				</DownloadProvider>
 			</AppProvider>
 		</ThemeProvider>
 	);

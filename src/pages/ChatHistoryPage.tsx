@@ -106,7 +106,7 @@ const slideIn = keyframes`
   to { opacity: 1; transform: translateY(0); }
 `;
 
-const ChatItem = styled.button`
+const ChatItem = styled.div`
   width: 100%;
   text-align: left;
   display: flex;
@@ -122,6 +122,23 @@ const ChatItem = styled.button`
 
   &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
   &:active { transform: scale(0.99); }
+`;
+
+const DeleteChatBtn = styled.button`
+  width: 32px;
+  height: 32px;
+  border-radius: ${tokens.borderRadius.md};
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background ${tokens.transitions.fast};
+
+  &:hover { background: ${tokens.colors.error}18; }
+  &:active { transform: scale(0.9); }
 `;
 
 const ChatIcon = styled.div`
@@ -201,6 +218,16 @@ export function ChatHistoryPage() {
 		refresh();
 	}, [refresh]);
 
+	const handleDeleteOne = async (id: string, title: string) => {
+		const ok = await confirm(`Delete "${title}"?`, {
+			title: "Delete Conversation",
+			kind: "warning",
+		});
+		if (!ok) return;
+		await historyService.deleteConversation(id);
+		setConversations((prev) => prev.filter((c) => c.id !== id));
+	};
+
 	const handleClearAll = async () => {
 		const ok = await confirm("Delete all chat history? This cannot be undone.", {
 			title: "Clear History",
@@ -263,6 +290,14 @@ export function ChatHistoryPage() {
 												{entry.model_name} · {formatTime(entry.updated_at)}
 											</ChatMeta>
 										</ChatInfo>
+										<DeleteChatBtn
+											onClick={(e) => {
+												e.stopPropagation();
+												handleDeleteOne(entry.id, entry.title);
+											}}
+										>
+											<Icon name="delete" size={16} color={tokens.colors.error} />
+										</DeleteChatBtn>
 									</ChatItem>
 								))}
 							</ChatList>
