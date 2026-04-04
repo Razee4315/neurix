@@ -177,9 +177,9 @@ jobs:
         if: steps.android-check.outputs.ready == 'true'
         uses: android-actions/setup-android@v3
 
-      - name: Install Android NDK 28
+      - name: Install Android NDK 29
         if: steps.android-check.outputs.ready == 'true'
-        run: sdkmanager "ndk;28.0.13004108"
+        run: sdkmanager "ndk;29.0.14206865"
 
       - name: Install Rust (stable)
         if: steps.android-check.outputs.ready == 'true'
@@ -209,6 +209,10 @@ jobs:
       - name: Install frontend dependencies
         if: steps.android-check.outputs.ready == 'true'
         run: npm ci
+
+      - name: Install Tauri CLI (cargo)
+        if: steps.android-check.outputs.ready == 'true'
+        run: cargo install tauri-cli --locked
 
       # Decode keystore if secret is set — otherwise builds a debug APK
       - name: Setup Android signing keystore
