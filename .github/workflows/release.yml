@@ -255,7 +255,7 @@ jobs:
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           NDK_HOME: ${{ env.NDK_HOME }}
-        run: npx tauri android build -- --target aarch64
+        run: npx tauri android build --target aarch64
 
       - name: Rename and upload Android artifacts
         if: steps.android-check.outputs.ready == 'true'
