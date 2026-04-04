@@ -40,3 +40,6 @@ src-tauri/gen/android/keystore.properties
 .vscode/
 *.swp
 *.swo
+
+# Factory
+.factory/
