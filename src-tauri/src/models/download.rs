@@ -153,23 +153,33 @@ pub async fn download_model_files(
 
     info!("Model file downloaded: {:?}", final_path);
 
-    // Try to download tokenizer (non-fatal if it fails — gated repos)
-    let tokenizer_url = format!(
-        "https://huggingface.co/{}/resolve/main/tokenizer.json",
-        model.tokenizer_repo
-    );
+    // Download tokenizer — try GGUF repo first (public), then original repo (may be gated)
     let tokenizer_path = model_dir.join("tokenizer.json");
+    let tokenizer_urls = [
+        format!("https://huggingface.co/{}/resolve/main/tokenizer.json", model.hf_repo),
+        format!("https://huggingface.co/{}/resolve/main/tokenizer.json", model.tokenizer_repo),
+    ];
 
-    match client.get(&tokenizer_url).send().await {
-        Ok(resp) if resp.status().is_success() => {
-            if let Ok(bytes) = resp.bytes().await {
-                let _ = fs::write(&tokenizer_path, &bytes).await;
-                info!("Tokenizer downloaded: {:?}", tokenizer_path);
+    let mut tokenizer_ok = false;
+    for url in &tokenizer_urls {
+        info!("Trying tokenizer from: {}", url);
+        match client.get(url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                if let Ok(bytes) = resp.bytes().await {
+                    let _ = fs::write(&tokenizer_path, &bytes).await;
+                    info!("Tokenizer downloaded from: {}", url);
+                    tokenizer_ok = true;
+                    break;
+                }
+            }
+            _ => {
+                warn!("Tokenizer not available at: {}", url);
             }
         }
-        _ => {
-            warn!("Could not download tokenizer from {} — will extract from GGUF later", tokenizer_url);
-        }
+    }
+
+    if !tokenizer_ok {
+        warn!("Could not download tokenizer from any source");
     }
 
     let _ = channel.send(DownloadEvent::Finished);

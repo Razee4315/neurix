@@ -172,16 +172,9 @@ export function DownloadingPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const model = (location.state as { model?: ModelInfo })?.model;
-	const { downloads, startDownload, pauseDownload, resumeDownload, cancelDownload, removeDownload } = useDownloads();
+	const { downloads, pauseDownload, resumeDownload, cancelDownload, removeDownload } = useDownloads();
 
 	const dl = model ? downloads[model.id] : undefined;
-
-	// Start download if not already tracked
-	useEffect(() => {
-		if (model && !dl) {
-			startDownload(model);
-		}
-	}, [model, dl, startDownload]);
 
 	// Auto-redirect on finish
 	useEffect(() => {

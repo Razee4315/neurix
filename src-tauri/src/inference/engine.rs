@@ -124,6 +124,26 @@ pub fn format_prompt(
             prompt.push_str(&format!("<|user|>\n{}<|end|>\n<|assistant|>\n", user_msg));
             prompt
         }
+        ChatTemplate::Qwen => {
+            let mut prompt = String::new();
+            if !system_prompt.is_empty() {
+                prompt.push_str(&format!(
+                    "<|im_start|>system\n{}<|im_end|>\n",
+                    system_prompt
+                ));
+            }
+            for (user, assistant) in messages {
+                prompt.push_str(&format!(
+                    "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n{}<|im_end|>\n",
+                    user, assistant
+                ));
+            }
+            prompt.push_str(&format!(
+                "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+                user_msg
+            ));
+            prompt
+        }
     }
 }
 
@@ -148,7 +168,8 @@ pub fn run_generation(
         .or_else(|| model.tokenizer.token_to_id("</s>"))
         .or_else(|| model.tokenizer.token_to_id("<end_of_turn>"))
         .or_else(|| model.tokenizer.token_to_id("<|end|>"))
-        .or_else(|| model.tokenizer.token_to_id("<|endoftext|>"));
+        .or_else(|| model.tokenizer.token_to_id("<|endoftext|>"))
+        .or_else(|| model.tokenizer.token_to_id("<|im_end|>"));
 
     let start = Instant::now();
     let mut generated_count: usize = 0;
