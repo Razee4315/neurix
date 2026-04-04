@@ -697,6 +697,21 @@ export function ChatPage() {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages, isGenerating, streamedText]);
 
+	// Scroll to bottom when keyboard opens (viewport resizes).
+	// Without this, messages stay at their stale scroll position and the latest
+	// message gets hidden behind the keyboard — unlike WhatsApp which auto-scrolls.
+	useEffect(() => {
+		const vv = window.visualViewport;
+		if (!vv) return;
+
+		const onResize = () => {
+			messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+		};
+
+		vv.addEventListener("resize", onResize);
+		return () => vv.removeEventListener("resize", onResize);
+	}, []);
+
 	// Trim any stop sequence artifacts from the end of generated text
 	const cleanResponse = (text: string): string => {
 		const stopPatterns = [
