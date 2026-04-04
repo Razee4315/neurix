@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { useAppContext } from "@/context/AppContext";
-import { chatService, historyService } from "@/services";
+import { chatService, historyService, modelService, settingsService } from "@/services";
 import type { ChatHistoryEntry } from "@/services/chatService";
 import type { Conversation, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
@@ -394,30 +394,6 @@ const ModelTag = styled.span`
   border-radius: ${tokens.borderRadius.md};
 `;
 
-/* ── No Model Banner ── */
-
-const NoModelBanner = styled.div`
-  padding: 2rem 1.25rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-`;
-
-const GoToModelsBtn = styled.button`
-  padding: 0.625rem 1.25rem;
-  border-radius: ${tokens.borderRadius.md};
-  border: none;
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
-  color: ${tokens.colors.onPrimaryFixed};
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  cursor: pointer;
-  &:active { transform: scale(0.97); }
-`;
-
 /* ── Speed Badge ── */
 
 const SpeedBadge = styled.span`
@@ -459,10 +435,11 @@ function MessageCopyBtn({ text }: { text: string }) {
 export function ChatPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const { activeModel, settings } = useAppContext();
+	const { activeModel, settings, refreshActiveModel } = useAppContext();
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
 	const [isGenerating, setIsGenerating] = useState(false);
+	const [isLoadingModel, setIsLoadingModel] = useState(false);
 	const [streamedText, setStreamedText] = useState("");
 	const [tokensPerSecond, setTokensPerSecond] = useState(0);
 	const [conversationId, setConversationId] = useState<string | null>(null);
@@ -486,6 +463,62 @@ export function ChatPage() {
 			});
 		}
 	}, [location.state]);
+
+	// On mount: if no conversation loaded from history, load the most recent one
+	useEffect(() => {
+		const state = location.state as { conversationId?: string } | null;
+		if (state?.conversationId) return; // Already loading from history nav
+		historyService.getConversations().then((convos) => {
+			if (convos.length > 0) {
+				// Load the most recent conversation
+				historyService.loadConversation(convos[0].id).then((conv) => {
+					if (conv) {
+						setConversationId(conv.id);
+						setMessages(
+							conv.messages.map((m) => ({
+								role: m.role === "user" ? "user" : "ai",
+								text: m.content,
+							})),
+						);
+					}
+				});
+			}
+		});
+	}, []);
+
+	// Auto-load last used model if none is active
+	const ensureModelLoaded = async (): Promise<boolean> => {
+		if (activeModel) return true;
+
+		try {
+			const currentSettings = await settingsService.getSettings();
+			if (currentSettings.last_model_id) {
+				setIsLoadingModel(true);
+				await modelService.loadModel(currentSettings.last_model_id);
+				await refreshActiveModel();
+				setIsLoadingModel(false);
+				return true;
+			}
+		} catch {
+			setIsLoadingModel(false);
+		}
+
+		// No last model — check if any models are downloaded
+		try {
+			const models = await modelService.getDownloadedModels();
+			if (models.length > 0) {
+				setIsLoadingModel(true);
+				await modelService.loadModel(models[0].id);
+				await refreshActiveModel();
+				setIsLoadingModel(false);
+				return true;
+			}
+		} catch {
+			setIsLoadingModel(false);
+		}
+
+		return false;
+	};
 
 	const generateTitle = (msgs: Message[]): string => {
 		// Find the first user message for context
@@ -546,6 +579,28 @@ export function ChatPage() {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages, isGenerating, streamedText]);
 
+	// Trim any stop sequence artifacts from the end of generated text
+	const cleanResponse = (text: string): string => {
+		const stopPatterns = [
+			/\n?Human:[\s\S]*$/i,
+			/\n?User:[\s\S]*$/i,
+			/<\|im_start\|>[\s\S]*$/,
+			/<\|im_end\|>[\s\S]*$/,
+			/<start_of_turn>[\s\S]*$/,
+			/<end_of_turn>[\s\S]*$/,
+			/<\|eot_id\|>[\s\S]*$/,
+			/<\|start_header_id\|>[\s\S]*$/,
+			/<\|end\|>[\s\S]*$/,
+			/<\|user\|>[\s\S]*$/,
+			/<\|endoftext\|>[\s\S]*$/,
+		];
+		let cleaned = text;
+		for (const pattern of stopPatterns) {
+			cleaned = cleaned.replace(pattern, "");
+		}
+		return cleaned.trim();
+	};
+
 	const handleEvent = useCallback((event: InferenceEvent) => {
 		const data = event.data;
 		switch (event.event) {
@@ -558,9 +613,10 @@ export function ChatPage() {
 			case "GenerationComplete": {
 				setIsGenerating(false);
 				setStreamedText((finalText) => {
-					if (finalText) {
+					const cleaned = cleanResponse(finalText);
+					if (cleaned) {
 						setMessages((prev) => {
-							const updated = [...prev, { role: "ai" as const, text: finalText }];
+							const updated = [...prev, { role: "ai" as const, text: cleaned }];
 							saveChat(updated);
 							return updated;
 						});
@@ -600,7 +656,16 @@ export function ChatPage() {
 
 	const handleSend = async () => {
 		const text = input.trim();
-		if (!text || isGenerating || !activeModel) return;
+		if (!text || isGenerating || isLoadingModel) return;
+
+		// Auto-load model if none is active
+		if (!activeModel) {
+			const loaded = await ensureModelLoaded();
+			if (!loaded) {
+				navigate("/models");
+				return;
+			}
+		}
 
 		setMessages((prev) => [...prev, { role: "user", text }]);
 		setInput("");
@@ -693,24 +758,20 @@ export function ChatPage() {
 		}
 	};
 
-	if (!activeModel) {
-		return (
-			<AppLayout>
-				<NoModelBanner>
-					<EmptyState icon="neurology" message="No model loaded" />
-					<GoToModelsBtn onClick={() => navigate("/models")}>
-						Go to My Models
-					</GoToModelsBtn>
-				</NoModelBanner>
-			</AppLayout>
-		);
-	}
-
 	return (
 		<AppLayout
 			rightActions={
 				<TopBarRight>
-					<ModelTag>{activeModel}</ModelTag>
+					{activeModel ? (
+						<ModelTag>{activeModel}</ModelTag>
+					) : (
+						<ModelTag
+							style={{ cursor: "pointer" }}
+							onClick={() => navigate("/models")}
+						>
+							{isLoadingModel ? "Loading..." : "No model"}
+						</ModelTag>
+					)}
 					<TopBarBtn onClick={handleNewChat}>
 						<Icon
 							name="edit_square"
@@ -787,7 +848,7 @@ export function ChatPage() {
 						onKeyDown={handleKeyDown}
 						placeholder="Message Neurix..."
 						rows={1}
-						disabled={isGenerating}
+						disabled={isGenerating || isLoadingModel}
 					/>
 					{isGenerating ? (
 						<SendBtn $hasText onClick={handleStop}>

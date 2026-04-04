@@ -192,6 +192,33 @@ pub fn format_prompt(
     }
 }
 
+/// Stop sequences that indicate the model is starting a new turn (talking to itself).
+const STOP_SEQUENCES: &[&str] = &[
+    "Human:",
+    "User:",
+    "human:",
+    "user:",
+    "<|im_start|>",
+    "<|im_end|>",
+    "<start_of_turn>",
+    "<end_of_turn>",
+    "<|eot_id|>",
+    "<|start_header_id|>",
+    "<|end|>",
+    "<|user|>",
+    "<|endoftext|>",
+];
+
+/// Check if the recent generated text contains any stop sequence.
+fn contains_stop_sequence(generated: &str) -> Option<usize> {
+    for stop in STOP_SEQUENCES {
+        if let Some(pos) = generated.find(stop) {
+            return Some(pos);
+        }
+    }
+    None
+}
+
 pub fn run_generation(
     model: &mut LoadedModel,
     prompt: &str,
@@ -218,6 +245,7 @@ pub fn run_generation(
 
     let start = Instant::now();
     let mut generated_count: usize = 0;
+    let mut generated_text = String::new();
 
     let mut logits = {
         let input = Tensor::new(prompt_tokens.as_slice(), &model.device)
@@ -233,6 +261,7 @@ pub fn run_generation(
     generated_count += 1;
 
     if let Some(text) = decode_token(&model.tokenizer, next_token) {
+        generated_text.push_str(&text);
         let tps = generated_count as f32 / start.elapsed().as_secs_f32().max(0.001);
         let _ = channel.send(InferenceEvent::TokenGenerated {
             token: text,
@@ -251,6 +280,11 @@ pub fn run_generation(
             }
         }
 
+        // Check for text-based stop sequences (model trying to start a new turn)
+        if contains_stop_sequence(&generated_text).is_some() {
+            break;
+        }
+
         logits = {
             let input = Tensor::new(&[next_token], &model.device)
                 .map_err(|e| format!("Tensor error: {}", e))?
@@ -265,6 +299,7 @@ pub fn run_generation(
         generated_count += 1;
 
         if let Some(text) = decode_token(&model.tokenizer, next_token) {
+            generated_text.push_str(&text);
             let tps = generated_count as f32 / start.elapsed().as_secs_f32().max(0.001);
             let _ = channel.send(InferenceEvent::TokenGenerated {
                 token: text,
