@@ -121,17 +121,5 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             tokenizer_repo: "Qwen/Qwen2.5-3B-Instruct".into(),
             chat_template: ChatTemplate::Qwen,
         },
-        ModelInfo {
-            id: "phi-4-mini".into(),
-            name: "Phi-4 Mini".into(),
-            description: "Microsoft's latest. Strong reasoning and code generation.".into(),
-            size_bytes: 2_500_000_000,
-            size_label: "~2.3 GB".into(),
-            tag: "Code".into(),
-            hf_repo: "bartowski/microsoft_Phi-4-mini-instruct-GGUF".into(),
-            hf_filename: "microsoft_Phi-4-mini-instruct-Q4_K_M.gguf".into(),
-            tokenizer_repo: "microsoft/Phi-4-mini-instruct".into(),
-            chat_template: ChatTemplate::Phi3,
-        },
     ]
 }
