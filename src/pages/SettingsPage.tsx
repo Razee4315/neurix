@@ -2,7 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Icon } from "@/components/ui/Icon";
 import { useAppContext } from "@/context/AppContext";
 import type { Settings } from "@/services/types";
-import { settingsService } from "@/services";
+import { historyService, settingsService } from "@/services";
 import { tokens } from "@/theme/tokens";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -183,6 +183,40 @@ const SliderInput = styled.input`
   }
 `;
 
+/* ── Action Buttons ── */
+
+const ActionButton = styled.button<{ $danger?: boolean }>`
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: none;
+  border: none;
+  border-radius: ${tokens.borderRadius.md};
+  cursor: pointer;
+  transition: background ${tokens.transitions.fast};
+  color: ${({ $danger }) => $danger ? tokens.colors.error : tokens.colors.onSurface};
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:active { transform: scale(0.98); }
+`;
+
+const ActionText = styled.div<{ $danger?: boolean }>`
+  min-width: 0;
+`;
+
+const ActionTitle = styled.div<{ $danger?: boolean }>`
+  font-size: ${tokens.typography.fontSize.base};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  color: inherit;
+`;
+
+const ActionSub = styled.div`
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
 /* ── Version ── */
 
 const VersionCard = styled.div`
@@ -316,6 +350,29 @@ export function SettingsPage() {
 		debouncedSliderPersist({ max_tokens: val });
 	};
 
+	const handleClearHistory = async () => {
+		try {
+			await historyService.clearAllConversations();
+		} catch {
+			// silent fail
+		}
+	};
+
+	const handleResetDefaults = async () => {
+		const defaults: Settings = {
+			wifi_only: false,
+			save_history: true,
+			show_speed: true,
+			system_prompt: "",
+			temperature: 0.7,
+			top_p: 0.9,
+			max_tokens: 2048,
+			last_model_id: settings?.last_model_id ?? null,
+		};
+		await settingsService.updateSettings(defaults);
+		refreshSettings();
+	};
+
 	return (
 		<AppLayout>
 			<Page>
@@ -413,6 +470,28 @@ export function SettingsPage() {
 							onChange={handleMaxTokens}
 						/>
 					</SliderRow>
+				</Section>
+
+				<SectionLabel style={{ marginTop: "1rem" }}>Data</SectionLabel>
+				<Section>
+					<ActionButton onClick={handleClearHistory} $danger>
+						<RowIcon>
+							<Icon name="delete_sweep" size={18} color={tokens.colors.error} />
+						</RowIcon>
+						<ActionText>
+							<ActionTitle $danger>Clear chat history</ActionTitle>
+							<ActionSub>Delete all saved conversations</ActionSub>
+						</ActionText>
+					</ActionButton>
+					<ActionButton onClick={handleResetDefaults}>
+						<RowIcon>
+							<Icon name="restart_alt" size={18} color={tokens.colors.primary} />
+						</RowIcon>
+						<ActionText>
+							<ActionTitle>Reset to defaults</ActionTitle>
+							<ActionSub>Restore all settings to original values</ActionSub>
+						</ActionText>
+					</ActionButton>
 				</Section>
 
 				<VersionCard>

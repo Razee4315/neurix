@@ -4,15 +4,28 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+
+  <!-- Left bracket [ -->
   <path
-      android:fillColor="#8FF5FF"
-      android:pathData="M54,30 L54,78 M30,54 L78,54"
-      android:strokeWidth="6"
-      android:strokeColor="#8FF5FF"/>
+      android:pathData="M44.1,21.2 L34.2,21.2 L34.2,86.8 L44.1,86.8"
+      android:strokeWidth="5.28"
+      android:strokeColor="#00F0FF"
+      android:strokeLineJoin="round"
+      android:strokeLineCap="round"
+      android:fillColor="#00000000"/>
+
+  <!-- Right bracket ] -->
   <path
-      android:fillColor="#8FF5FF"
-      android:pathData="M54,54m-20,0a20,20 0,1 1,40 0a20,20 0,1 1,-40 0"
-      android:strokeWidth="3"
-      android:strokeColor="#8FF5FF"
-      android:fillAlpha="0"/>
+      android:pathData="M63.9,21.2 L73.8,21.2 L73.8,86.8 L63.9,86.8"
+      android:strokeWidth="5.28"
+      android:strokeColor="#00F0FF"
+      android:strokeLineJoin="round"
+      android:strokeLineCap="round"
+      android:fillColor="#00000000"/>
+
+  <!-- Center green dot -->
+  <path
+      android:pathData="M54,47.4a6.6,6.6 0,1 1,0 13.2a6.6,6.6 0,1 1,0 -13.2z"
+      android:fillColor="#39FF14"/>
+
 </vector>

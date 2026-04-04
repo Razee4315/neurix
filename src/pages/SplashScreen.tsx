@@ -2,7 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
 import { modelService, settingsService } from "@/services";
 import { tokens } from "@/theme/tokens";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -198,79 +198,26 @@ const BadgeLabel = styled.span`
   font-weight: ${tokens.typography.fontWeight.semibold};
 `;
 
-/* ── System Status ── */
-
-const StatusSection = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-`;
-
-const StatusDivider = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-`;
-
-const StatusLine = styled.div`
-  flex: 1;
-  height: 1px;
-  background: ${tokens.colors.surfaceContainerHighest};
-`;
-
-const StatusLabel = styled.span`
-  font-family: ${tokens.typography.fontFamily.label};
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
-  color: ${tokens.colors.outline};
-`;
-
-const StatusGrid = styled.div`
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.625rem;
-`;
-
-const StatusCard = styled.div`
-  background: ${tokens.colors.surfaceContainerLow};
-  padding: 0.5rem 0.625rem;
-  border-radius: ${tokens.borderRadius.lg};
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-`;
-
-const StatusDot = styled.div`
-  width: 6px;
-  height: 6px;
-  border-radius: ${tokens.borderRadius.circle};
-  background: ${tokens.colors.secondary};
-  flex-shrink: 0;
-`;
-
-const StatusText = styled.span`
-  font-size: 10px;
-  font-family: ${tokens.typography.fontFamily.mono};
-  color: ${tokens.colors.onSurfaceVariant};
-  text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.tighter};
-`;
 
 /* ── Component ── */
 
 export function SplashScreen() {
 	const navigate = useNavigate();
+	const [ready, setReady] = useState(false);
 
 	useEffect(() => {
-		const timer = setTimeout(async () => {
+		let cancelled = false;
+
+		(async () => {
 			try {
 				const [models, settings] = await Promise.all([
 					modelService.getDownloadedModels(),
 					settingsService.getSettings(),
 				]);
+				if (cancelled) return;
+
 				if (models.length > 0) {
-					// Try to auto-load last used model
+					// Returning user — skip splash, go straight to chat
 					if (settings.last_model_id) {
 						const exists = models.find((m) => m.id === settings.last_model_id);
 						if (exists) {
@@ -282,13 +229,19 @@ export function SplashScreen() {
 						}
 					}
 					navigate("/chat", { replace: true });
+					return;
 				}
 			} catch {
-				// first launch or error — stay on splash
+				// first launch or error — show splash
 			}
-		}, 1500);
-		return () => clearTimeout(timer);
+
+			if (!cancelled) setReady(true);
+		})();
+
+		return () => { cancelled = true; };
 	}, [navigate]);
+
+	if (!ready) return null;
 
 	return (
 		<Container data-testid="splash-screen">
@@ -329,24 +282,6 @@ export function SplashScreen() {
 					/>
 					<BadgeLabel>No account needed</BadgeLabel>
 				</SecurityBadge>
-
-				<StatusSection>
-					<StatusDivider>
-						<StatusLine />
-						<StatusLabel>System Status</StatusLabel>
-						<StatusLine />
-					</StatusDivider>
-					<StatusGrid>
-						<StatusCard>
-							<StatusDot />
-							<StatusText>NPU Active</StatusText>
-						</StatusCard>
-						<StatusCard>
-							<StatusDot />
-							<StatusText>Encrypted</StatusText>
-						</StatusCard>
-					</StatusGrid>
-				</StatusSection>
 			</Footer>
 		</Container>
 	);

@@ -1,6 +1,16 @@
 import { createContext, useCallback, useContext, useRef, useState } from "react";
-import { modelService } from "@/services";
-import type { DownloadEvent, ModelInfo } from "@/services/types";
+import { modelService, settingsService } from "@/services";
+import type { DownloadEvent, ModelInfo, Settings } from "@/services/types";
+
+// Network detection using Navigator.connection API
+function isOnWifi(): boolean {
+	const nav = navigator as Navigator & {
+		connection?: { type?: string; effectiveType?: string };
+	};
+	const conn = nav.connection;
+	if (!conn || !conn.type) return true; // Unknown = allow (desktop fallback)
+	return conn.type === "wifi" || conn.type === "ethernet";
+}
 
 export interface DownloadState {
 	modelId: string;
@@ -15,7 +25,7 @@ export interface DownloadState {
 
 interface DownloadContextValue {
 	downloads: Record<string, DownloadState>;
-	startDownload: (model: ModelInfo) => void;
+	startDownload: (model: ModelInfo) => Promise<void> | void;
 	pauseDownload: (modelId: string) => void;
 	resumeDownload: (model: ModelInfo) => void;
 	cancelDownload: (modelId: string) => void;
@@ -43,8 +53,55 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, []);
 
-	const startDownload = useCallback((model: ModelInfo) => {
+	const startDownload = useCallback(async (model: ModelInfo) => {
 		if (activeChannelsRef.current.has(model.id)) return;
+
+		// Enforce WiFi-only setting
+		try {
+			const currentSettings: Settings = await settingsService.getSettings();
+			if (currentSettings.wifi_only && !isOnWifi()) {
+				setDownloads((prev) => ({
+					...prev,
+					[model.id]: {
+						modelId: model.id,
+						modelName: model.name,
+						sizeLabel: model.size_label,
+						status: "failed",
+						totalBytes: model.size_bytes,
+						downloadedBytes: 0,
+						speedBps: 0,
+						error: "WiFi-only mode is enabled. Connect to WiFi to download.",
+					},
+				}));
+				return;
+			}
+		} catch {
+			// If settings check fails, proceed anyway
+		}
+
+		// Check available disk space before starting
+		try {
+			const hasSpace = await settingsService.checkAvailableSpace(model.size_bytes);
+			if (!hasSpace) {
+				setDownloads((prev) => ({
+					...prev,
+					[model.id]: {
+						modelId: model.id,
+						modelName: model.name,
+						sizeLabel: model.size_label,
+						status: "failed",
+						totalBytes: model.size_bytes,
+						downloadedBytes: 0,
+						speedBps: 0,
+						error: "Not enough storage space. Free up space and try again.",
+					},
+				}));
+				return;
+			}
+		} catch {
+			// If space check fails, proceed anyway
+		}
+
 		activeChannelsRef.current.add(model.id);
 
 		setDownloads((prev) => ({

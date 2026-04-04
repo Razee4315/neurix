@@ -255,6 +255,40 @@ const CodePre = styled.pre`
   scrollbar-width: none;
 `;
 
+/* ── Message Actions ── */
+
+const MessageActions = styled.div`
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+  opacity: 0;
+  transition: opacity ${tokens.transitions.fast};
+`;
+
+const BubbleWrap = styled.div`
+  display: flex;
+  flex-direction: column;
+
+  &:hover ${MessageActions} { opacity: 1; }
+`;
+
+const MsgActionBtn = styled.button<{ $copied?: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.4rem;
+  background: ${({ $copied }) => $copied ? tokens.colors.secondary + "18" : "none"};
+  border: none;
+  border-radius: ${tokens.borderRadius.sm};
+  cursor: pointer;
+  font-size: 10px;
+  color: ${({ $copied }) => $copied ? tokens.colors.secondary : tokens.colors.onSurfaceVariant};
+  transition: all ${tokens.transitions.fast};
+
+  &:hover { background: ${tokens.colors.surfaceContainerHighest}; }
+  &:active { transform: scale(0.9); }
+`;
+
 /* ── Typing Indicator ── */
 
 const TypingDots = styled.div`
@@ -397,6 +431,29 @@ const SpeedBadge = styled.span`
   display: inline-block;
 `;
 
+/* ── Message Copy Button ── */
+
+function MessageCopyBtn({ text }: { text: string }) {
+	const [copied, setCopied] = useState(false);
+
+	const handleCopy = () => {
+		navigator.clipboard.writeText(text);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	};
+
+	return (
+		<MsgActionBtn onClick={handleCopy} $copied={copied}>
+			<Icon
+				name={copied ? "check" : "content_copy"}
+				size={12}
+				color={copied ? tokens.colors.secondary : undefined}
+			/>
+			{copied ? "Copied" : "Copy"}
+		</MsgActionBtn>
+	);
+}
+
 /* ── Component ── */
 
 export function ChatPage() {
@@ -430,6 +487,28 @@ export function ChatPage() {
 		}
 	}, [location.state]);
 
+	const generateTitle = (msgs: Message[]): string => {
+		// Find the first user message for context
+		const firstUser = msgs.find((m) => m.role === "user");
+		if (!firstUser) return "Chat";
+
+		const text = firstUser.text.trim();
+
+		// If it's a question, use it directly (cleaned up)
+		if (text.length <= 50) return text;
+
+		// Extract first sentence or clause
+		const sentenceEnd = text.search(/[.!?\n]/);
+		if (sentenceEnd > 0 && sentenceEnd <= 60) {
+			return text.slice(0, sentenceEnd + 1);
+		}
+
+		// Break at last word boundary within 50 chars
+		const truncated = text.slice(0, 50);
+		const lastSpace = truncated.lastIndexOf(" ");
+		return (lastSpace > 20 ? truncated.slice(0, lastSpace) : truncated) + "...";
+	};
+
 	// Auto-save conversation after each completed exchange
 	const saveChat = useCallback(
 		async (msgs: Message[]) => {
@@ -437,7 +516,7 @@ export function ChatPage() {
 			const id = conversationId || crypto.randomUUID();
 			if (!conversationId) setConversationId(id);
 
-			const title = msgs[0]?.role === "user" ? msgs[0].text.slice(0, 60) : "Chat";
+			const title = generateTitle(msgs);
 			const conv: Conversation = {
 				id,
 				title,
@@ -507,6 +586,18 @@ export function ChatPage() {
 		}
 	}, []);
 
+	const MAX_HISTORY_PAIRS = 10; // Keep last 10 exchanges to stay within token limits
+
+	const buildHistory = (msgs: Message[]): ChatHistoryEntry[] => {
+		const pairs: ChatHistoryEntry[] = [];
+		for (let i = 0; i < msgs.length - 1; i += 2) {
+			if (msgs[i]?.role === "user" && msgs[i + 1]?.role === "ai") {
+				pairs.push({ user: msgs[i].text, assistant: msgs[i + 1].text });
+			}
+		}
+		return pairs.slice(-MAX_HISTORY_PAIRS);
+	};
+
 	const handleSend = async () => {
 		const text = input.trim();
 		if (!text || isGenerating || !activeModel) return;
@@ -518,12 +609,7 @@ export function ChatPage() {
 		setTokensPerSecond(0);
 		if (textareaRef.current) textareaRef.current.style.height = "auto";
 
-		const history: ChatHistoryEntry[] = [];
-		for (let i = 0; i < messages.length - 1; i += 2) {
-			if (messages[i]?.role === "user" && messages[i + 1]?.role === "ai") {
-				history.push({ user: messages[i].text, assistant: messages[i + 1].text });
-			}
-		}
+		const history = buildHistory(messages);
 
 		try {
 			await chatService.runInference(
@@ -547,6 +633,49 @@ export function ChatPage() {
 
 	const handleStop = () => {
 		chatService.stopInference();
+	};
+
+	const handleRegenerate = async () => {
+		if (isGenerating || !activeModel || messages.length < 2) return;
+
+		// Find the last user message
+		let lastUserIdx = -1;
+		for (let i = messages.length - 1; i >= 0; i--) {
+			if (messages[i].role === "user") {
+				lastUserIdx = i;
+				break;
+			}
+		}
+		if (lastUserIdx === -1) return;
+
+		const userText = messages[lastUserIdx].text;
+		// Remove the last AI response (and keep everything before it)
+		const trimmed = messages.slice(0, lastUserIdx + 1);
+		setMessages(trimmed);
+		setIsGenerating(true);
+		setStreamedText("");
+		setTokensPerSecond(0);
+
+		const history = buildHistory(trimmed);
+
+		try {
+			await chatService.runInference(
+				userText,
+				settings?.system_prompt ?? "",
+				history,
+				settings?.temperature ?? 0.7,
+				settings?.top_p ?? 0.9,
+				settings?.max_tokens ?? 2048,
+				handleEvent,
+			);
+		} catch (err) {
+			setIsGenerating(false);
+			setStreamedText("");
+			setMessages((prev) => [
+				...prev,
+				{ role: "ai", text: `**Error:** ${String(err)}` },
+			]);
+		}
 	};
 
 	const handleNewChat = () => {
@@ -605,14 +734,27 @@ export function ChatPage() {
 						<EmptyState icon="chat_bubble" message="Start a conversation" />
 					)}
 					{messages.map((msg, i) => (
-						<Bubble key={`msg-${i}-${msg.role}`} $role={msg.role}>
-							<BubbleLabel $role={msg.role}>
-								{msg.role === "ai" ? "Neurix" : "You"}
-							</BubbleLabel>
-							<BubbleBody>
-								{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
-							</BubbleBody>
-						</Bubble>
+						<BubbleWrap key={`msg-${i}-${msg.role}`}>
+							<Bubble $role={msg.role}>
+								<BubbleLabel $role={msg.role}>
+									{msg.role === "ai" ? "Neurix" : "You"}
+								</BubbleLabel>
+								<BubbleBody>
+									{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
+								</BubbleBody>
+							</Bubble>
+							{msg.role === "ai" && !isGenerating && (
+								<MessageActions>
+									<MessageCopyBtn text={msg.text} />
+									{i === messages.length - 1 && (
+										<MsgActionBtn onClick={handleRegenerate}>
+											<Icon name="refresh" size={12} />
+											Retry
+										</MsgActionBtn>
+									)}
+								</MessageActions>
+							)}
+						</BubbleWrap>
 					))}
 					{(isGenerating || streamedText) && (
 						<Bubble $role="ai">

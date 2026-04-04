@@ -12,3 +12,7 @@ export async function updateSettings(settings: Settings): Promise<void> {
 export async function getStorageInfo(): Promise<StorageInfo> {
 	return invoke("get_storage_info");
 }
+
+export async function checkAvailableSpace(requiredBytes: number): Promise<boolean> {
+	return invoke("check_available_space", { requiredBytes });
+}
