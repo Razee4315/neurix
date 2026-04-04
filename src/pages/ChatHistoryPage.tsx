@@ -1,9 +1,10 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { tokens } from "@/theme/tokens";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import styled from "styled-components";
+import styled, { keyframes } from "styled-components";
 
 /* ── Mock Data ── */
 
@@ -142,6 +143,11 @@ const ChatList = styled.div`
   gap: 0.375rem;
 `;
 
+const slideIn = keyframes`
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+`;
+
 const ChatItem = styled.button`
   width: 100%;
   text-align: left;
@@ -154,6 +160,7 @@ const ChatItem = styled.button`
   border-radius: ${tokens.borderRadius.lg};
   cursor: pointer;
   transition: background ${tokens.transitions.fast};
+  animation: ${slideIn} 0.3s ease-out both;
 
   &:active {
     background: ${tokens.colors.surfaceContainerHigh};
@@ -255,6 +262,13 @@ export function ChatHistoryPage() {
 
 				{renderGroup("Today", TODAY)}
 				{renderGroup("Yesterday", YESTERDAY)}
+				{filterEntries(TODAY).length === 0 &&
+					filterEntries(YESTERDAY).length === 0 && (
+						<EmptyState
+							icon="chat_bubble"
+							message="No conversations match your search"
+						/>
+					)}
 			</Page>
 		</AppLayout>
 	);

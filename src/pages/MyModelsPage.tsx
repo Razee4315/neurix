@@ -1,9 +1,10 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { tokens } from "@/theme/tokens";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import styled from "styled-components";
+import styled, { keyframes } from "styled-components";
 
 /* ── Mock Data ── */
 
@@ -149,6 +150,11 @@ const AddButton = styled.button`
   cursor: pointer;
 `;
 
+const slideIn = keyframes`
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+`;
+
 const Cards = styled.div`
   display: flex;
   flex-direction: column;
@@ -162,6 +168,7 @@ const Card = styled.div<{ $active: boolean }>`
 			: tokens.colors.surfaceContainerLow};
   border-radius: ${tokens.borderRadius.lg};
   padding: 1rem;
+  animation: ${slideIn} 0.3s ease-out both;
   ${({ $active }) => $active && `box-shadow: ${tokens.shadows.ambient};`}
 `;
 
@@ -297,30 +304,41 @@ export function MyModelsPage() {
 					</AddButton>
 				</ListHeader>
 
-				<Cards>
-					{filtered.map((m) => (
-						<Card key={m.name} $active={m.active}>
-							<CardTop>
-								<CardName>
-									<ModelName>{m.name}</ModelName>
-									{m.active && <ActiveBadge>Active</ActiveBadge>}
-								</CardName>
-							</CardTop>
-							<CardMeta>
-								<span>{m.size}</span>
-								<span>{m.speed}</span>
-							</CardMeta>
-							<CardActions>
-								<UseBtn $active={m.active}>
-									{m.active ? "Engaged" : "Use Model"}
-								</UseBtn>
-								<DeleteBtn>
-									<Icon name="delete" size={16} color={tokens.colors.error} />
-								</DeleteBtn>
-							</CardActions>
-						</Card>
-					))}
-				</Cards>
+				{filtered.length === 0 ? (
+					<EmptyState
+						icon="deployed_code"
+						message="No models match your search"
+					/>
+				) : (
+					<Cards>
+						{filtered.map((m, i) => (
+							<Card
+								key={m.name}
+								$active={m.active}
+								style={{ animationDelay: `${i * 50}ms` }}
+							>
+								<CardTop>
+									<CardName>
+										<ModelName>{m.name}</ModelName>
+										{m.active && <ActiveBadge>Active</ActiveBadge>}
+									</CardName>
+								</CardTop>
+								<CardMeta>
+									<span>{m.size}</span>
+									<span>{m.speed}</span>
+								</CardMeta>
+								<CardActions>
+									<UseBtn $active={m.active}>
+										{m.active ? "Engaged" : "Use Model"}
+									</UseBtn>
+									<DeleteBtn>
+										<Icon name="delete" size={16} color={tokens.colors.error} />
+									</DeleteBtn>
+								</CardActions>
+							</Card>
+						))}
+					</Cards>
+				)}
 			</Page>
 		</AppLayout>
 	);

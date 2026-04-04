@@ -1,9 +1,10 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { tokens } from "@/theme/tokens";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import styled from "styled-components";
+import styled, { keyframes } from "styled-components";
 
 /* ── Mock Data ── */
 
@@ -115,6 +116,11 @@ const Chip = styled.button<{ $active: boolean }>`
 		$active ? tokens.colors.onPrimaryFixed : tokens.colors.onSurfaceVariant};
 `;
 
+const slideIn = keyframes`
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+`;
+
 const Cards = styled.div`
   display: flex;
   flex-direction: column;
@@ -129,10 +135,11 @@ const Card = styled.button`
   border-radius: ${tokens.borderRadius.lg};
   padding: 1rem;
   cursor: pointer;
-  transition: background ${tokens.transitions.fast};
+  transition: background ${tokens.transitions.fast}, transform 0.1s ease;
   display: flex;
   align-items: center;
   gap: 1rem;
+  animation: ${slideIn} 0.3s ease-out both;
 
   &:active {
     background: ${tokens.colors.surfaceContainerHigh};
@@ -223,26 +230,34 @@ export function ModelStorePage() {
 					))}
 				</Chips>
 
-				<Cards>
-					{filtered.map((m) => (
-						<Card key={m.name} onClick={() => navigate("/downloading")}>
-							<CardInfo>
-								<CardName>{m.name}</CardName>
-								<CardDesc>{m.desc}</CardDesc>
-							</CardInfo>
-							<CardRight>
-								<CardSize>{m.size}</CardSize>
-								<DlIcon>
-									<Icon
-										name="download"
-										size={18}
-										color={tokens.colors.primary}
-									/>
-								</DlIcon>
-							</CardRight>
-						</Card>
-					))}
-				</Cards>
+				{filtered.length === 0 ? (
+					<EmptyState message="No models match your search" />
+				) : (
+					<Cards>
+						{filtered.map((m, i) => (
+							<Card
+								key={m.name}
+								onClick={() => navigate("/downloading")}
+								style={{ animationDelay: `${i * 50}ms` }}
+							>
+								<CardInfo>
+									<CardName>{m.name}</CardName>
+									<CardDesc>{m.desc}</CardDesc>
+								</CardInfo>
+								<CardRight>
+									<CardSize>{m.size}</CardSize>
+									<DlIcon>
+										<Icon
+											name="download"
+											size={18}
+											color={tokens.colors.primary}
+										/>
+									</DlIcon>
+								</CardRight>
+							</Card>
+						))}
+					</Cards>
+				)}
 			</Page>
 		</AppLayout>
 	);
