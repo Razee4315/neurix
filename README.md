@@ -47,10 +47,31 @@ Neurix runs large language models entirely on your phone or desktop. No server, 
 
 ---
 
+## Screenshots
+
+<div align="center">
+<table>
+<tr>
+<td align="center"><img src="Screenshots/Model_Store.jpeg" width="260" /><br /><b>Model Store</b></td>
+<td align="center"><img src="Screenshots/Download_page.jpeg" width="260" /><br /><b>Downloading</b></td>
+</tr>
+<tr>
+<td align="center"><img src="Screenshots/Chat.jpeg" width="260" /><br /><b>Chat</b></td>
+<td align="center"><img src="Screenshots/Chat_History.jpeg" width="260" /><br /><b>Chat History</b></td>
+</tr>
+<tr>
+<td align="center"><img src="Screenshots/Setting_Page_1.jpeg" width="260" /><br /><b>Settings</b></td>
+<td align="center"><img src="Screenshots/Setting_page_2.jpeg" width="260" /><br /><b>Inference Settings</b></td>
+</tr>
+</table>
+</div>
+
+---
+
 ## Features
 
 - **On-device inference** — AI runs on your CPU, no server involved
-- **9 curated models** — from 380 MB to 2.3 GB, pick what fits your device
+- **8 curated models** — from 380 MB to 2.2 GB, pick what fits your device
 - **Offline after download** — use anywhere, anytime, no internet needed
 - **Private by design** — conversations never leave your device
 - **Model manager** — download, switch, delete models freely
@@ -72,7 +93,6 @@ Neurix runs large language models entirely on your phone or desktop. No server, 
 | Qwen 2.5 3B | 1.8 GB | Complex tasks |
 | Llama 3.2 3B | 2.0 GB | Chat, reasoning, writing |
 | Phi-3.5 Mini | 2.2 GB | Code generation |
-| Phi-4 Mini | 2.3 GB | Reasoning and code |
 
 All models use Q4_K_M quantization for the best balance of quality and size.
 
