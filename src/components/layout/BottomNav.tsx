@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { tokens } from "@/theme/tokens";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -57,14 +57,22 @@ export function BottomNav() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const [keyboardOpen, setKeyboardOpen] = useState(false);
+	// Capture the full viewport height once on mount — before any keyboard opens.
+	// On Android with adjustResize, window.innerHeight shrinks WITH the keyboard,
+	// so comparing visualViewport.height against window.innerHeight always passes.
+	// screen.height is stable and never changes, making it the correct reference.
+	const initialHeightRef = useRef(
+		Math.max(window.screen.height, window.innerHeight),
+	);
 
 	useEffect(() => {
 		const vv = window.visualViewport;
 		if (!vv) return;
 
 		const onResize = () => {
-			// If visual viewport is significantly smaller than window, keyboard is open
-			const keyboardVisible = vv.height < window.innerHeight * 0.75;
+			const stableHeight = initialHeightRef.current;
+			// Keyboard is open when viewport shrinks by 25%+ of the stable reference
+			const keyboardVisible = vv.height < stableHeight * 0.75;
 			setKeyboardOpen(keyboardVisible);
 		};
 

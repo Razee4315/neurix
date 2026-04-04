@@ -76,7 +76,11 @@ const Btn = styled.button<{ $danger?: boolean; $primary?: boolean }>`
 				? tokens.colors.primary
 				: tokens.colors.surfaceContainerHighest};
   color: ${({ $danger, $primary }) =>
-		$danger || $primary ? "#fff" : tokens.colors.onSurface};
+		$danger
+			? "#fff"
+			: $primary
+				? tokens.colors.onPrimary
+				: tokens.colors.onSurface};
 
   &:active { transform: scale(0.96); }
 `;
