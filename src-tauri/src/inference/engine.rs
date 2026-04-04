@@ -221,6 +221,27 @@ fn contains_stop_sequence(generated: &str) -> Option<usize> {
     None
 }
 
+/// Detect degenerate n-gram repetition loops.
+/// Returns true if the same `n`-gram of tokens appears `max_repeats` or more times
+/// in the last portion of generated tokens. This catches the "death spiral" where
+/// the model endlessly repeats phrases like "haha haha haha" or emoji sequences.
+fn has_repeated_ngram(tokens: &[u32], n: usize, max_repeats: usize) -> bool {
+    // Need at least enough tokens to contain the pattern repeated max_repeats times
+    if tokens.len() < n * max_repeats {
+        return false;
+    }
+    // Only scan the recent window to keep this fast
+    let scan_len = (n * (max_repeats + 2) * 2).min(tokens.len());
+    let recent = &tokens[tokens.len() - scan_len..];
+    if recent.len() < n {
+        return false;
+    }
+    // The target n-gram is the most recently generated one
+    let target = &recent[recent.len() - n..];
+    let count = recent.windows(n).filter(|w| *w == target).count();
+    count >= max_repeats
+}
+
 pub fn run_generation(
     model: &mut LoadedModel,
     prompt: &str,
@@ -234,7 +255,11 @@ pub fn run_generation(
         .encode(prompt, true)
         .map_err(|e| format!("Tokenization failed: {}", e))?;
     let prompt_tokens = tokens.get_ids().to_vec();
-    let mut all_tokens = prompt_tokens.clone();
+    let prompt_len = prompt_tokens.len();
+
+    // Keep full sequence for positional indexing, but track generated tokens separately.
+    // The sampler will ONLY see generated_tokens for repetition penalty — never the prompt.
+    let mut generated_tokens: Vec<u32> = Vec::with_capacity(max_tokens as usize);
 
     let eos_token = model
         .tokenizer
@@ -249,6 +274,7 @@ pub fn run_generation(
     let mut generated_count: usize = 0;
     let mut generated_text = String::new();
 
+    // Process prompt in one forward pass
     let mut logits = {
         let input = Tensor::new(prompt_tokens.as_slice(), &model.device)
             .map_err(|e| format!("Tensor error: {}", e))?
@@ -258,8 +284,9 @@ pub fn run_generation(
             .map_err(|e| format!("Forward pass error: {}", e))?
     };
 
-    let mut next_token = sampler.sample(&logits, &all_tokens)?;
-    all_tokens.push(next_token);
+    // Sample first token — no generated history yet, so penalty has nothing to penalize
+    let mut next_token = sampler.sample(&logits, &generated_tokens)?;
+    generated_tokens.push(next_token);
     generated_count += 1;
 
     if let Some(text) = decode_token(&model.tokenizer, next_token) {
@@ -276,14 +303,26 @@ pub fn run_generation(
             break;
         }
 
+        // EOS check
         if let Some(eos) = eos_token {
             if next_token == eos {
                 break;
             }
         }
 
-        // Check for text-based stop sequences (model trying to start a new turn)
+        // Stop sequence check (model trying to start a new turn)
         if contains_stop_sequence(&generated_text).is_some() {
+            break;
+        }
+
+        // N-gram repetition detection — catches degenerate loops that penalties miss.
+        // If a 4-token phrase repeats 3+ times, the model is stuck in a loop.
+        if generated_tokens.len() >= 12
+            && (has_repeated_ngram(&generated_tokens, 4, 3)
+                || has_repeated_ngram(&generated_tokens, 3, 4)
+                || has_repeated_ngram(&generated_tokens, 2, 5))
+        {
+            info!("Stopping: n-gram repetition loop detected after {} tokens", generated_count);
             break;
         }
 
@@ -292,12 +331,13 @@ pub fn run_generation(
                 .map_err(|e| format!("Tensor error: {}", e))?
                 .unsqueeze(0)
                 .map_err(|e| format!("Unsqueeze error: {}", e))?;
-            model.weights.forward(&input, prompt_tokens.len() + i)
+            model.weights.forward(&input, prompt_len + i)
                 .map_err(|e| format!("Forward pass error: {}", e))?
         };
 
-        next_token = sampler.sample(&logits, &all_tokens)?;
-        all_tokens.push(next_token);
+        // Pass ONLY generated tokens to the sampler — windowed by repeat_last_n internally
+        next_token = sampler.sample(&logits, &generated_tokens)?;
+        generated_tokens.push(next_token);
         generated_count += 1;
 
         if let Some(text) = decode_token(&model.tokenizer, next_token) {

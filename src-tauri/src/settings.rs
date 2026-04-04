@@ -26,7 +26,7 @@ impl Default for Settings {
             save_history: true,
             show_speed: true,
             system_prompt: "You are a helpful assistant. Give clear, concise answers. Do not repeat yourself.".to_string(),
-            temperature: 0.4,
+            temperature: 0.7,
             top_p: 0.9,
             max_tokens: 512,
             font_size: "medium".to_string(),

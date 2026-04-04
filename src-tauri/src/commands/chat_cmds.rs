@@ -59,7 +59,13 @@ pub async fn run_inference(
 
     info!("Running inference, prompt length: {} chars", formatted.len());
 
-    let mut sampler = LogitsSampler::new(temperature, top_p, 1.3);
+    let mut sampler = LogitsSampler::new(
+        temperature,
+        top_p,
+        0.05,  // min_p: dynamically filters garbage tokens based on model confidence
+        1.1,   // repetition_penalty: industry standard (llama.cpp default)
+        64,    // repeat_last_n: only penalize last 64 generated tokens, never prompt
+    );
 
     let result = tokio::task::spawn_blocking(move || {
         let res = engine::run_generation(
