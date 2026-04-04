@@ -1,55 +1,13 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { historyService } from "@/services";
+import type { ConversationMeta } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { useState } from "react";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
-
-/* ── Mock Data ── */
-
-interface ChatEntry {
-	title: string;
-	model: string;
-	time: string;
-	icon: string;
-}
-
-const TODAY: ChatEntry[] = [
-	{
-		title: "Neural networks explained",
-		model: "Llama 3 8B",
-		time: "10:42 AM",
-		icon: "school",
-	},
-	{
-		title: "Python script help",
-		model: "Llama 3 8B",
-		time: "08:15 AM",
-		icon: "terminal",
-	},
-];
-
-const YESTERDAY: ChatEntry[] = [
-	{
-		title: "Vacation planning",
-		model: "Llama 3 8B",
-		time: "6:30 PM",
-		icon: "travel",
-	},
-	{
-		title: "Quarterly review summary",
-		model: "Mistral 7B",
-		time: "3:15 PM",
-		icon: "analytics",
-	},
-	{
-		title: "Short story ideas",
-		model: "Llama 3 8B",
-		time: "11:00 AM",
-		icon: "edit_note",
-	},
-];
 
 /* ── Styles ── */
 
@@ -199,53 +157,72 @@ const ChatMeta = styled.span`
 
 /* ── Component ── */
 
+function groupByDate(conversations: ConversationMeta[]): Record<string, ConversationMeta[]> {
+	const groups: Record<string, ConversationMeta[]> = {};
+	const now = new Date();
+	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+	const yesterday = new Date(today.getTime() - 86400000);
+
+	for (const conv of conversations) {
+		const date = new Date(conv.updated_at);
+		const convDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+		let label: string;
+		if (convDay.getTime() === today.getTime()) {
+			label = "Today";
+		} else if (convDay.getTime() === yesterday.getTime()) {
+			label = "Yesterday";
+		} else {
+			label = convDay.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+		}
+
+		if (!groups[label]) groups[label] = [];
+		groups[label].push(conv);
+	}
+
+	return groups;
+}
+
+function formatTime(dateStr: string): string {
+	return new Date(dateStr).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 export function ChatHistoryPage() {
 	const navigate = useNavigate();
 	const [search, setSearch] = useState("");
+	const [conversations, setConversations] = useState<ConversationMeta[]>([]);
 
-	const filterEntries = (entries: ChatEntry[]) =>
-		entries.filter(
-			(e) => !search || e.title.toLowerCase().includes(search.toLowerCase()),
-		);
+	const refresh = useCallback(async () => {
+		const list = await historyService.getConversations();
+		setConversations(list);
+	}, []);
 
-	const renderGroup = (label: string, entries: ChatEntry[]) => {
-		const items = filterEntries(entries);
-		if (items.length === 0) return null;
-		return (
-			<>
-				<GroupLabel>
-					<GroupText>{label}</GroupText>
-					<GroupLine />
-				</GroupLabel>
-				<ChatList>
-					{items.map((entry) => (
-						<ChatItem key={entry.title} onClick={() => navigate("/chat")}>
-							<ChatIcon>
-								<Icon
-									name={entry.icon}
-									size={18}
-									color={tokens.colors.onSurfaceVariant}
-								/>
-							</ChatIcon>
-							<ChatInfo>
-								<ChatTitle>{entry.title}</ChatTitle>
-								<ChatMeta>
-									{entry.model} · {entry.time}
-								</ChatMeta>
-							</ChatInfo>
-						</ChatItem>
-					))}
-				</ChatList>
-			</>
-		);
+	useEffect(() => {
+		refresh();
+	}, [refresh]);
+
+	const handleClearAll = async () => {
+		const ok = await confirm("Delete all chat history? This cannot be undone.", {
+			title: "Clear History",
+			kind: "warning",
+		});
+		if (!ok) return;
+		await historyService.clearAllConversations();
+		setConversations([]);
 	};
+
+	const filtered = conversations.filter(
+		(c) => !search || c.title.toLowerCase().includes(search.toLowerCase()),
+	);
+
+	const groups = groupByDate(filtered);
 
 	return (
 		<AppLayout>
 			<Page>
 				<Header>
 					<Title>Chat History</Title>
-					<ClearBtn>Clear all</ClearBtn>
+					<ClearBtn onClick={handleClearAll}>Clear all</ClearBtn>
 				</Header>
 
 				<SearchBox>
@@ -259,15 +236,39 @@ export function ChatHistoryPage() {
 					/>
 				</SearchBox>
 
-				{renderGroup("Today", TODAY)}
-				{renderGroup("Yesterday", YESTERDAY)}
-				{filterEntries(TODAY).length === 0 &&
-					filterEntries(YESTERDAY).length === 0 && (
-						<EmptyState
-							icon="chat_bubble"
-							message="No conversations match your search"
-						/>
-					)}
+				{Object.keys(groups).length === 0 ? (
+					<EmptyState
+						icon="chat_bubble"
+						message={conversations.length === 0 ? "No conversations yet" : "No conversations match your search"}
+					/>
+				) : (
+					Object.entries(groups).map(([label, items]) => (
+						<div key={label}>
+							<GroupLabel>
+								<GroupText>{label}</GroupText>
+								<GroupLine />
+							</GroupLabel>
+							<ChatList>
+								{items.map((entry) => (
+									<ChatItem
+										key={entry.id}
+										onClick={() => navigate("/chat", { state: { conversationId: entry.id } })}
+									>
+										<ChatIcon>
+											<Icon name="chat_bubble" size={18} color={tokens.colors.onSurfaceVariant} />
+										</ChatIcon>
+										<ChatInfo>
+											<ChatTitle>{entry.title}</ChatTitle>
+											<ChatMeta>
+												{entry.model_name} · {formatTime(entry.updated_at)}
+											</ChatMeta>
+										</ChatInfo>
+									</ChatItem>
+								))}
+							</ChatList>
+						</div>
+					))
+				)}
 			</Page>
 		</AppLayout>
 	);

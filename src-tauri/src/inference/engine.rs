@@ -1,0 +1,221 @@
+use std::path::PathBuf;
+use std::time::Instant;
+
+use candle_core::{quantized::gguf_file, Device, Tensor};
+use candle_transformers::models::quantized_llama as qlm;
+use log::info;
+use serde::{Deserialize, Serialize};
+use tauri::ipc::Channel;
+use tokenizers::Tokenizer;
+use tokio_util::sync::CancellationToken;
+
+use super::sampler::LogitsSampler;
+use crate::models::catalog::ChatTemplate;
+
+pub struct LoadedModel {
+    pub id: String,
+    pub name: String,
+    pub weights: qlm::ModelWeights,
+    pub tokenizer: Tokenizer,
+    pub chat_template: ChatTemplate,
+    pub device: Device,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "event", content = "data")]
+pub enum InferenceEvent {
+    ModelLoading,
+    ModelReady,
+    TokenGenerated { token: String, tokens_per_second: f32 },
+    GenerationComplete { total_tokens: usize, duration_ms: u64 },
+    Error { message: String },
+}
+
+pub fn load_model_from_disk(
+    model_id: &str,
+    name: &str,
+    model_path: &PathBuf,
+    tokenizer_path: &PathBuf,
+    chat_template: ChatTemplate,
+) -> Result<LoadedModel, String> {
+    let device = Device::Cpu;
+
+    info!("Loading GGUF model from {:?}", model_path);
+    let mut file = std::fs::File::open(model_path).map_err(|e| format!("Cannot open model: {}", e))?;
+    let content = gguf_file::Content::read(&mut file).map_err(|e| format!("Invalid GGUF: {}", e))?;
+    let weights = qlm::ModelWeights::from_gguf(content, &mut file, &device)
+        .map_err(|e| format!("Failed to load weights: {}", e))?;
+    info!("Model weights loaded");
+
+    let tokenizer = Tokenizer::from_file(tokenizer_path)
+        .map_err(|e| format!("Failed to load tokenizer: {}", e))?;
+    info!("Tokenizer loaded");
+
+    Ok(LoadedModel {
+        id: model_id.to_string(),
+        name: name.to_string(),
+        weights,
+        tokenizer,
+        chat_template,
+        device,
+    })
+}
+
+pub fn format_prompt(
+    template: &ChatTemplate,
+    system_prompt: &str,
+    messages: &[(String, String)],
+    user_msg: &str,
+) -> String {
+    match template {
+        ChatTemplate::Llama3 => {
+            let mut prompt = String::from("<|begin_of_text|>");
+            if !system_prompt.is_empty() {
+                prompt.push_str(&format!(
+                    "<|start_header_id|>system<|end_header_id|>\n\n{}<|eot_id|>",
+                    system_prompt
+                ));
+            }
+            for (user, assistant) in messages {
+                prompt.push_str(&format!(
+                    "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{}<|eot_id|>",
+                    user, assistant
+                ));
+            }
+            prompt.push_str(&format!(
+                "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+                user_msg
+            ));
+            prompt
+        }
+        ChatTemplate::Gemma => {
+            let mut prompt = String::new();
+            if !system_prompt.is_empty() {
+                prompt.push_str(&format!(
+                    "<start_of_turn>user\n{}\n{}<end_of_turn>\n",
+                    system_prompt, user_msg
+                ));
+            } else {
+                for (user, assistant) in messages {
+                    prompt.push_str(&format!(
+                        "<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n{}<end_of_turn>\n",
+                        user, assistant
+                    ));
+                }
+                prompt.push_str(&format!(
+                    "<start_of_turn>user\n{}<end_of_turn>\n",
+                    user_msg
+                ));
+            }
+            prompt.push_str("<start_of_turn>model\n");
+            prompt
+        }
+        ChatTemplate::SmolLM | ChatTemplate::Phi3 => {
+            let mut prompt = String::new();
+            if !system_prompt.is_empty() {
+                prompt.push_str(&format!("<|system|>\n{}<|end|>\n", system_prompt));
+            }
+            for (user, assistant) in messages {
+                prompt.push_str(&format!(
+                    "<|user|>\n{}<|end|>\n<|assistant|>\n{}<|end|>\n",
+                    user, assistant
+                ));
+            }
+            prompt.push_str(&format!("<|user|>\n{}<|end|>\n<|assistant|>\n", user_msg));
+            prompt
+        }
+    }
+}
+
+pub fn run_generation(
+    model: &mut LoadedModel,
+    prompt: &str,
+    max_tokens: u32,
+    sampler: &mut LogitsSampler,
+    channel: &Channel<InferenceEvent>,
+    cancel_token: &CancellationToken,
+) -> Result<(), String> {
+    let tokens = model
+        .tokenizer
+        .encode(prompt, true)
+        .map_err(|e| format!("Tokenization failed: {}", e))?;
+    let prompt_tokens = tokens.get_ids().to_vec();
+    let mut all_tokens = prompt_tokens.clone();
+
+    let eos_token = model
+        .tokenizer
+        .token_to_id("<|eot_id|>")
+        .or_else(|| model.tokenizer.token_to_id("</s>"))
+        .or_else(|| model.tokenizer.token_to_id("<end_of_turn>"))
+        .or_else(|| model.tokenizer.token_to_id("<|end|>"))
+        .or_else(|| model.tokenizer.token_to_id("<|endoftext|>"));
+
+    let start = Instant::now();
+    let mut generated_count: usize = 0;
+
+    let mut logits = {
+        let input = Tensor::new(prompt_tokens.as_slice(), &model.device)
+            .map_err(|e| format!("Tensor error: {}", e))?
+            .unsqueeze(0)
+            .map_err(|e| format!("Unsqueeze error: {}", e))?;
+        model.weights.forward(&input, 0)
+            .map_err(|e| format!("Forward pass error: {}", e))?
+    };
+
+    let mut next_token = sampler.sample(&logits, &all_tokens)?;
+    all_tokens.push(next_token);
+    generated_count += 1;
+
+    if let Some(text) = decode_token(&model.tokenizer, next_token) {
+        let tps = generated_count as f32 / start.elapsed().as_secs_f32().max(0.001);
+        let _ = channel.send(InferenceEvent::TokenGenerated {
+            token: text,
+            tokens_per_second: tps,
+        });
+    }
+
+    for i in 1..(max_tokens as usize) {
+        if cancel_token.is_cancelled() {
+            break;
+        }
+
+        if let Some(eos) = eos_token {
+            if next_token == eos {
+                break;
+            }
+        }
+
+        logits = {
+            let input = Tensor::new(&[next_token], &model.device)
+                .map_err(|e| format!("Tensor error: {}", e))?
+                .unsqueeze(0)
+                .map_err(|e| format!("Unsqueeze error: {}", e))?;
+            model.weights.forward(&input, prompt_tokens.len() + i)
+                .map_err(|e| format!("Forward pass error: {}", e))?
+        };
+
+        next_token = sampler.sample(&logits, &all_tokens)?;
+        all_tokens.push(next_token);
+        generated_count += 1;
+
+        if let Some(text) = decode_token(&model.tokenizer, next_token) {
+            let tps = generated_count as f32 / start.elapsed().as_secs_f32().max(0.001);
+            let _ = channel.send(InferenceEvent::TokenGenerated {
+                token: text,
+                tokens_per_second: tps,
+            });
+        }
+    }
+
+    let duration = start.elapsed();
+    let _ = channel.send(InferenceEvent::GenerationComplete {
+        total_tokens: generated_count,
+        duration_ms: duration.as_millis() as u64,
+    });
+
+    Ok(())
+}
+
+fn decode_token(tokenizer: &Tokenizer, token_id: u32) -> Option<String> {
+    tokenizer.decode(&[token_id], true).ok()
+}

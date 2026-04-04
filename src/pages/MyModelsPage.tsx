@@ -1,36 +1,14 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { useAppContext } from "@/context/AppContext";
+import { modelService, settingsService } from "@/services";
+import type { DownloadedModel, StorageInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { useState } from "react";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
-
-/* ── Mock Data ── */
-
-const MODELS = [
-	{
-		name: "Llama 3 8B",
-		size: "4.1 GB",
-		speed: "42 tok/s",
-		active: true,
-	},
-	{
-		name: "Mistral 7B",
-		size: "3.8 GB",
-		speed: "38 tok/s",
-		active: false,
-	},
-	{
-		name: "Phi-2",
-		size: "1.6 GB",
-		speed: "65 tok/s",
-		active: false,
-	},
-];
-
-const USED = 9.5;
-const TOTAL = 128;
 
 /* ── Styles ── */
 
@@ -270,13 +248,52 @@ const DeleteBtn = styled.button`
 
 /* ── Component ── */
 
+function formatStorageGB(bytes: number): string {
+	return (bytes / (1024 * 1024 * 1024)).toFixed(1);
+}
+
 export function MyModelsPage() {
 	const navigate = useNavigate();
+	const { activeModel, refreshActiveModel } = useAppContext();
 	const [search, setSearch] = useState("");
+	const [models, setModels] = useState<DownloadedModel[]>([]);
+	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0 });
 
-	const filtered = MODELS.filter(
+	const refresh = useCallback(async () => {
+		const [downloaded, info] = await Promise.all([
+			modelService.getDownloadedModels(),
+			settingsService.getStorageInfo(),
+		]);
+		setModels(downloaded);
+		setStorage(info);
+	}, []);
+
+	useEffect(() => {
+		refresh();
+	}, [refresh]);
+
+	const filtered = models.filter(
 		(m) => !search || m.name.toLowerCase().includes(search.toLowerCase()),
 	);
+
+	const handleUse = async (model: DownloadedModel) => {
+		await modelService.loadModel(model.id);
+		await refreshActiveModel();
+		navigate("/chat");
+	};
+
+	const handleDelete = async (model: DownloadedModel) => {
+		const ok = await confirm(`Delete "${model.name}"? This will free ${model.size_label} of storage.`, {
+			title: "Delete Model",
+			kind: "warning",
+		});
+		if (!ok) return;
+		await modelService.deleteModel(model.id);
+		await refresh();
+		await refreshActiveModel();
+	};
+
+	const usedGB = formatStorageGB(storage.used_bytes);
 
 	return (
 		<AppLayout>
@@ -300,11 +317,11 @@ export function MyModelsPage() {
 					<StorageHeader>
 						<StorageLabel>Storage used</StorageLabel>
 						<StorageValue>
-							{USED} <span>/ {TOTAL} GB</span>
+							{usedGB} <span>GB · {storage.models_count} model{storage.models_count !== 1 ? "s" : ""}</span>
 						</StorageValue>
 					</StorageHeader>
 					<StorageBar>
-						<StorageFill $pct={(USED / TOTAL) * 100} />
+						<StorageFill $pct={Math.min((storage.used_bytes / (10 * 1024 * 1024 * 1024)) * 100, 100)} />
 					</StorageBar>
 				</StorageSection>
 
@@ -316,39 +333,47 @@ export function MyModelsPage() {
 					</AddButton>
 				</ListHeader>
 
-				{filtered.length === 0 ? (
+				{models.length === 0 ? (
+					<EmptyState
+						icon="deployed_code"
+						message="No models downloaded yet"
+					/>
+				) : filtered.length === 0 ? (
 					<EmptyState
 						icon="deployed_code"
 						message="No models match your search"
 					/>
 				) : (
 					<Cards>
-						{filtered.map((m, i) => (
-							<Card
-								key={m.name}
-								$active={m.active}
-								style={{ animationDelay: `${i * 50}ms` }}
-							>
-								<CardTop>
-									<CardName>
-										<ModelName>{m.name}</ModelName>
-										{m.active && <ActiveBadge>Active</ActiveBadge>}
-									</CardName>
-								</CardTop>
-								<CardMeta>
-									<span>{m.size}</span>
-									<span>{m.speed}</span>
-								</CardMeta>
-								<CardActions>
-									<UseBtn $active={m.active}>
-										{m.active ? "Engaged" : "Use Model"}
-									</UseBtn>
-									<DeleteBtn>
-										<Icon name="delete" size={16} color={tokens.colors.error} />
-									</DeleteBtn>
-								</CardActions>
-							</Card>
-						))}
+						{filtered.map((m, i) => {
+							const isActive = activeModel === m.name;
+							return (
+								<Card
+									key={m.id}
+									$active={isActive}
+									style={{ animationDelay: `${i * 50}ms` }}
+								>
+									<CardTop>
+										<CardName>
+											<ModelName>{m.name}</ModelName>
+											{isActive && <ActiveBadge>Active</ActiveBadge>}
+										</CardName>
+									</CardTop>
+									<CardMeta>
+										<span>{m.size_label}</span>
+										<span>{m.tag}</span>
+									</CardMeta>
+									<CardActions>
+										<UseBtn $active={isActive} onClick={() => handleUse(m)}>
+											{isActive ? "Engaged" : "Use Model"}
+										</UseBtn>
+										<DeleteBtn onClick={() => handleDelete(m)}>
+											<Icon name="delete" size={16} color={tokens.colors.error} />
+										</DeleteBtn>
+									</CardActions>
+								</Card>
+							);
+						})}
 					</Cards>
 				)}
 			</Page>

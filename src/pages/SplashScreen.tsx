@@ -1,6 +1,8 @@
 import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
+import { modelService } from "@/services";
 import { tokens } from "@/theme/tokens";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -259,6 +261,20 @@ const StatusText = styled.span`
 
 export function SplashScreen() {
 	const navigate = useNavigate();
+
+	useEffect(() => {
+		const timer = setTimeout(async () => {
+			try {
+				const models = await modelService.getDownloadedModels();
+				if (models.length > 0) {
+					navigate("/chat", { replace: true });
+				}
+			} catch {
+				// first launch or error — stay on splash
+			}
+		}, 1500);
+		return () => clearTimeout(timer);
+	}, [navigate]);
 
 	return (
 		<Container data-testid="splash-screen">

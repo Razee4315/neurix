@@ -1,37 +1,19 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { useAppContext } from "@/context/AppContext";
+import { chatService, historyService } from "@/services";
+import type { ChatHistoryEntry } from "@/services/chatService";
+import type { Conversation, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
-
-/* ── Mock Messages ── */
 
 interface Message {
 	role: "ai" | "user";
 	text: string;
 }
-
-const INITIAL_MESSAGES: Message[] = [
-	{
-		role: "ai",
-		text: "Hello! I'm running **Llama 3 8B** locally on your device. How can I help you today?",
-	},
-	{
-		role: "user",
-		text: "Write a Python function to check if a number is prime.",
-	},
-	{
-		role: "ai",
-		text: "Here's a simple and efficient prime checker:\n\n```python\ndef is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n**0.5) + 1):\n        if n % i == 0:\n            return False\n    return True\n```\n\nThis works by checking divisibility only up to the **square root** of `n`, which makes it much faster than checking all numbers up to `n`.\n\nYou can use it like:\n```python\nprint(is_prime(17))  # True\nprint(is_prime(4))   # False\n```",
-	},
-];
-
-const AI_RESPONSES = [
-	"That's a great question! Since I'm running **locally** on your device, all processing happens right here — *no data leaves your phone*.",
-	"Here's what I think:\n\n1. First, consider the **input constraints**\n2. Then, optimize for the common case\n3. Finally, handle edge cases gracefully\n\nWant me to elaborate on any of these?",
-	"Sure! Here's a quick example:\n\n```javascript\nconst greet = (name) => {\n  return `Hello, ${name}!`;\n};\n\nconsole.log(greet('Neurix'));\n```\n\nThis uses an **arrow function** with a template literal for string interpolation.",
-];
 
 /* ── Markdown Parser ── */
 
@@ -378,16 +360,101 @@ const ModelTag = styled.span`
   border-radius: ${tokens.borderRadius.md};
 `;
 
+/* ── No Model Banner ── */
+
+const NoModelBanner = styled.div`
+  padding: 2rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+`;
+
+const GoToModelsBtn = styled.button`
+  padding: 0.625rem 1.25rem;
+  border-radius: ${tokens.borderRadius.md};
+  border: none;
+  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  color: ${tokens.colors.onPrimaryFixed};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  &:active { transform: scale(0.97); }
+`;
+
+/* ── Speed Badge ── */
+
+const SpeedBadge = styled.span`
+  font-size: 10px;
+  font-family: ${tokens.typography.fontFamily.mono};
+  color: ${tokens.colors.onSurfaceVariant};
+  padding: 0.125rem 0.375rem;
+  background: ${tokens.colors.surfaceContainerHighest};
+  border-radius: ${tokens.borderRadius.sm};
+  margin-top: 0.25rem;
+  display: inline-block;
+`;
+
 /* ── Component ── */
 
 export function ChatPage() {
 	const navigate = useNavigate();
-	const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+	const location = useLocation();
+	const { activeModel, settings } = useAppContext();
+	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
-	const [typing, setTyping] = useState(false);
+	const [isGenerating, setIsGenerating] = useState(false);
+	const [streamedText, setStreamedText] = useState("");
+	const [tokensPerSecond, setTokensPerSecond] = useState(0);
+	const [conversationId, setConversationId] = useState<string | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
-	let responseIndex = 0;
+
+	// Load existing conversation if navigated from history
+	useEffect(() => {
+		const state = location.state as { conversationId?: string } | null;
+		if (state?.conversationId) {
+			historyService.loadConversation(state.conversationId).then((conv) => {
+				if (conv) {
+					setConversationId(conv.id);
+					setMessages(
+						conv.messages.map((m) => ({
+							role: m.role === "user" ? "user" : "ai",
+							text: m.content,
+						})),
+					);
+				}
+			});
+		}
+	}, [location.state]);
+
+	// Auto-save conversation after each completed exchange
+	const saveChat = useCallback(
+		async (msgs: Message[]) => {
+			if (!settings?.save_history || msgs.length < 2 || !activeModel) return;
+			const id = conversationId || crypto.randomUUID();
+			if (!conversationId) setConversationId(id);
+
+			const title = msgs[0]?.role === "user" ? msgs[0].text.slice(0, 60) : "Chat";
+			const conv: Conversation = {
+				id,
+				title,
+				model_id: "",
+				model_name: activeModel,
+				created_at: new Date().toISOString(),
+				updated_at: new Date().toISOString(),
+				messages: msgs.map((m) => ({
+					role: m.role === "ai" ? "assistant" : "user",
+					content: m.text,
+					timestamp: new Date().toISOString(),
+				})),
+			};
+			await historyService.saveConversation(conv).catch(() => {});
+		},
+		[conversationId, activeModel, settings?.save_history],
+	);
 
 	const autoResize = useCallback(() => {
 		const el = textareaRef.current;
@@ -398,24 +465,96 @@ export function ChatPage() {
 
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages, typing]);
+	}, [messages, isGenerating, streamedText]);
 
-	const handleSend = () => {
+	const handleEvent = useCallback((event: InferenceEvent) => {
+		const data = event.data;
+		switch (event.event) {
+			case "TokenGenerated": {
+				const d = data as { token: string; tokens_per_second: number };
+				setStreamedText((prev) => prev + d.token);
+				setTokensPerSecond(d.tokens_per_second);
+				break;
+			}
+			case "GenerationComplete": {
+				setIsGenerating(false);
+				setStreamedText((finalText) => {
+					if (finalText) {
+						setMessages((prev) => {
+							const updated = [...prev, { role: "ai" as const, text: finalText }];
+							saveChat(updated);
+							return updated;
+						});
+					}
+					return "";
+				});
+				const d = data as { total_tokens: number; duration_ms: number };
+				if (d.duration_ms > 0) {
+					setTokensPerSecond(d.total_tokens / (d.duration_ms / 1000));
+				}
+				break;
+			}
+			case "Error": {
+				setIsGenerating(false);
+				const d = data as { message: string };
+				setMessages((prev) => [
+					...prev,
+					{ role: "ai", text: `**Error:** ${d.message}` },
+				]);
+				setStreamedText("");
+				break;
+			}
+		}
+	}, []);
+
+	const handleSend = async () => {
 		const text = input.trim();
-		if (!text) return;
+		if (!text || isGenerating || !activeModel) return;
 
 		setMessages((prev) => [...prev, { role: "user", text }]);
 		setInput("");
-		setTyping(true);
+		setIsGenerating(true);
+		setStreamedText("");
+		setTokensPerSecond(0);
 		if (textareaRef.current) textareaRef.current.style.height = "auto";
 
-		const response = AI_RESPONSES[responseIndex % AI_RESPONSES.length];
-		responseIndex++;
+		const history: ChatHistoryEntry[] = [];
+		for (let i = 0; i < messages.length - 1; i += 2) {
+			if (messages[i]?.role === "user" && messages[i + 1]?.role === "ai") {
+				history.push({ user: messages[i].text, assistant: messages[i + 1].text });
+			}
+		}
 
-		setTimeout(() => {
-			setMessages((prev) => [...prev, { role: "ai", text: response }]);
-			setTyping(false);
-		}, 1200);
+		try {
+			await chatService.runInference(
+				text,
+				settings?.system_prompt ?? "",
+				history,
+				settings?.temperature ?? 0.7,
+				settings?.top_p ?? 0.9,
+				settings?.max_tokens ?? 2048,
+				handleEvent,
+			);
+		} catch (err) {
+			setIsGenerating(false);
+			setStreamedText("");
+			setMessages((prev) => [
+				...prev,
+				{ role: "ai", text: `**Error:** ${String(err)}` },
+			]);
+		}
+	};
+
+	const handleStop = () => {
+		chatService.stopInference();
+	};
+
+	const handleNewChat = () => {
+		setMessages([]);
+		setInput("");
+		setStreamedText("");
+		setIsGenerating(false);
+		setConversationId(null);
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -425,17 +564,25 @@ export function ChatPage() {
 		}
 	};
 
+	if (!activeModel) {
+		return (
+			<AppLayout>
+				<NoModelBanner>
+					<EmptyState icon="neurology" message="No model loaded" />
+					<GoToModelsBtn onClick={() => navigate("/models")}>
+						Go to My Models
+					</GoToModelsBtn>
+				</NoModelBanner>
+			</AppLayout>
+		);
+	}
+
 	return (
 		<AppLayout
 			rightActions={
 				<TopBarRight>
-					<ModelTag>Llama 3 8B</ModelTag>
-					<TopBarBtn
-						onClick={() => {
-							setMessages([INITIAL_MESSAGES[0]]);
-							setInput("");
-						}}
-					>
+					<ModelTag>{activeModel}</ModelTag>
+					<TopBarBtn onClick={handleNewChat}>
 						<Icon
 							name="edit_square"
 							size={18}
@@ -454,6 +601,9 @@ export function ChatPage() {
 		>
 			<ChatContainer>
 				<MessagesArea>
+					{messages.length === 0 && !isGenerating && !streamedText && (
+						<EmptyState icon="chat_bubble" message="Start a conversation" />
+					)}
 					{messages.map((msg, i) => (
 						<Bubble key={`msg-${i}-${msg.role}`} $role={msg.role}>
 							<BubbleLabel $role={msg.role}>
@@ -464,12 +614,22 @@ export function ChatPage() {
 							</BubbleBody>
 						</Bubble>
 					))}
-					{typing && (
-						<TypingDots>
-							<span />
-							<span />
-							<span />
-						</TypingDots>
+					{(isGenerating || streamedText) && (
+						<Bubble $role="ai">
+							<BubbleLabel $role="ai">Neurix</BubbleLabel>
+							<BubbleBody>
+								{streamedText ? renderMarkdown(streamedText) : (
+									<TypingDots>
+										<span />
+										<span />
+										<span />
+									</TypingDots>
+								)}
+							</BubbleBody>
+							{settings?.show_speed && tokensPerSecond > 0 && (
+								<SpeedBadge>{tokensPerSecond.toFixed(1)} tok/s</SpeedBadge>
+							)}
+						</Bubble>
 					)}
 					<div ref={messagesEndRef} />
 				</MessagesArea>
@@ -485,18 +645,25 @@ export function ChatPage() {
 						onKeyDown={handleKeyDown}
 						placeholder="Message Neurix..."
 						rows={1}
+						disabled={isGenerating}
 					/>
-					<SendBtn $hasText={input.trim().length > 0} onClick={handleSend}>
-						<Icon
-							name="arrow_upward"
-							size={20}
-							color={
-								input.trim()
-									? tokens.colors.onPrimaryFixed
-									: tokens.colors.onSurfaceVariant
-							}
-						/>
-					</SendBtn>
+					{isGenerating ? (
+						<SendBtn $hasText onClick={handleStop}>
+							<Icon name="stop" size={20} color={tokens.colors.error} />
+						</SendBtn>
+					) : (
+						<SendBtn $hasText={input.trim().length > 0} onClick={handleSend}>
+							<Icon
+								name="arrow_upward"
+								size={20}
+								color={
+									input.trim()
+										? tokens.colors.onPrimaryFixed
+										: tokens.colors.onSurfaceVariant
+								}
+							/>
+						</SendBtn>
+					)}
 				</InputBar>
 			</ChatContainer>
 		</AppLayout>

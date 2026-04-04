@@ -1,6 +1,21 @@
 use log::info;
 use std::env;
 
+mod chat;
+mod commands;
+mod inference;
+mod models;
+mod settings;
+mod state;
+
+use commands::{
+    chat_cmds::{get_active_model, run_inference, stop_inference},
+    history_cmds::{clear_all_conversations, delete_conversation, get_conversations, load_conversation, save_conversation},
+    model_cmds::{cancel_download, delete_model, download_model, get_downloaded_models, get_model_catalog, load_model},
+    settings_cmds::{get_settings, get_storage_info, update_settings},
+};
+use state::SharedState;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "android")]
@@ -25,19 +40,35 @@ pub fn run() {
 
     info!("Starting Neurix");
 
+    let app_state = SharedState::default();
+
     tauri::Builder::default()
+        .manage(app_state)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            get_model_catalog,
+            download_model,
+            cancel_download,
+            get_downloaded_models,
+            delete_model,
+            load_model,
+            get_active_model,
+            run_inference,
+            stop_inference,
+            get_conversations,
+            load_conversation,
+            save_conversation,
+            delete_conversation,
+            clear_all_conversations,
+            get_settings,
+            update_settings,
+            get_storage_info,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Neurix")
-}
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! Welcome to Neurix.", name)
 }

@@ -9,6 +9,7 @@ tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
@@ -20,6 +21,15 @@ tauri-plugin-shell = "2.0"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 simple_logger = "5.0"
+candle-core = "0.9"
+candle-transformers = "0.9"
+candle-nn = "0.9"
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+reqwest = { version = "0.12", features = ["stream"] }
+rand = "0.8"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"

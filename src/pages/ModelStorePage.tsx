@@ -1,45 +1,12 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { modelService } from "@/services";
+import type { ModelInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
-
-/* ── Mock Data ── */
-
-const MODELS = [
-	{
-		name: "Llama 3 8B",
-		desc: "Great for chat, reasoning, and creative writing.",
-		size: "4.1 GB",
-		tag: "Popular",
-	},
-	{
-		name: "Mistral 7B",
-		desc: "Fast and efficient for general tasks.",
-		size: "3.8 GB",
-		tag: "Fast",
-	},
-	{
-		name: "CodeLlama 13B",
-		desc: "Optimized for code generation and debugging.",
-		size: "7.2 GB",
-		tag: "Code",
-	},
-	{
-		name: "Phi-2",
-		desc: "Compact model, ideal for low-end devices.",
-		size: "1.6 GB",
-		tag: "Tiny",
-	},
-	{
-		name: "Gemma 2B",
-		desc: "Lightweight model by Google for on-device use.",
-		size: "1.4 GB",
-		tag: "Tiny",
-	},
-];
 
 const FILTERS = ["All", "Popular", "Code", "Fast", "Tiny"];
 
@@ -198,19 +165,47 @@ const DlIcon = styled.div`
 
 /* ── Component ── */
 
+const DownloadedBadge = styled.span`
+  font-size: 10px;
+  font-weight: ${tokens.typography.fontWeight.bold};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.125rem 0.375rem;
+  border-radius: ${tokens.borderRadius.sm};
+  background: ${tokens.colors.secondary}18;
+  color: ${tokens.colors.secondary};
+`;
+
 export function ModelStorePage() {
 	const navigate = useNavigate();
 	const [filter, setFilter] = useState(0);
 	const [search, setSearch] = useState("");
+	const [catalog, setCatalog] = useState<ModelInfo[]>([]);
+	const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
 
-	const filtered = MODELS.filter((m) => {
+	useEffect(() => {
+		modelService.getCatalog().then(setCatalog);
+		modelService.getDownloadedModels().then((models) => {
+			setDownloadedIds(new Set(models.map((m) => m.id)));
+		});
+	}, []);
+
+	const filtered = catalog.filter((m) => {
 		const matchesSearch =
 			!search ||
 			m.name.toLowerCase().includes(search.toLowerCase()) ||
-			m.desc.toLowerCase().includes(search.toLowerCase());
+			m.description.toLowerCase().includes(search.toLowerCase());
 		const matchesFilter = filter === 0 || m.tag === FILTERS[filter];
 		return matchesSearch && matchesFilter;
 	});
+
+	const handleModelClick = (model: ModelInfo) => {
+		if (downloadedIds.has(model.id)) {
+			navigate("/models");
+		} else {
+			navigate("/downloading", { state: { model } });
+		}
+	};
 
 	return (
 		<AppLayout>
@@ -242,23 +237,27 @@ export function ModelStorePage() {
 					<Cards>
 						{filtered.map((m, i) => (
 							<Card
-								key={m.name}
-								onClick={() => navigate("/downloading")}
+								key={m.id}
+								onClick={() => handleModelClick(m)}
 								style={{ animationDelay: `${i * 50}ms` }}
 							>
 								<CardInfo>
 									<CardName>{m.name}</CardName>
-									<CardDesc>{m.desc}</CardDesc>
+									<CardDesc>{m.description}</CardDesc>
 								</CardInfo>
 								<CardRight>
-									<CardSize>{m.size}</CardSize>
-									<DlIcon>
-										<Icon
-											name="download"
-											size={18}
-											color={tokens.colors.primary}
-										/>
-									</DlIcon>
+									<CardSize>{m.size_label}</CardSize>
+									{downloadedIds.has(m.id) ? (
+										<DownloadedBadge>Downloaded</DownloadedBadge>
+									) : (
+										<DlIcon>
+											<Icon
+												name="download"
+												size={18}
+												color={tokens.colors.primary}
+											/>
+										</DlIcon>
+									)}
 								</CardRight>
 							</Card>
 						))}

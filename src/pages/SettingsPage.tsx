@@ -1,7 +1,10 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Icon } from "@/components/ui/Icon";
+import { useAppContext } from "@/context/AppContext";
+import type { Settings } from "@/services/types";
+import { settingsService } from "@/services";
 import { tokens } from "@/theme/tokens";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import styled from "styled-components";
 
 /* ── Styles ── */
@@ -180,10 +183,57 @@ const UpdateBtn = styled.button`
 /* ── Component ── */
 
 export function SettingsPage() {
+	const { settings, refreshSettings } = useAppContext();
 	const [wifiOnly, setWifiOnly] = useState(false);
 	const [saveHistory, setSaveHistory] = useState(true);
 	const [showSpeed, setShowSpeed] = useState(true);
 	const [prompt, setPrompt] = useState("");
+	const promptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	useEffect(() => {
+		if (settings) {
+			setWifiOnly(settings.wifi_only);
+			setSaveHistory(settings.save_history);
+			setShowSpeed(settings.show_speed);
+			setPrompt(settings.system_prompt);
+		}
+	}, [settings]);
+
+	const persist = useCallback(
+		(patch: Partial<Settings>) => {
+			if (!settings) return;
+			const updated: Settings = { ...settings, ...patch };
+			settingsService.updateSettings(updated).then(() => refreshSettings());
+		},
+		[settings, refreshSettings],
+	);
+
+	const toggleWifi = () => {
+		const next = !wifiOnly;
+		setWifiOnly(next);
+		persist({ wifi_only: next });
+	};
+
+	const toggleHistory = () => {
+		const next = !saveHistory;
+		setSaveHistory(next);
+		persist({ save_history: next });
+	};
+
+	const toggleSpeed = () => {
+		const next = !showSpeed;
+		setShowSpeed(next);
+		persist({ show_speed: next });
+	};
+
+	const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+		const val = e.target.value;
+		setPrompt(val);
+		if (promptTimerRef.current) clearTimeout(promptTimerRef.current);
+		promptTimerRef.current = setTimeout(() => {
+			persist({ system_prompt: val });
+		}, 500);
+	};
 
 	return (
 		<AppLayout>
@@ -201,7 +251,7 @@ export function SettingsPage() {
 								<RowSub>Save mobile data</RowSub>
 							</RowText>
 						</RowLeft>
-						<Toggle $on={wifiOnly} onClick={() => setWifiOnly((v) => !v)} />
+						<Toggle $on={wifiOnly} onClick={toggleWifi} />
 					</ToggleRow>
 
 					<ToggleRow>
@@ -214,10 +264,7 @@ export function SettingsPage() {
 								<RowSub>Keep conversations locally</RowSub>
 							</RowText>
 						</RowLeft>
-						<Toggle
-							$on={saveHistory}
-							onClick={() => setSaveHistory((v) => !v)}
-						/>
+						<Toggle $on={saveHistory} onClick={toggleHistory} />
 					</ToggleRow>
 
 					<ToggleRow>
@@ -230,7 +277,7 @@ export function SettingsPage() {
 								<RowSub>Display inference speed in chat</RowSub>
 							</RowText>
 						</RowLeft>
-						<Toggle $on={showSpeed} onClick={() => setShowSpeed((v) => !v)} />
+						<Toggle $on={showSpeed} onClick={toggleSpeed} />
 					</ToggleRow>
 				</Section>
 
@@ -238,14 +285,12 @@ export function SettingsPage() {
 				<PromptArea
 					placeholder="Customize how the AI responds..."
 					value={prompt}
-					onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-						setPrompt(e.target.value)
-					}
+					onChange={handlePromptChange}
 				/>
 
 				<VersionCard>
 					<VersionInfo>
-						<VersionNumber>v0.1.0</VersionNumber>
+						<VersionNumber>v{import.meta.env.VITE_APP_VERSION}</VersionNumber>
 						<VersionSub>Alpha build</VersionSub>
 					</VersionInfo>
 					<UpdateBtn>
