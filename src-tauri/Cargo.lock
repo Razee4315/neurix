@@ -2760,6 +2760,7 @@ dependencies = [
  "fs2",
  "log",
  "rand 0.8.5",
+ "rayon",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

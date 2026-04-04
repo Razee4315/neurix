@@ -1,2 +1,9 @@
+# ARM64 Android — enable NEON SIMD + FP16 for faster matmul in candle/ggml kernels.
+# NEON is baseline on aarch64 but these flags ensure the compiler fully utilizes
+# advanced SIMD paths (fp16, dotprod for Q4 matmul acceleration).
 [target.aarch64-linux-android]
-rustflags = ["-C", "target-feature=+fp16"]
+rustflags = ["-C", "target-feature=+neon,+fp16,+dotprod"]
+
+# x86_64 Android emulator — no special flags needed
+[target.x86_64-linux-android]
+rustflags = []

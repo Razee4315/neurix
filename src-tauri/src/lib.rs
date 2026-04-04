@@ -8,6 +8,31 @@ mod models;
 mod settings;
 mod state;
 
+/// Configure the Rayon global thread pool for optimal mobile performance.
+/// Research (MNN-AECS 2026) shows that 2 threads is optimal for LLM decode
+/// on Android — more threads cause thermal throttling with zero speed gain
+/// because the decode phase is memory-bound, not compute-bound.
+fn configure_thread_pool() {
+    #[cfg(target_os = "android")]
+    {
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads(2)
+            .build_global();
+    }
+
+    // On desktop, let Rayon auto-detect (all cores is fine with active cooling)
+    #[cfg(not(target_os = "android"))]
+    {
+        // Use at most 4 threads on desktop to keep it reasonable
+        let cores = std::thread::available_parallelism()
+            .map(|n| n.get().min(4))
+            .unwrap_or(4);
+        let _ = rayon::ThreadPoolBuilder::new()
+            .num_threads(cores)
+            .build_global();
+    }
+}
+
 use commands::{
     chat_cmds::{get_active_model, run_inference, stop_inference},
     history_cmds::{clear_all_conversations, delete_conversation, get_conversations, load_conversation, save_conversation},
@@ -38,6 +63,7 @@ pub fn run() {
             .init();
     }
 
+    configure_thread_pool();
     info!("Starting Neurix");
 
     let app_state = SharedState::default();

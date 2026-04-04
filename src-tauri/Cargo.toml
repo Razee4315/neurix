@@ -30,6 +30,7 @@ chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1"
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
 rand = "0.8"
+rayon = "1"
 fs2 = "0.4"
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -48,7 +49,7 @@ name = "neurix-tauri"
 path = "src/main.rs"
 
 [profile.release]
-opt-level = "s"
+opt-level = 2       # Level 2 for fast matmul/inference (was "s" for size — too slow for ML)
 lto = true
 strip = true
 codegen-units = 1
