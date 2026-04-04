@@ -188,6 +188,16 @@ const DlIcon = styled.div`
 export function ModelStorePage() {
 	const navigate = useNavigate();
 	const [filter, setFilter] = useState(0);
+	const [search, setSearch] = useState("");
+
+	const filtered = MODELS.filter((m) => {
+		const matchesSearch =
+			!search ||
+			m.name.toLowerCase().includes(search.toLowerCase()) ||
+			m.desc.toLowerCase().includes(search.toLowerCase());
+		const matchesFilter = filter === 0 || m.tag === FILTERS[filter];
+		return matchesSearch && matchesFilter;
+	});
 
 	return (
 		<AppLayout>
@@ -198,7 +208,11 @@ export function ModelStorePage() {
 					<SearchIconWrap>
 						<Icon name="search" size={18} />
 					</SearchIconWrap>
-					<SearchInput placeholder="Search models..." />
+					<SearchInput
+						placeholder="Search models..."
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+					/>
 				</SearchBox>
 
 				<Chips>
@@ -210,7 +224,7 @@ export function ModelStorePage() {
 				</Chips>
 
 				<Cards>
-					{MODELS.map((m) => (
+					{filtered.map((m) => (
 						<Card key={m.name} onClick={() => navigate("/downloading")}>
 							<CardInfo>
 								<CardName>{m.name}</CardName>

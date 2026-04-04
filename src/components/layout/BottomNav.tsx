@@ -60,7 +60,9 @@ export function BottomNav() {
 		<Nav>
 			<TabList>
 				{NAV_TABS.map((tab) => {
-					const isActive = location.pathname.startsWith(tab.path);
+					const isActive =
+						location.pathname.startsWith(tab.path) ||
+						(tab.path === "/store" && location.pathname === "/downloading");
 					return (
 						<Tab
 							key={tab.path}
