@@ -24,9 +24,11 @@ function renderMarkdown(text: string) {
 	let key = 0;
 
 	while (i < lines.length) {
+		const line = lines[i];
+
 		// Code block
-		if (lines[i].startsWith("```")) {
-			const lang = lines[i].slice(3).trim();
+		if (line.startsWith("```")) {
+			const lang = line.slice(3).trim();
 			const codeLines: string[] = [];
 			i++;
 			while (i < lines.length && !lines[i].startsWith("```")) {
@@ -45,8 +47,46 @@ function renderMarkdown(text: string) {
 			continue;
 		}
 
-		// Regular line
-		const line = lines[i];
+		// Headers: # ## ###
+		const headingMatch = line.match(/^(#{1,3})\s+(.+)/);
+		if (headingMatch) {
+			const level = headingMatch[1].length;
+			parts.push(
+				<Heading key={`h-${key++}`} $level={level}>
+					{renderInline(headingMatch[2])}
+				</Heading>,
+			);
+			i++;
+			continue;
+		}
+
+		// Bullet list: - item or * item
+		const bulletMatch = line.match(/^[\s]*[-*]\s+(.+)/);
+		if (bulletMatch) {
+			parts.push(
+				<ListItem key={`li-${key++}`}>
+					<Bullet>-</Bullet>
+					<span>{renderInline(bulletMatch[1])}</span>
+				</ListItem>,
+			);
+			i++;
+			continue;
+		}
+
+		// Numbered list: 1. item, 2. item
+		const numMatch = line.match(/^[\s]*(\d+)[.)]\s+(.+)/);
+		if (numMatch) {
+			parts.push(
+				<ListItem key={`ni-${key++}`}>
+					<Bullet>{numMatch[1]}.</Bullet>
+					<span>{renderInline(numMatch[2])}</span>
+				</ListItem>,
+			);
+			i++;
+			continue;
+		}
+
+		// Empty line
 		if (line.trim() === "") {
 			parts.push(<br key={`br-${key++}`} />);
 		} else {
@@ -202,6 +242,30 @@ const InlineCode = styled.code`
   padding: 0.125rem 0.375rem;
   border-radius: ${tokens.borderRadius.sm};
   color: ${tokens.colors.primary};
+`;
+
+const Heading = styled.span<{ $level: number }>`
+  display: block;
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  color: ${tokens.colors.onSurface};
+  margin-top: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: ${({ $level }) =>
+		$level === 1 ? "1.25em" : $level === 2 ? "1.1em" : "1em"};
+`;
+
+const ListItem = styled.span`
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.125rem;
+  align-items: baseline;
+`;
+
+const Bullet = styled.span`
+  color: ${tokens.colors.primary};
+  flex-shrink: 0;
+  font-weight: ${tokens.typography.fontWeight.bold};
 `;
 
 const CodeBlock = styled.div`
@@ -706,6 +770,9 @@ export function ChatPage() {
 	const handleSend = async () => {
 		const text = input.trim();
 		if (!text || isGenerating || isLoadingModel) return;
+
+		// Haptic feedback
+		if (navigator.vibrate) navigator.vibrate(10);
 
 		// Auto-load model if none is active
 		if (!activeModel) {

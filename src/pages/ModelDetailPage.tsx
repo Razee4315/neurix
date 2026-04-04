@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Icon } from "@/components/ui/Icon";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { Icon } from "@/components/ui/Icon";
+import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { useDownloads } from "@/context/DownloadContext";
 import { modelService } from "@/services";
 import type { ModelInfo } from "@/services/types";
@@ -189,6 +190,7 @@ export function ModelDetailPage() {
 
 	return (
 		<AppLayout>
+			<OfflineBanner />
 			<Page>
 				<BackBtn onClick={() => navigate("/store")}>
 					<Icon name="arrow_back" size={18} />

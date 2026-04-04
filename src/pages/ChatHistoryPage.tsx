@@ -5,7 +5,7 @@ import { historyService } from "@/services";
 import type { ConversationMeta } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -106,7 +106,27 @@ const slideIn = keyframes`
   to { opacity: 1; transform: translateY(0); }
 `;
 
-const ChatItem = styled.div`
+const SwipeContainer = styled.div`
+  position: relative;
+  overflow: hidden;
+  border-radius: ${tokens.borderRadius.lg};
+  animation: ${slideIn} 0.3s ease-out both;
+`;
+
+const SwipeDeleteBg = styled.div`
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 80px;
+  background: ${tokens.colors.error};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0 ${tokens.borderRadius.lg} ${tokens.borderRadius.lg} 0;
+`;
+
+const ChatItem = styled.div<{ $offset?: number }>`
   width: 100%;
   text-align: left;
   display: flex;
@@ -117,28 +137,12 @@ const ChatItem = styled.div`
   border: none;
   border-radius: ${tokens.borderRadius.lg};
   cursor: pointer;
-  transition: background ${tokens.transitions.fast};
-  animation: ${slideIn} 0.3s ease-out both;
+  transition: ${({ $offset }) => $offset === 0 ? `transform 0.2s ease-out` : "none"};
+  transform: translateX(${({ $offset }) => $offset ?? 0}px);
+  position: relative;
+  z-index: 1;
 
-  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
-  &:active { transform: scale(0.99); }
-`;
-
-const DeleteChatBtn = styled.button`
-  width: 32px;
-  height: 32px;
-  border-radius: ${tokens.borderRadius.md};
-  border: none;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background ${tokens.transitions.fast};
-
-  &:hover { background: ${tokens.colors.error}18; }
-  &:active { transform: scale(0.9); }
+  &:active { background: ${tokens.colors.surfaceContainerHigh}; }
 `;
 
 const ChatIcon = styled.div`
@@ -171,6 +175,58 @@ const ChatMeta = styled.span`
   font-size: ${tokens.typography.fontSize.sm};
   color: ${tokens.colors.onSurfaceVariant};
 `;
+
+/* ── Swipeable Row ── */
+
+function SwipeableRow({
+	renderItem,
+	onDelete,
+}: { renderItem: (offset: number) => React.ReactNode; onDelete: () => void }) {
+	const [offset, setOffset] = useState(0);
+	const startXRef = useRef(0);
+	const currentXRef = useRef(0);
+	const swipingRef = useRef(false);
+
+	const handleTouchStart = (e: React.TouchEvent) => {
+		startXRef.current = e.touches[0].clientX;
+		currentXRef.current = 0;
+		swipingRef.current = false;
+	};
+
+	const handleTouchMove = (e: React.TouchEvent) => {
+		const diff = e.touches[0].clientX - startXRef.current;
+		if (diff < -10) swipingRef.current = true;
+		if (swipingRef.current) {
+			const clamped = Math.max(Math.min(diff, 0), -80);
+			currentXRef.current = clamped;
+			setOffset(clamped);
+		}
+	};
+
+	const handleTouchEnd = () => {
+		if (currentXRef.current < -50) {
+			setOffset(-80);
+		} else {
+			setOffset(0);
+		}
+		swipingRef.current = false;
+	};
+
+	return (
+		<SwipeContainer>
+			<SwipeDeleteBg onClick={onDelete}>
+				<Icon name="delete" size={22} color="#fff" />
+			</SwipeDeleteBg>
+			<div
+				onTouchStart={handleTouchStart}
+				onTouchMove={handleTouchMove}
+				onTouchEnd={handleTouchEnd}
+			>
+				{renderItem(offset)}
+			</div>
+		</SwipeContainer>
+	);
+}
 
 /* ── Component ── */
 
@@ -284,28 +340,28 @@ export function ChatHistoryPage() {
 							</GroupLabel>
 							<ChatList>
 								{items.map((entry) => (
-									<ChatItem
+									<SwipeableRow
 										key={entry.id}
-										onClick={() => navigate("/chat", { state: { conversationId: entry.id } })}
-									>
-										<ChatIcon>
-											<Icon name="chat_bubble" size={18} color={tokens.colors.onSurfaceVariant} />
-										</ChatIcon>
-										<ChatInfo>
-											<ChatTitle>{entry.title}</ChatTitle>
-											<ChatMeta>
-												{entry.model_name} · {formatTime(entry.updated_at)}
-											</ChatMeta>
-										</ChatInfo>
-										<DeleteChatBtn
-											onClick={(e) => {
-												e.stopPropagation();
-												handleDeleteOne(entry.id, entry.title);
-											}}
-										>
-											<Icon name="delete" size={16} color={tokens.colors.error} />
-										</DeleteChatBtn>
-									</ChatItem>
+										onDelete={() => handleDeleteOne(entry.id, entry.title)}
+										renderItem={(offset) => (
+											<ChatItem
+												$offset={offset}
+												onClick={() => {
+													if (offset === 0) navigate("/chat", { state: { conversationId: entry.id } });
+												}}
+											>
+												<ChatIcon>
+													<Icon name="chat_bubble" size={18} color={tokens.colors.onSurfaceVariant} />
+												</ChatIcon>
+												<ChatInfo>
+													<ChatTitle>{entry.title}</ChatTitle>
+													<ChatMeta>
+														{entry.model_name} · {formatTime(entry.updated_at)}
+													</ChatMeta>
+												</ChatInfo>
+											</ChatItem>
+										)}
+									/>
 								))}
 							</ChatList>
 						</div>

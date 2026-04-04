@@ -6,7 +6,7 @@ import { modelService, settingsService } from "@/services";
 import type { DownloadedModel, StorageInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -295,6 +295,26 @@ const LoadingSubtitle = styled.p`
   animation: ${loadingPulse} 2s ease-in-out infinite;
 `;
 
+/* ── Pull to Refresh ── */
+
+const PullIndicator = styled.div<{ $visible: boolean }>`
+  display: flex;
+  justify-content: center;
+  padding: ${({ $visible }) => $visible ? "0.75rem 0" : "0"};
+  height: ${({ $visible }) => $visible ? "auto" : "0"};
+  overflow: hidden;
+  transition: all 0.2s ease;
+`;
+
+const RefreshSpinner = styled.div`
+  width: 20px;
+  height: 20px;
+  border: 2px solid ${tokens.colors.surfaceContainerHighest};
+  border-top-color: ${tokens.colors.primary};
+  border-radius: 50%;
+  animation: ${loadingSpin} 0.8s linear infinite;
+`;
+
 /* ── Component ── */
 
 function formatStorageGB(bytes: number): string {
@@ -307,6 +327,9 @@ export function MyModelsPage() {
 	const { showConfirm, showAlert } = useConfirm();
 	const [search, setSearch] = useState("");
 	const [models, setModels] = useState<DownloadedModel[]>([]);
+	const [isRefreshing, setIsRefreshing] = useState(false);
+	const pullStartRef = useRef(0);
+	const pageRef = useRef<HTMLDivElement>(null);
 	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0 });
 
 	const refresh = useCallback(async () => {
@@ -321,6 +344,24 @@ export function MyModelsPage() {
 	useEffect(() => {
 		refresh();
 	}, [refresh]);
+
+	const handlePullRefresh = async () => {
+		setIsRefreshing(true);
+		await refresh();
+		setIsRefreshing(false);
+	};
+
+	const handleTouchStart = (e: React.TouchEvent) => {
+		pullStartRef.current = e.touches[0].clientY;
+	};
+
+	const handleTouchEnd = (e: React.TouchEvent) => {
+		const diff = e.changedTouches[0].clientY - pullStartRef.current;
+		const el = pageRef.current?.parentElement;
+		if (diff > 80 && el && el.scrollTop <= 0 && !isRefreshing) {
+			handlePullRefresh();
+		}
+	};
 
 	const filtered = models.filter(
 		(m) => !search || m.name.toLowerCase().includes(search.toLowerCase()),
@@ -373,7 +414,10 @@ export function MyModelsPage() {
 					<LoadingSubtitle>Preparing model for inference. This may take a moment on first load.</LoadingSubtitle>
 				</LoadingOverlay>
 			)}
-			<Page>
+			<Page ref={pageRef} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+				<PullIndicator $visible={isRefreshing}>
+					<RefreshSpinner />
+				</PullIndicator>
 				<Title>My Models</Title>
 
 				<SearchBox>

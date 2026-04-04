@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { useDownloads } from "@/context/DownloadContext";
 import { modelService } from "@/services";
 import type { ModelInfo } from "@/services/types";
@@ -234,6 +235,7 @@ export function ModelStorePage() {
 
 	return (
 		<AppLayout>
+			<OfflineBanner />
 			<Page>
 				<Title>Model Store</Title>
 
