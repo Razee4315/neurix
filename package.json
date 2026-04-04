@@ -2,6 +2,7 @@
   "name": "neurix",
   "private": true,
   "version": "0.1.2",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",

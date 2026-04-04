@@ -1,8 +1,11 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use candle_core::{quantized::gguf_file, Device, Tensor};
-use candle_transformers::models::quantized_llama as qlm;
+use candle_core::{quantized::gguf_file, Device, Result as CandleResult, Tensor};
+use candle_transformers::models::quantized_gemma3 as qgemma;
+use candle_transformers::models::quantized_llama as qllama;
+use candle_transformers::models::quantized_phi3 as qphi3;
+use candle_transformers::models::quantized_qwen2 as qqwen2;
 use log::info;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
@@ -12,10 +15,31 @@ use tokio_util::sync::CancellationToken;
 use super::sampler::LogitsSampler;
 use crate::models::catalog::ChatTemplate;
 
+/// Wraps architecture-specific model weights behind a unified interface.
+/// Each variant loads from GGUF using the correct metadata prefix
+/// (llama.*, qwen2.*, phi3.*, gemma2.*) and dispatches forward() accordingly.
+pub enum ModelWeights {
+    Llama(qllama::ModelWeights),
+    Qwen2(qqwen2::ModelWeights),
+    Phi3(qphi3::ModelWeights),
+    Gemma(qgemma::ModelWeights),
+}
+
+impl ModelWeights {
+    pub fn forward(&mut self, x: &Tensor, index_pos: usize) -> CandleResult<Tensor> {
+        match self {
+            Self::Llama(m) => m.forward(x, index_pos),
+            Self::Qwen2(m) => m.forward(x, index_pos),
+            Self::Phi3(m) => m.forward(x, index_pos),
+            Self::Gemma(m) => m.forward(x, index_pos),
+        }
+    }
+}
+
 pub struct LoadedModel {
     pub id: String,
     pub name: String,
-    pub weights: qlm::ModelWeights,
+    pub weights: ModelWeights,
     pub tokenizer: Tokenizer,
     pub chat_template: ChatTemplate,
     pub device: Device,
@@ -43,8 +67,30 @@ pub fn load_model_from_disk(
     info!("Loading GGUF model from {:?}", model_path);
     let mut file = std::fs::File::open(model_path).map_err(|e| format!("Cannot open model: {}", e))?;
     let content = gguf_file::Content::read(&mut file).map_err(|e| format!("Invalid GGUF: {}", e))?;
-    let weights = qlm::ModelWeights::from_gguf(content, &mut file, &device)
-        .map_err(|e| format!("Failed to load weights: {}", e))?;
+
+    info!("Loading weights for architecture: {:?}", chat_template);
+    let weights = match &chat_template {
+        ChatTemplate::Llama3 | ChatTemplate::SmolLM => {
+            let w = qllama::ModelWeights::from_gguf(content, &mut file, &device)
+                .map_err(|e| format!("Failed to load Llama weights: {}", e))?;
+            ModelWeights::Llama(w)
+        }
+        ChatTemplate::Qwen => {
+            let w = qqwen2::ModelWeights::from_gguf(content, &mut file, &device)
+                .map_err(|e| format!("Failed to load Qwen2 weights: {}", e))?;
+            ModelWeights::Qwen2(w)
+        }
+        ChatTemplate::Phi3 => {
+            let w = qphi3::ModelWeights::from_gguf(false, content, &mut file, &device)
+                .map_err(|e| format!("Failed to load Phi3 weights: {}", e))?;
+            ModelWeights::Phi3(w)
+        }
+        ChatTemplate::Gemma => {
+            let w = qgemma::ModelWeights::from_gguf(content, &mut file, &device)
+                .map_err(|e| format!("Failed to load Gemma weights: {}", e))?;
+            ModelWeights::Gemma(w)
+        }
+    };
     info!("Model weights loaded");
 
     let tokenizer = Tokenizer::from_file(tokenizer_path)
@@ -90,24 +136,23 @@ pub fn format_prompt(
         }
         ChatTemplate::Gemma => {
             let mut prompt = String::new();
+            // Gemma doesn't have a system role — prepend system prompt to first user turn
             if !system_prompt.is_empty() {
                 prompt.push_str(&format!(
-                    "<start_of_turn>user\n{}\n{}<end_of_turn>\n",
-                    system_prompt, user_msg
-                ));
-            } else {
-                for (user, assistant) in messages {
-                    prompt.push_str(&format!(
-                        "<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n{}<end_of_turn>\n",
-                        user, assistant
-                    ));
-                }
-                prompt.push_str(&format!(
-                    "<start_of_turn>user\n{}<end_of_turn>\n",
-                    user_msg
+                    "<start_of_turn>user\nSystem: {}<end_of_turn>\n",
+                    system_prompt
                 ));
             }
-            prompt.push_str("<start_of_turn>model\n");
+            for (user, assistant) in messages {
+                prompt.push_str(&format!(
+                    "<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n{}<end_of_turn>\n",
+                    user, assistant
+                ));
+            }
+            prompt.push_str(&format!(
+                "<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n",
+                user_msg
+            ));
             prompt
         }
         ChatTemplate::SmolLM | ChatTemplate::Phi3 => {
