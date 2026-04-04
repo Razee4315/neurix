@@ -34,6 +34,10 @@ impl ModelWeights {
             Self::Gemma(m) => m.forward(x, index_pos),
         }
     }
+
+    // Note: KV cache is auto-reset when forward() is called with index_pos=0.
+    // Candle's quantized models replace (not append) the cache at pos 0.
+    // Our prompt chunking always starts at pos=0, so no explicit clear needed.
 }
 
 pub struct LoadedModel {
@@ -43,6 +47,7 @@ pub struct LoadedModel {
     pub tokenizer: Tokenizer,
     pub chat_template: ChatTemplate,
     pub device: Device,
+    pub context_length: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +66,7 @@ pub fn load_model_from_disk(
     model_path: &PathBuf,
     tokenizer_path: &PathBuf,
     chat_template: ChatTemplate,
+    context_length: usize,
 ) -> Result<LoadedModel, String> {
     let device = Device::Cpu;
 
@@ -104,6 +110,7 @@ pub fn load_model_from_disk(
         tokenizer,
         chat_template,
         device,
+        context_length,
     })
 }
 
@@ -250,11 +257,27 @@ pub fn run_generation(
     channel: &Channel<InferenceEvent>,
     cancel_token: &CancellationToken,
 ) -> Result<(), String> {
+    // KV cache is automatically reset when the first chunk is processed at index_pos=0
+    // (candle's quantized models replace instead of append at pos 0).
+
     let tokens = model
         .tokenizer
         .encode(prompt, true)
         .map_err(|e| format!("Tokenization failed: {}", e))?;
-    let prompt_tokens = tokens.get_ids().to_vec();
+    let mut prompt_tokens = tokens.get_ids().to_vec();
+
+    // Truncate prompt to fit within context window: prompt + max_tokens must not exceed it.
+    // This prevents "cannot broadcast [X] to [Y]" errors from exceeding RoPE embeddings.
+    let max_prompt_len = model.context_length.saturating_sub(max_tokens as usize);
+    if prompt_tokens.len() > max_prompt_len {
+        info!(
+            "Truncating prompt from {} to {} tokens (context_length={}, max_tokens={})",
+            prompt_tokens.len(), max_prompt_len, model.context_length, max_tokens
+        );
+        // Keep the end of the prompt (most recent context is more important than old history)
+        let start = prompt_tokens.len() - max_prompt_len;
+        prompt_tokens = prompt_tokens[start..].to_vec();
+    }
     let prompt_len = prompt_tokens.len();
 
     // Keep full sequence for positional indexing, but track generated tokens separately.

@@ -127,6 +127,7 @@ pub async fn load_model(
     let name = catalog_entry.name.clone();
     let mid = model_id.clone();
     let template = catalog_entry.chat_template.clone();
+    let ctx_len = catalog_entry.context_length;
 
     let loaded = tokio::task::spawn_blocking(move || {
         crate::inference::engine::load_model_from_disk(
@@ -135,6 +136,7 @@ pub async fn load_model(
             &model_path,
             &tokenizer_path,
             template,
+            ctx_len,
         )
     })
     .await
