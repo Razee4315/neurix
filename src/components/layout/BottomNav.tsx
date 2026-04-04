@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { tokens } from "@/theme/tokens";
+import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -55,6 +56,23 @@ const TabLabel = styled.span<{ $active: boolean }>`
 export function BottomNav() {
 	const location = useLocation();
 	const navigate = useNavigate();
+	const [keyboardOpen, setKeyboardOpen] = useState(false);
+
+	useEffect(() => {
+		const vv = window.visualViewport;
+		if (!vv) return;
+
+		const onResize = () => {
+			// If visual viewport is significantly smaller than window, keyboard is open
+			const keyboardVisible = vv.height < window.innerHeight * 0.75;
+			setKeyboardOpen(keyboardVisible);
+		};
+
+		vv.addEventListener("resize", onResize);
+		return () => vv.removeEventListener("resize", onResize);
+	}, []);
+
+	if (keyboardOpen) return null;
 
 	return (
 		<Nav>

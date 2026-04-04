@@ -1,4 +1,5 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { useAppContext } from "@/context/AppContext";
 import type { Settings } from "@/services/types";
@@ -183,40 +184,6 @@ const SliderInput = styled.input`
   }
 `;
 
-/* ── Action Buttons ── */
-
-const ActionButton = styled.button<{ $danger?: boolean }>`
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.875rem 1rem;
-  background: none;
-  border: none;
-  border-radius: ${tokens.borderRadius.md};
-  cursor: pointer;
-  transition: background ${tokens.transitions.fast};
-  color: ${({ $danger }) => $danger ? tokens.colors.error : tokens.colors.onSurface};
-
-  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
-  &:active { transform: scale(0.98); }
-`;
-
-const ActionText = styled.div<{ $danger?: boolean }>`
-  min-width: 0;
-`;
-
-const ActionTitle = styled.div<{ $danger?: boolean }>`
-  font-size: ${tokens.typography.fontSize.base};
-  font-weight: ${tokens.typography.fontWeight.medium};
-  color: inherit;
-`;
-
-const ActionSub = styled.div`
-  font-size: ${tokens.typography.fontSize.sm};
-  color: ${tokens.colors.onSurfaceVariant};
-`;
-
 /* ── Version ── */
 
 const VersionCard = styled.div`
@@ -266,6 +233,8 @@ const UpdateBtn = styled.button`
 export function SettingsPage() {
 	const navigate = useNavigate();
 	const { settings, refreshSettings } = useAppContext();
+	const { showConfirm } = useConfirm();
+	const [showInference, setShowInference] = useState(false);
 	const [wifiOnly, setWifiOnly] = useState(false);
 	const [saveHistory, setSaveHistory] = useState(true);
 	const [showSpeed, setShowSpeed] = useState(true);
@@ -351,6 +320,14 @@ export function SettingsPage() {
 	};
 
 	const handleClearHistory = async () => {
+		const ok = await showConfirm({
+			title: "Clear History",
+			message: "Delete all chat history? This cannot be undone.",
+			confirmLabel: "Delete All",
+			cancelLabel: "Cancel",
+			danger: true,
+		});
+		if (!ok) return;
 		try {
 			await historyService.clearAllConversations();
 		} catch {
@@ -359,6 +336,13 @@ export function SettingsPage() {
 	};
 
 	const handleResetDefaults = async () => {
+		const ok = await showConfirm({
+			title: "Reset Settings",
+			message: "Restore all settings to their default values?",
+			confirmLabel: "Reset",
+			cancelLabel: "Cancel",
+		});
+		if (!ok) return;
 		const defaults: Settings = {
 			wifi_only: false,
 			save_history: true,
@@ -426,72 +410,95 @@ export function SettingsPage() {
 					onChange={handlePromptChange}
 				/>
 
-				<SectionLabel style={{ marginTop: "1rem" }}>Inference</SectionLabel>
-				<Section>
-					<SliderRow>
-						<SliderLabel>
-							<SliderTitle>Temperature</SliderTitle>
-							<SliderValue>{temperature.toFixed(2)}</SliderValue>
-						</SliderLabel>
-						<SliderInput
-							type="range"
-							min="0"
-							max="2"
-							step="0.05"
-							value={temperature}
-							onChange={handleTemperature}
+				<Section style={{ marginTop: "1rem" }}>
+					<ToggleRow onClick={() => setShowInference(!showInference)} style={{ cursor: "pointer" }}>
+						<RowLeft>
+							<RowIcon>
+								<Icon name="tune" size={18} color={tokens.colors.primary} />
+							</RowIcon>
+							<RowText>
+								<RowTitle>Inference Settings</RowTitle>
+								<RowSub>Temperature, Top P, Max Tokens</RowSub>
+							</RowText>
+						</RowLeft>
+						<Icon
+							name={showInference ? "expand_less" : "expand_more"}
+							size={20}
+							color={tokens.colors.onSurfaceVariant}
 						/>
-					</SliderRow>
-					<SliderRow>
-						<SliderLabel>
-							<SliderTitle>Top P</SliderTitle>
-							<SliderValue>{topP.toFixed(2)}</SliderValue>
-						</SliderLabel>
-						<SliderInput
-							type="range"
-							min="0.1"
-							max="1"
-							step="0.05"
-							value={topP}
-							onChange={handleTopP}
-						/>
-					</SliderRow>
-					<SliderRow>
-						<SliderLabel>
-							<SliderTitle>Max Tokens</SliderTitle>
-							<SliderValue>{maxTokens}</SliderValue>
-						</SliderLabel>
-						<SliderInput
-							type="range"
-							min="256"
-							max="4096"
-							step="256"
-							value={maxTokens}
-							onChange={handleMaxTokens}
-						/>
-					</SliderRow>
+					</ToggleRow>
+
+					{showInference && (
+						<>
+							<SliderRow>
+								<SliderLabel>
+									<SliderTitle>Temperature</SliderTitle>
+									<SliderValue>{temperature.toFixed(2)}</SliderValue>
+								</SliderLabel>
+								<SliderInput
+									type="range"
+									min="0"
+									max="2"
+									step="0.05"
+									value={temperature}
+									onChange={handleTemperature}
+								/>
+							</SliderRow>
+							<SliderRow>
+								<SliderLabel>
+									<SliderTitle>Top P</SliderTitle>
+									<SliderValue>{topP.toFixed(2)}</SliderValue>
+								</SliderLabel>
+								<SliderInput
+									type="range"
+									min="0.1"
+									max="1"
+									step="0.05"
+									value={topP}
+									onChange={handleTopP}
+								/>
+							</SliderRow>
+							<SliderRow>
+								<SliderLabel>
+									<SliderTitle>Max Tokens</SliderTitle>
+									<SliderValue>{maxTokens}</SliderValue>
+								</SliderLabel>
+								<SliderInput
+									type="range"
+									min="256"
+									max="4096"
+									step="256"
+									value={maxTokens}
+									onChange={handleMaxTokens}
+								/>
+							</SliderRow>
+						</>
+					)}
 				</Section>
 
-				<SectionLabel style={{ marginTop: "1rem" }}>Data</SectionLabel>
-				<Section>
-					<ActionButton onClick={handleClearHistory} $danger>
-						<RowIcon>
-							<Icon name="delete_sweep" size={18} color={tokens.colors.error} />
-						</RowIcon>
-						<ActionText>
-							<ActionTitle $danger>Clear chat history</ActionTitle>
-							<ActionSub>Delete all saved conversations</ActionSub>
-						</ActionText>
-					</ActionButton>
-					<ActionButton onClick={handleResetDefaults}>
-						<RowIcon>
-							<Icon name="restart_alt" size={18} color={tokens.colors.primary} />
-						</RowIcon>
-						<ActionText>
-							<ActionTitle>Reset to defaults</ActionTitle>
-							<ActionSub>Restore all settings to original values</ActionSub>
-						</ActionText>
-					</ActionButton>
+				<Section style={{ marginTop: "1rem" }}>
+					<ToggleRow onClick={handleClearHistory} style={{ cursor: "pointer" }}>
+						<RowLeft>
+							<RowIcon>
+								<Icon name="delete_sweep" size={18} color={tokens.colors.error} />
+							</RowIcon>
+							<RowText>
+								<RowTitle style={{ color: tokens.colors.error }}>Clear chat history</RowTitle>
+								<RowSub>Delete all saved conversations</RowSub>
+							</RowText>
+						</RowLeft>
+					</ToggleRow>
+					<ToggleRow onClick={handleResetDefaults} style={{ cursor: "pointer" }}>
+						<RowLeft>
+							<RowIcon>
+								<Icon name="restart_alt" size={18} color={tokens.colors.onSurfaceVariant} />
+							</RowIcon>
+							<RowText>
+								<RowTitle>Reset to defaults</RowTitle>
+								<RowSub>Restore all settings</RowSub>
+							</RowText>
+						</RowLeft>
+					</ToggleRow>
 				</Section>
 
 				<VersionCard>

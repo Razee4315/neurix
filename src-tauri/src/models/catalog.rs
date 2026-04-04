@@ -34,7 +34,7 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             tag: "Tiny".into(),
             hf_repo: "bartowski/Llama-3.2-1B-Instruct-GGUF".into(),
             hf_filename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf".into(),
-            tokenizer_repo: "meta-llama/Llama-3.2-1B-Instruct".into(),
+            tokenizer_repo: "unsloth/Llama-3.2-1B-Instruct".into(),
             chat_template: ChatTemplate::Llama3,
         },
         ModelInfo {
@@ -58,7 +58,7 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             tag: "Fast".into(),
             hf_repo: "bartowski/gemma-2-2b-it-GGUF".into(),
             hf_filename: "gemma-2-2b-it-Q4_K_M.gguf".into(),
-            tokenizer_repo: "google/gemma-2-2b-it".into(),
+            tokenizer_repo: "unsloth/gemma-2-2b-it".into(),
             chat_template: ChatTemplate::Gemma,
         },
         ModelInfo {
@@ -70,7 +70,7 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             tag: "Popular".into(),
             hf_repo: "bartowski/Llama-3.2-3B-Instruct-GGUF".into(),
             hf_filename: "Llama-3.2-3B-Instruct-Q4_K_M.gguf".into(),
-            tokenizer_repo: "meta-llama/Llama-3.2-3B-Instruct".into(),
+            tokenizer_repo: "unsloth/Llama-3.2-3B-Instruct".into(),
             chat_template: ChatTemplate::Llama3,
         },
         ModelInfo {

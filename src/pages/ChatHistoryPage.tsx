@@ -4,7 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { historyService } from "@/services";
 import type { ConversationMeta } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -206,6 +206,7 @@ function formatTime(dateStr: string): string {
 
 export function ChatHistoryPage() {
 	const navigate = useNavigate();
+	const { showConfirm } = useConfirm();
 	const [search, setSearch] = useState("");
 	const [conversations, setConversations] = useState<ConversationMeta[]>([]);
 
@@ -219,9 +220,12 @@ export function ChatHistoryPage() {
 	}, [refresh]);
 
 	const handleDeleteOne = async (id: string, title: string) => {
-		const ok = await confirm(`Delete "${title}"?`, {
+		const ok = await showConfirm({
 			title: "Delete Conversation",
-			kind: "warning",
+			message: `Delete "${title}"?`,
+			confirmLabel: "Delete",
+			cancelLabel: "Cancel",
+			danger: true,
 		});
 		if (!ok) return;
 		await historyService.deleteConversation(id);
@@ -229,9 +233,12 @@ export function ChatHistoryPage() {
 	};
 
 	const handleClearAll = async () => {
-		const ok = await confirm("Delete all chat history? This cannot be undone.", {
+		const ok = await showConfirm({
 			title: "Clear History",
-			kind: "warning",
+			message: "Delete all chat history? This cannot be undone.",
+			confirmLabel: "Delete All",
+			cancelLabel: "Cancel",
+			danger: true,
 		});
 		if (!ok) return;
 		await historyService.clearAllConversations();

@@ -155,7 +155,7 @@ pub fn format_prompt(
             ));
             prompt
         }
-        ChatTemplate::SmolLM | ChatTemplate::Phi3 => {
+        ChatTemplate::Phi3 => {
             let mut prompt = String::new();
             if !system_prompt.is_empty() {
                 prompt.push_str(&format!("<|system|>\n{}<|end|>\n", system_prompt));
@@ -169,7 +169,7 @@ pub fn format_prompt(
             prompt.push_str(&format!("<|user|>\n{}<|end|>\n<|assistant|>\n", user_msg));
             prompt
         }
-        ChatTemplate::Qwen => {
+        ChatTemplate::SmolLM | ChatTemplate::Qwen => {
             let mut prompt = String::new();
             if !system_prompt.is_empty() {
                 prompt.push_str(&format!(
@@ -206,6 +206,8 @@ const STOP_SEQUENCES: &[&str] = &[
     "<|start_header_id|>",
     "<|end|>",
     "<|user|>",
+    "<|system|>",
+    "<|assistant|>",
     "<|endoftext|>",
 ];
 

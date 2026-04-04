@@ -1,3 +1,4 @@
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { AppProvider } from "@/context/AppContext";
 import { DownloadProvider } from "@/context/DownloadContext";
 import { ChatHistoryPage } from "@/pages/ChatHistoryPage";
@@ -19,6 +20,7 @@ function App() {
 			<GlobalStyles />
 			<AppProvider>
 				<DownloadProvider>
+				<ConfirmProvider>
 				<HashRouter>
 					<div className="app-container">
 						<Routes>
@@ -35,6 +37,7 @@ function App() {
 						</Routes>
 					</div>
 				</HashRouter>
+				</ConfirmProvider>
 				</DownloadProvider>
 			</AppProvider>
 		</ThemeProvider>

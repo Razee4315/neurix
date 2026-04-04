@@ -5,7 +5,7 @@ import { useAppContext } from "@/context/AppContext";
 import { modelService, settingsService } from "@/services";
 import type { DownloadedModel, StorageInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -255,6 +255,7 @@ function formatStorageGB(bytes: number): string {
 export function MyModelsPage() {
 	const navigate = useNavigate();
 	const { activeModel, refreshActiveModel } = useAppContext();
+	const { showConfirm, showAlert } = useConfirm();
 	const [search, setSearch] = useState("");
 	const [models, setModels] = useState<DownloadedModel[]>([]);
 	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0 });
@@ -289,16 +290,19 @@ export function MyModelsPage() {
 			await refreshActiveModel();
 			navigate("/chat");
 		} catch (err) {
-			alert(`Failed to load model: ${String(err)}`);
+			showAlert("Load Failed", String(err));
 		} finally {
 			setLoadingModelId(null);
 		}
 	};
 
 	const handleDelete = async (model: DownloadedModel) => {
-		const ok = await confirm(`Delete "${model.name}"? This will free ${model.size_label} of storage.`, {
+		const ok = await showConfirm({
 			title: "Delete Model",
-			kind: "warning",
+			message: `Delete "${model.name}"? This will free ${model.size_label} of storage.`,
+			confirmLabel: "Delete",
+			cancelLabel: "Cancel",
+			danger: true,
 		});
 		if (!ok) return;
 		await modelService.deleteModel(model.id);
