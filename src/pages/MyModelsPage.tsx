@@ -390,9 +390,14 @@ export function MyModelsPage() {
 	};
 
 	const handleDelete = async (model: DownloadedModel) => {
+		const isActive = activeModel === model.name;
+		const message = isActive
+			? `"${model.name}" is currently loaded. Deleting it will unload the model and free ${model.size_label} of storage.`
+			: `Delete "${model.name}"? This will free ${model.size_label} of storage.`;
+
 		const ok = await showConfirm({
-			title: "Delete Model",
-			message: `Delete "${model.name}"? This will free ${model.size_label} of storage.`,
+			title: isActive ? "Delete Active Model" : "Delete Model",
+			message,
 			confirmLabel: "Delete",
 			cancelLabel: "Cancel",
 			danger: true,

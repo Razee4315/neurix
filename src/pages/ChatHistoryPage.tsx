@@ -113,17 +113,32 @@ const SwipeContainer = styled.div`
   animation: ${slideIn} 0.3s ease-out both;
 `;
 
-const SwipeDeleteBg = styled.div`
+const SwipeActions = styled.div`
   position: absolute;
   top: 0;
   right: 0;
   bottom: 0;
   width: 80px;
+  display: flex;
+  align-items: stretch;
+  border-radius: 0 ${tokens.borderRadius.lg} ${tokens.borderRadius.lg} 0;
+  overflow: hidden;
+`;
+
+const SwipeShareBg = styled.div`
+  flex: 1;
+  background: ${tokens.colors.primary};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const SwipeDeleteBg = styled.div`
+  flex: 1;
   background: ${tokens.colors.error};
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 0 ${tokens.borderRadius.lg} ${tokens.borderRadius.lg} 0;
 `;
 
 const ChatItem = styled.div<{ $offset?: number }>`
@@ -181,7 +196,8 @@ const ChatMeta = styled.span`
 function SwipeableRow({
 	renderItem,
 	onDelete,
-}: { renderItem: (offset: number) => React.ReactNode; onDelete: () => void }) {
+	onShare,
+}: { renderItem: (offset: number) => React.ReactNode; onDelete: () => void; onShare: () => void }) {
 	const [offset, setOffset] = useState(0);
 	const startXRef = useRef(0);
 	const currentXRef = useRef(0);
@@ -214,9 +230,14 @@ function SwipeableRow({
 
 	return (
 		<SwipeContainer>
-			<SwipeDeleteBg onClick={onDelete}>
-				<Icon name="delete" size={22} color="#fff" />
-			</SwipeDeleteBg>
+			<SwipeActions>
+				<SwipeShareBg onClick={onShare}>
+					<Icon name="share" size={18} color="#fff" />
+				</SwipeShareBg>
+				<SwipeDeleteBg onClick={onDelete}>
+					<Icon name="delete" size={18} color="#fff" />
+				</SwipeDeleteBg>
+			</SwipeActions>
 			<div
 				onTouchStart={handleTouchStart}
 				onTouchMove={handleTouchMove}
@@ -288,6 +309,32 @@ export function ChatHistoryPage() {
 		setConversations((prev) => prev.filter((c) => c.id !== id));
 	};
 
+	const handleExport = async (id: string, title: string) => {
+		const conv = await historyService.loadConversation(id);
+		if (!conv) return;
+
+		const lines = [
+			`# ${title}`,
+			`Model: ${conv.model_name}`,
+			`Date: ${new Date(conv.created_at).toLocaleDateString()}`,
+			"",
+			...conv.messages.map((m) =>
+				`**${m.role === "user" ? "You" : "Neurix"}**: ${m.content}`
+			),
+		];
+		const text = lines.join("\n\n");
+
+		if (navigator.share) {
+			try {
+				await navigator.share({ title: `Neurix - ${title}`, text });
+				return;
+			} catch {
+				// Cancelled or failed
+			}
+		}
+		await navigator.clipboard.writeText(text);
+	};
+
 	const handleClearAll = async () => {
 		const ok = await showConfirm({
 			title: "Clear History",
@@ -343,6 +390,7 @@ export function ChatHistoryPage() {
 									<SwipeableRow
 										key={entry.id}
 										onDelete={() => handleDeleteOne(entry.id, entry.title)}
+										onShare={() => handleExport(entry.id, entry.title)}
 										renderItem={(offset) => (
 											<ChatItem
 												$offset={offset}

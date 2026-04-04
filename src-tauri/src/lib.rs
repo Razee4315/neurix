@@ -12,7 +12,7 @@ use commands::{
     chat_cmds::{get_active_model, run_inference, stop_inference},
     history_cmds::{clear_all_conversations, delete_conversation, get_conversations, load_conversation, save_conversation},
     model_cmds::{cancel_download, delete_model, download_model, get_active_downloads, get_downloaded_models, get_model_catalog, load_model},
-    settings_cmds::{check_available_space, get_settings, get_storage_info, update_settings},
+    settings_cmds::{check_available_space, get_available_space, get_settings, get_storage_info, update_settings},
 };
 use state::SharedState;
 
@@ -70,6 +70,7 @@ pub fn run() {
             update_settings,
             get_storage_info,
             check_available_space,
+            get_available_space,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Neurix")

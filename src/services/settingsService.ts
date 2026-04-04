@@ -16,3 +16,7 @@ export async function getStorageInfo(): Promise<StorageInfo> {
 export async function checkAvailableSpace(requiredBytes: number): Promise<boolean> {
 	return invoke("check_available_space", { requiredBytes });
 }
+
+export async function getAvailableSpace(): Promise<number> {
+	return invoke("get_available_space");
+}

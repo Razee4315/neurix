@@ -170,13 +170,16 @@ const ChatContainer = styled.div`
   height: 100%;
 `;
 
-const MessagesArea = styled.div`
+const FONT_SIZES = { small: "13px", medium: "15px", large: "17px" };
+
+const MessagesArea = styled.div<{ $fontSize?: string }>`
   flex: 1;
   overflow-y: auto;
   padding: 1rem 1rem 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+  font-size: ${({ $fontSize }) => $fontSize || "15px"};
 
   &::-webkit-scrollbar { width: 0; }
   scrollbar-width: none;
@@ -321,19 +324,19 @@ const CodePre = styled.pre`
 
 /* ── Message Actions ── */
 
-const MessageActions = styled.div`
+const MessageActions = styled.div<{ $visible: boolean }>`
   display: flex;
   gap: 0.25rem;
   margin-top: 0.375rem;
-  opacity: 0;
-  transition: opacity ${tokens.transitions.fast};
+  opacity: ${({ $visible }) => $visible ? 1 : 0};
+  max-height: ${({ $visible }) => $visible ? "40px" : "0"};
+  overflow: hidden;
+  transition: all 0.15s ease;
 `;
 
 const BubbleWrap = styled.div`
   display: flex;
   flex-direction: column;
-
-  &:hover ${MessageActions} { opacity: 1; }
 `;
 
 const MsgActionBtn = styled.button<{ $copied?: boolean }>`
@@ -558,6 +561,8 @@ export function ChatPage() {
 	const [conversationId, setConversationId] = useState<string | null>(null);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const [activeMessageIdx, setActiveMessageIdx] = useState<number | null>(null);
+	const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// Load existing conversation if navigated from history
 	useEffect(() => {
@@ -859,6 +864,33 @@ export function ChatPage() {
 		}
 	};
 
+	const handleLongPressStart = (idx: number) => {
+		longPressRef.current = setTimeout(() => {
+			if (navigator.vibrate) navigator.vibrate(15);
+			setActiveMessageIdx((prev) => prev === idx ? null : idx);
+		}, 400);
+	};
+
+	const handleLongPressEnd = () => {
+		if (longPressRef.current) {
+			clearTimeout(longPressRef.current);
+			longPressRef.current = null;
+		}
+	};
+
+	const handleDeleteMessage = (idx: number) => {
+		setMessages((prev) => prev.filter((_, i) => i !== idx));
+		setActiveMessageIdx(null);
+	};
+
+	const handleShareMessage = async (text: string) => {
+		if (navigator.share) {
+			try { await navigator.share({ text }); return; } catch { /* cancelled */ }
+		}
+		await navigator.clipboard.writeText(text);
+		setActiveMessageIdx(null);
+	};
+
 	const handleShareChat = async () => {
 		if (messages.length === 0) return;
 		const text = messages
@@ -941,7 +973,7 @@ export function ChatPage() {
 			}
 		>
 			<ChatContainer>
-				<MessagesArea>
+				<MessagesArea $fontSize={FONT_SIZES[settings?.font_size || "medium"]}>
 					{messages.length === 0 && !isGenerating && !streamedText && (
 						<EmptyState
 						icon="chat_bubble"
@@ -951,7 +983,12 @@ export function ChatPage() {
 					)}
 					{messages.map((msg, i) => (
 						<BubbleWrap key={`msg-${i}-${msg.role}`}>
-							<Bubble $role={msg.role}>
+							<Bubble
+								$role={msg.role}
+								onTouchStart={() => handleLongPressStart(i)}
+								onTouchEnd={handleLongPressEnd}
+								onTouchCancel={handleLongPressEnd}
+							>
 								<BubbleLabel $role={msg.role}>
 									{msg.role === "ai" ? "Neurix" : "You"}
 								</BubbleLabel>
@@ -959,17 +996,23 @@ export function ChatPage() {
 									{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
 								</BubbleBody>
 							</Bubble>
-							{msg.role === "ai" && !isGenerating && (
-								<MessageActions>
-									<MessageCopyBtn text={msg.text} />
-									{i === messages.length - 1 && (
-										<MsgActionBtn onClick={handleRegenerate}>
-											<Icon name="refresh" size={12} />
-											Retry
-										</MsgActionBtn>
-									)}
-								</MessageActions>
-							)}
+							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
+								<MessageCopyBtn text={msg.text} />
+								<MsgActionBtn onClick={() => handleShareMessage(msg.text)}>
+									<Icon name="share" size={12} />
+									Share
+								</MsgActionBtn>
+								<MsgActionBtn onClick={() => handleDeleteMessage(i)}>
+									<Icon name="delete" size={12} />
+									Delete
+								</MsgActionBtn>
+								{msg.role === "ai" && i === messages.length - 1 && (
+									<MsgActionBtn onClick={handleRegenerate}>
+										<Icon name="refresh" size={12} />
+										Retry
+									</MsgActionBtn>
+								)}
+							</MessageActions>
 						</BubbleWrap>
 					))}
 					{(isGenerating || streamedText) && (

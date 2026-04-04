@@ -3,7 +3,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { useDownloads } from "@/context/DownloadContext";
-import { modelService } from "@/services";
+import { modelService, settingsService } from "@/services";
 import type { ModelInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useState } from "react";
@@ -201,6 +201,18 @@ const RecommendedBadge = styled.span`
   border: 1px solid ${tokens.colors.primary}33;
 `;
 
+const StorageHint = styled.div`
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.onSurfaceVariant};
+  padding: 0.375rem 0.75rem;
+  background: ${tokens.colors.surfaceContainerLow};
+  border-radius: ${tokens.borderRadius.md};
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+`;
+
 export function ModelStorePage() {
 	const navigate = useNavigate();
 	const { downloads } = useDownloads();
@@ -208,9 +220,13 @@ export function ModelStorePage() {
 	const [search, setSearch] = useState("");
 	const [catalog, setCatalog] = useState<ModelInfo[]>([]);
 	const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+	const [freeSpace, setFreeSpace] = useState<string | null>(null);
 
 	useEffect(() => {
 		modelService.getCatalog().then(setCatalog);
+		settingsService.getAvailableSpace().then((bytes) => {
+			setFreeSpace((bytes / (1024 * 1024 * 1024)).toFixed(1));
+		}).catch(() => {});
 		modelService.getDownloadedModels().then((models) => {
 			setDownloadedIds(new Set(models.map((m) => m.id)));
 		});
@@ -257,6 +273,13 @@ export function ModelStorePage() {
 						</Chip>
 					))}
 				</Chips>
+
+				{freeSpace && (
+					<StorageHint>
+						<Icon name="storage" size={14} color={tokens.colors.onSurfaceVariant} />
+						{freeSpace} GB free on device
+					</StorageHint>
+				)}
 
 				{filtered.length === 0 ? (
 					<EmptyState message="No models match your search" />

@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+fn default_font_size() -> String {
+    "medium".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub wifi_only: bool,
@@ -9,6 +13,8 @@ pub struct Settings {
     pub temperature: f64,
     pub top_p: f64,
     pub max_tokens: u32,
+    #[serde(default = "default_font_size")]
+    pub font_size: String,
     #[serde(default)]
     pub last_model_id: Option<String>,
 }
@@ -23,6 +29,7 @@ impl Default for Settings {
             temperature: 0.4,
             top_p: 0.9,
             max_tokens: 512,
+            font_size: "medium".to_string(),
             last_model_id: None,
         }
     }

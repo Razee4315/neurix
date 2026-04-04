@@ -71,6 +71,7 @@ export interface Settings {
 	temperature: number;
 	top_p: number;
 	max_tokens: number;
+	font_size: "small" | "medium" | "large";
 	last_model_id?: string | null;
 }
 

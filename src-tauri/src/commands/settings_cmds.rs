@@ -83,3 +83,14 @@ pub async fn check_available_space(app: AppHandle, required_bytes: u64) -> Resul
     // Require extra 100MB headroom beyond model size
     Ok(available > required_bytes + 100_000_000)
 }
+
+#[tauri::command]
+pub async fn get_available_space(app: AppHandle) -> Result<u64, String> {
+    let data_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let check_path = if data_dir.exists() {
+        data_dir.clone()
+    } else {
+        data_dir.parent().unwrap_or(Path::new("/")).to_path_buf()
+    };
+    fs2::available_space(&check_path).map_err(|e| e.to_string())
+}
