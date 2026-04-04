@@ -145,7 +145,7 @@ export function AboutPage() {
 				<LogoSection>
 					<NeurixLogo size={64} />
 					<AppName>NEU<span>RIX</span></AppName>
-					<Version>v{import.meta.env.VITE_APP_VERSION} Alpha</Version>
+					<Version>v{import.meta.env.VITE_APP_VERSION}</Version>
 				</LogoSection>
 
 				<Tagline>
@@ -190,13 +190,23 @@ export function AboutPage() {
 
 				<SectionTitle>Project</SectionTitle>
 				<Section>
-					<LinkRow onClick={() => openLink("https://github.com/Razee4315/Neurix")}>
+					<LinkRow onClick={() => openLink("https://github.com/Razee4315/neurix")}>
 						<LinkIcon>
 							<Icon name="deployed_code" size={18} color={tokens.colors.primary} />
 						</LinkIcon>
 						<LinkText>
 							<LinkTitle>Source Code</LinkTitle>
-							<LinkSub>github.com/Razee4315/Neurix</LinkSub>
+							<LinkSub>github.com/Razee4315/neurix</LinkSub>
+						</LinkText>
+						<Icon name="open_in_new" size={16} color={tokens.colors.onSurfaceVariant} />
+					</LinkRow>
+					<LinkRow onClick={() => openLink("https://github.com/Razee4315/neurix/blob/main/PRIVACY_POLICY.md")}>
+						<LinkIcon>
+							<Icon name="shield" size={18} color={tokens.colors.primary} />
+						</LinkIcon>
+						<LinkText>
+							<LinkTitle>Privacy Policy</LinkTitle>
+							<LinkSub>No data collected, ever</LinkSub>
 						</LinkText>
 						<Icon name="open_in_new" size={16} color={tokens.colors.onSurfaceVariant} />
 					</LinkRow>

@@ -24,8 +24,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 		try {
 			const s = await settingsService.getSettings();
 			setSettings(s);
-		} catch (e) {
-			console.error("Failed to load settings:", e);
+		} catch {
+			// Settings load failed — will use defaults
 		}
 	}, []);
 
@@ -33,8 +33,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 		try {
 			const model = await modelService.getActiveModel();
 			setActiveModel(model);
-		} catch (e) {
-			console.error("Failed to get active model:", e);
+		} catch {
+			// Active model check failed — no model loaded
 		}
 	}, []);
 

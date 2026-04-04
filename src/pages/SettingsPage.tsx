@@ -504,7 +504,7 @@ export function SettingsPage() {
 				<VersionCard>
 					<VersionInfo>
 						<VersionNumber>v{import.meta.env.VITE_APP_VERSION}</VersionNumber>
-						<VersionSub>Alpha build</VersionSub>
+						<VersionSub>Neurix</VersionSub>
 					</VersionInfo>
 					<UpdateBtn onClick={() => navigate("/about")}>
 						<Icon name="info" size={16} color={tokens.colors.onSurface} />

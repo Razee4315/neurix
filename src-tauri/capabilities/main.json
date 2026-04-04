@@ -37,19 +37,13 @@
     {
       "identifier": "http:allow-fetch",
       "allow": [
-        { "url": "http://localhost:*/**" },
-        { "url": "http://127.0.0.1:*/**" },
-        { "url": "http://**" },
-        { "url": "https://**" }
+        { "url": "https://huggingface.co/**" }
       ]
     },
     {
       "identifier": "http:allow-fetch-send",
       "allow": [
-        { "url": "http://localhost:*/**" },
-        { "url": "http://127.0.0.1:*/**" },
-        { "url": "http://**" },
-        { "url": "https://**" }
+        { "url": "https://huggingface.co/**" }
       ]
     }
   ]
