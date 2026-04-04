@@ -246,6 +246,55 @@ const DeleteBtn = styled.button`
   &:active { transform: scale(0.95); }
 `;
 
+/* ── Loading Overlay ── */
+
+const loadingPulse = keyframes`
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+`;
+
+const loadingSpin = keyframes`
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+`;
+
+const LoadingOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  background: ${tokens.colors.background}f2;
+  padding: 2rem;
+`;
+
+const Spinner = styled.div`
+  width: 48px;
+  height: 48px;
+  border: 3px solid ${tokens.colors.surfaceContainerHighest};
+  border-top-color: ${tokens.colors.primary};
+  border-radius: 50%;
+  animation: ${loadingSpin} 0.8s linear infinite;
+`;
+
+const LoadingTitle = styled.h2`
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize.xl};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  color: ${tokens.colors.onSurface};
+  text-align: center;
+`;
+
+const LoadingSubtitle = styled.p`
+  font-size: ${tokens.typography.fontSize.base};
+  color: ${tokens.colors.onSurfaceVariant};
+  text-align: center;
+  animation: ${loadingPulse} 2s ease-in-out infinite;
+`;
+
 /* ── Component ── */
 
 function formatStorageGB(bytes: number): string {
@@ -278,6 +327,7 @@ export function MyModelsPage() {
 	);
 
 	const [loadingModelId, setLoadingModelId] = useState<string | null>(null);
+	const [loadingModelName, setLoadingModelName] = useState<string | null>(null);
 
 	const handleUse = async (model: DownloadedModel) => {
 		if (activeModel === model.name) {
@@ -285,6 +335,7 @@ export function MyModelsPage() {
 			return;
 		}
 		setLoadingModelId(model.id);
+		setLoadingModelName(model.name);
 		try {
 			await modelService.loadModel(model.id);
 			await refreshActiveModel();
@@ -293,6 +344,7 @@ export function MyModelsPage() {
 			showAlert("Load Failed", String(err));
 		} finally {
 			setLoadingModelId(null);
+			setLoadingModelName(null);
 		}
 	};
 
@@ -314,6 +366,13 @@ export function MyModelsPage() {
 
 	return (
 		<AppLayout>
+			{loadingModelName && (
+				<LoadingOverlay>
+					<Spinner />
+					<LoadingTitle>Loading {loadingModelName}</LoadingTitle>
+					<LoadingSubtitle>Preparing model for inference. This may take a moment on first load.</LoadingSubtitle>
+				</LoadingOverlay>
+			)}
 			<Page>
 				<Title>My Models</Title>
 

@@ -1,4 +1,5 @@
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
+import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { AppProvider } from "@/context/AppContext";
 import { DownloadProvider } from "@/context/DownloadContext";
 import { ChatHistoryPage } from "@/pages/ChatHistoryPage";
@@ -17,6 +18,7 @@ import { ThemeProvider } from "styled-components";
 
 function App() {
 	return (
+		<ErrorBoundary>
 		<ThemeProvider theme={theme}>
 			<GlobalStyles />
 			<AppProvider>
@@ -43,6 +45,7 @@ function App() {
 				</DownloadProvider>
 			</AppProvider>
 		</ThemeProvider>
+		</ErrorBoundary>
 	);
 }
 

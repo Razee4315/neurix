@@ -394,6 +394,55 @@ const ModelTag = styled.span`
   border-radius: ${tokens.borderRadius.md};
 `;
 
+/* ── Loading Overlay ── */
+
+const loadingSpin = keyframes`
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+`;
+
+const loadingPulse = keyframes`
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+`;
+
+const LoadingOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  background: ${tokens.colors.background}f2;
+  padding: 2rem;
+`;
+
+const Spinner = styled.div`
+  width: 48px;
+  height: 48px;
+  border: 3px solid ${tokens.colors.surfaceContainerHighest};
+  border-top-color: ${tokens.colors.primary};
+  border-radius: 50%;
+  animation: ${loadingSpin} 0.8s linear infinite;
+`;
+
+const LoadingTitle = styled.h2`
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize.xl};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  color: ${tokens.colors.onSurface};
+  text-align: center;
+`;
+
+const LoadingSubtitle = styled.p`
+  font-size: ${tokens.typography.fontSize.base};
+  color: ${tokens.colors.onSurfaceVariant};
+  text-align: center;
+  animation: ${loadingPulse} 2s ease-in-out infinite;
+`;
+
 /* ── Speed Badge ── */
 
 const SpeedBadge = styled.span`
@@ -743,6 +792,24 @@ export function ChatPage() {
 		}
 	};
 
+	const handleShareChat = async () => {
+		if (messages.length === 0) return;
+		const text = messages
+			.map((m) => `${m.role === "user" ? "You" : "Neurix"}: ${m.text}`)
+			.join("\n\n");
+
+		// Try native share first (Android), fall back to clipboard
+		if (navigator.share) {
+			try {
+				await navigator.share({ title: "Neurix Chat", text });
+				return;
+			} catch {
+				// User cancelled or share failed — fall back to clipboard
+			}
+		}
+		await navigator.clipboard.writeText(text);
+	};
+
 	const handleNewChat = () => {
 		setMessages([]);
 		setInput("");
@@ -759,6 +826,14 @@ export function ChatPage() {
 	};
 
 	return (
+		<>
+		{isLoadingModel && (
+			<LoadingOverlay>
+				<Spinner />
+				<LoadingTitle>Loading Model</LoadingTitle>
+				<LoadingSubtitle>Preparing model for inference...</LoadingSubtitle>
+			</LoadingOverlay>
+		)}
 		<AppLayout
 			rightActions={
 				<TopBarRight>
@@ -771,6 +846,15 @@ export function ChatPage() {
 						>
 							{isLoadingModel ? "Loading..." : "No model"}
 						</ModelTag>
+					)}
+					{messages.length > 0 && (
+						<TopBarBtn onClick={handleShareChat}>
+							<Icon
+								name="share"
+								size={18}
+								color={tokens.colors.onSurfaceVariant}
+							/>
+						</TopBarBtn>
 					)}
 					<TopBarBtn onClick={handleNewChat}>
 						<Icon
@@ -874,5 +958,6 @@ export function ChatPage() {
 				</InputBar>
 			</ChatContainer>
 		</AppLayout>
+		</>
 	);
 }

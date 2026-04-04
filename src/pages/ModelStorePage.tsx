@@ -188,6 +188,18 @@ const DownloadingBadge = styled.span`
   color: ${tokens.colors.primary};
 `;
 
+const RecommendedBadge = styled.span`
+  font-size: 9px;
+  font-weight: ${tokens.typography.fontWeight.bold};
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.375rem;
+  border-radius: ${tokens.borderRadius.sm};
+  background: linear-gradient(135deg, ${tokens.colors.primary}22, ${tokens.colors.secondary}22);
+  color: ${tokens.colors.primary};
+  border: 1px solid ${tokens.colors.primary}33;
+`;
+
 export function ModelStorePage() {
 	const navigate = useNavigate();
 	const { downloads } = useDownloads();
@@ -255,7 +267,12 @@ export function ModelStorePage() {
 								style={{ animationDelay: `${i * 50}ms` }}
 							>
 								<CardInfo>
-									<CardName>{m.name}</CardName>
+									<CardName>
+										{m.name}
+										{m.id === "llama-3.2-1b" && !downloadedIds.has(m.id) && (
+											<> <RecommendedBadge>Recommended</RecommendedBadge></>
+										)}
+									</CardName>
 									<CardDesc>{m.description}</CardDesc>
 								</CardInfo>
 								<CardRight>
