@@ -27,7 +27,9 @@ impl LogitsSampler {
 
     /// Sample the next token from logits.
     /// `generated_tokens` should contain ONLY tokens generated so far (not prompt tokens).
-    pub fn sample(&self, logits: &Tensor, generated_tokens: &[u32]) -> Result<u32, String> {
+    /// Returns `(token_id, max_probability)` — the max probability before sampling
+    /// is used by the engine for early low-confidence stopping.
+    pub fn sample(&self, logits: &Tensor, generated_tokens: &[u32]) -> Result<(u32, f32), String> {
         let logits = logits.squeeze(0).map_err(|e| e.to_string())?;
         let logits = if logits.dims().len() > 1 {
             logits
@@ -64,12 +66,12 @@ impl LogitsSampler {
 
         // ── Step 2: Greedy decoding if temperature is zero ──
         if self.temperature <= 0.0 {
-            return Ok(logits_vec
+            let (idx, _) = logits_vec
                 .iter()
                 .enumerate()
                 .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
-                .map(|(i, _)| i as u32)
-                .unwrap_or(0));
+                .unwrap_or((0, &0.0));
+            return Ok((idx as u32, 1.0));
         }
 
         // ── Step 3: Temperature scaling ──
@@ -87,6 +89,9 @@ impl LogitsSampler {
                 *p /= sum;
             }
         }
+
+        // Capture the model's confidence BEFORE any filtering — used for early stopping
+        let max_prob = probs.iter().cloned().fold(0.0f32, f32::max);
 
         // ── Step 5: Min-p filtering ──
         // Discard tokens whose probability is below min_p × max_probability.
@@ -147,10 +152,10 @@ impl LogitsSampler {
         for (i, &p) in probs.iter().enumerate() {
             cumulative += p;
             if cumulative >= r {
-                return Ok(i as u32);
+                return Ok((i as u32, max_prob));
             }
         }
 
-        Ok(probs.len().saturating_sub(1) as u32)
+        Ok((probs.len().saturating_sub(1) as u32, max_prob))
     }
 }

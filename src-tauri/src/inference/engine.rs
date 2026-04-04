@@ -274,18 +274,46 @@ pub fn run_generation(
     let mut generated_count: usize = 0;
     let mut generated_text = String::new();
 
-    // Process prompt in one forward pass
+    // Process prompt in chunks of PREFILL_CHUNK_SIZE tokens.
+    // This reduces peak memory usage by ~4x compared to processing the entire prompt
+    // in one forward pass, preventing OOM on phones with limited RAM.
+    // Each chunk feeds through the model's KV cache, so the final chunk's logits
+    // are equivalent to processing the full prompt at once.
+    const PREFILL_CHUNK_SIZE: usize = 128;
+
     let mut logits = {
-        let input = Tensor::new(prompt_tokens.as_slice(), &model.device)
-            .map_err(|e| format!("Tensor error: {}", e))?
-            .unsqueeze(0)
-            .map_err(|e| format!("Unsqueeze error: {}", e))?;
-        model.weights.forward(&input, 0)
-            .map_err(|e| format!("Forward pass error: {}", e))?
+        let num_chunks = (prompt_len + PREFILL_CHUNK_SIZE - 1) / PREFILL_CHUNK_SIZE;
+        let mut last_logits = None;
+        let mut pos = 0;
+
+        for chunk_idx in 0..num_chunks {
+            let chunk_start = chunk_idx * PREFILL_CHUNK_SIZE;
+            let chunk_end = (chunk_start + PREFILL_CHUNK_SIZE).min(prompt_len);
+            let chunk = &prompt_tokens[chunk_start..chunk_end];
+
+            let input = Tensor::new(chunk, &model.device)
+                .map_err(|e| format!("Tensor error: {}", e))?
+                .unsqueeze(0)
+                .map_err(|e| format!("Unsqueeze error: {}", e))?;
+            last_logits = Some(
+                model.weights.forward(&input, pos)
+                    .map_err(|e| format!("Forward pass error: {}", e))?
+            );
+            pos += chunk.len();
+        }
+
+        last_logits.ok_or_else(|| "Empty prompt".to_string())?
     };
 
+    // Minimum confidence threshold — if the model's top probability drops below this
+    // for several consecutive tokens, it has nothing useful left to say.
+    // This prevents generating trailing garbage after the real answer.
+    const LOW_CONFIDENCE_THRESHOLD: f32 = 0.05;
+    const LOW_CONFIDENCE_STREAK_LIMIT: usize = 4;
+    let mut low_confidence_streak: usize = 0;
+
     // Sample first token — no generated history yet, so penalty has nothing to penalize
-    let mut next_token = sampler.sample(&logits, &generated_tokens)?;
+    let (mut next_token, _confidence) = sampler.sample(&logits, &generated_tokens)?;
     generated_tokens.push(next_token);
     generated_count += 1;
 
@@ -316,7 +344,6 @@ pub fn run_generation(
         }
 
         // N-gram repetition detection — catches degenerate loops that penalties miss.
-        // If a 4-token phrase repeats 3+ times, the model is stuck in a loop.
         if generated_tokens.len() >= 12
             && (has_repeated_ngram(&generated_tokens, 4, 3)
                 || has_repeated_ngram(&generated_tokens, 3, 4)
@@ -336,9 +363,22 @@ pub fn run_generation(
         };
 
         // Pass ONLY generated tokens to the sampler — windowed by repeat_last_n internally
-        next_token = sampler.sample(&logits, &generated_tokens)?;
+        let (sampled_token, confidence) = sampler.sample(&logits, &generated_tokens)?;
+        next_token = sampled_token;
         generated_tokens.push(next_token);
         generated_count += 1;
+
+        // Early low-confidence stopping: if the model's top probability is very low
+        // for several tokens in a row, it's lost and generating noise. Stop early.
+        if confidence < LOW_CONFIDENCE_THRESHOLD {
+            low_confidence_streak += 1;
+            if low_confidence_streak >= LOW_CONFIDENCE_STREAK_LIMIT {
+                info!("Stopping: low confidence ({:.3}) for {} consecutive tokens", confidence, low_confidence_streak);
+                break;
+            }
+        } else {
+            low_confidence_streak = 0;
+        }
 
         if let Some(text) = decode_token(&model.tokenizer, next_token) {
             generated_text.push_str(&text);

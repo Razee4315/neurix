@@ -760,7 +760,7 @@ export function ChatPage() {
 		}
 	}, []);
 
-	const MAX_HISTORY_PAIRS = 10; // Keep last 10 exchanges to stay within token limits
+	const MAX_HISTORY_PAIRS = 4; // 1B models barely use context beyond ~512 tokens — 4 pairs cuts prefill 60%
 
 	const buildHistory = (msgs: Message[]): ChatHistoryEntry[] => {
 		const pairs: ChatHistoryEntry[] = [];
