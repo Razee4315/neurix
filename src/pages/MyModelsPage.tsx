@@ -115,11 +115,16 @@ const StorageBar = styled.div`
   overflow: hidden;
 `;
 
+const barFillIn = keyframes`
+  from { width: 0%; }
+`;
+
 const StorageFill = styled.div<{ $pct: number }>`
   height: 100%;
   width: ${({ $pct }) => $pct}%;
   background: ${tokens.colors.primary};
   border-radius: ${tokens.borderRadius.circle};
+  animation: ${barFillIn} 0.6s ease-out both;
 `;
 
 /* ── Model List ── */
@@ -148,6 +153,10 @@ const AddButton = styled.button`
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.medium};
   cursor: pointer;
+  transition: opacity ${tokens.transitions.fast};
+
+  &:hover { opacity: 0.7; }
+  &:active { transform: scale(0.95); }
 `;
 
 const slideIn = keyframes`
@@ -237,6 +246,7 @@ const UseBtn = styled.button<{ $active: boolean }>`
 			: `
     background: ${tokens.colors.surfaceContainerHighest};
     color: ${tokens.colors.onSurface};
+    &:hover { background: ${tokens.colors.surfaceBright}; }
   `}
 
   &:active { transform: scale(0.98); }
@@ -252,7 +262,9 @@ const DeleteBtn = styled.button`
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: background ${tokens.transitions.fast};
 
+  &:hover { background: ${tokens.colors.error}22; }
   &:active { transform: scale(0.95); }
 `;
 

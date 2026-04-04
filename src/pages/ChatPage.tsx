@@ -1,7 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Icon } from "@/components/ui/Icon";
 import { tokens } from "@/theme/tokens";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -56,14 +56,7 @@ function renderMarkdown(text: string) {
 			parts.push(
 				<CodeBlock key={`cb-${key++}`}>
 					{lang && <CodeLang>{lang}</CodeLang>}
-					<CopyBtn
-						onClick={(e) => {
-							e.stopPropagation();
-							navigator.clipboard.writeText(code);
-						}}
-					>
-						<Icon name="content_copy" size={14} />
-					</CopyBtn>
+					<CopyButton code={code} />
 					<CodePre>{code}</CodePre>
 				</CodeBlock>,
 			);
@@ -110,6 +103,29 @@ function renderInline(text: string): React.ReactNode[] {
 		nodes.push(text.slice(lastIndex));
 	}
 	return nodes;
+}
+
+/* ── Copy Button with Feedback ── */
+
+function CopyButton({ code }: { code: string }) {
+	const [copied, setCopied] = useState(false);
+
+	const handleCopy = (e: React.MouseEvent) => {
+		e.stopPropagation();
+		navigator.clipboard.writeText(code);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 2000);
+	};
+
+	return (
+		<CopyBtn onClick={handleCopy} $copied={copied}>
+			<Icon
+				name={copied ? "check" : "content_copy"}
+				size={14}
+				color={copied ? tokens.colors.secondary : undefined}
+			/>
+		</CopyBtn>
+	);
 }
 
 /* ── Animations ── */
@@ -224,21 +240,22 @@ const CodeLang = styled.span`
   background: ${tokens.colors.surfaceContainerHigh};
 `;
 
-const CopyBtn = styled.button`
+const CopyBtn = styled.button<{ $copied?: boolean }>`
   position: absolute;
   top: 0.375rem;
   right: 0.5rem;
-  background: ${tokens.colors.surfaceContainerHigh};
+  background: ${({ $copied }) => ($copied ? tokens.colors.secondary + "18" : tokens.colors.surfaceContainerHigh)};
   border: none;
   border-radius: ${tokens.borderRadius.sm};
-  padding: 0.25rem;
+  padding: 0.25rem 0.375rem;
   cursor: pointer;
   display: flex;
   align-items: center;
+  gap: 0.25rem;
   color: ${tokens.colors.onSurfaceVariant};
-  transition: color ${tokens.transitions.fast};
+  transition: all ${tokens.transitions.fast};
 
-  &:hover { color: ${tokens.colors.primary}; }
+  &:hover { color: ${tokens.colors.primary}; background: ${tokens.colors.surfaceBright}; }
   &:active { transform: scale(0.9); }
 `;
 
@@ -324,6 +341,7 @@ const SendBtn = styled.button<{ $hasText: boolean }>`
 			? `background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});`
 			: `background: ${tokens.colors.surfaceContainerHighest};`}
 
+  &:hover { opacity: 0.85; }
   &:active { transform: scale(0.9); }
 `;
 
@@ -345,7 +363,9 @@ const TopBarBtn = styled.button`
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  transition: background ${tokens.transitions.fast};
 
+  &:hover { background: ${tokens.colors.surfaceBright}; }
   &:active { transform: scale(0.9); }
 `;
 
@@ -366,7 +386,15 @@ export function ChatPage() {
 	const [input, setInput] = useState("");
 	const [typing, setTyping] = useState(false);
 	const messagesEndRef = useRef<HTMLDivElement>(null);
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	let responseIndex = 0;
+
+	const autoResize = useCallback(() => {
+		const el = textareaRef.current;
+		if (!el) return;
+		el.style.height = "auto";
+		el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+	}, []);
 
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -379,6 +407,7 @@ export function ChatPage() {
 		setMessages((prev) => [...prev, { role: "user", text }]);
 		setInput("");
 		setTyping(true);
+		if (textareaRef.current) textareaRef.current.style.height = "auto";
 
 		const response = AI_RESPONSES[responseIndex % AI_RESPONSES.length];
 		responseIndex++;
@@ -447,8 +476,12 @@ export function ChatPage() {
 
 				<InputBar>
 					<TextInput
+						ref={textareaRef}
 						value={input}
-						onChange={(e) => setInput(e.target.value)}
+						onChange={(e) => {
+							setInput(e.target.value);
+							autoResize();
+						}}
 						onKeyDown={handleKeyDown}
 						placeholder="Message Neurix..."
 						rows={1}

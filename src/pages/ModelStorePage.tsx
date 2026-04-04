@@ -110,10 +110,17 @@ const Chip = styled.button<{ $active: boolean }>`
   letter-spacing: 0.05em;
   text-transform: uppercase;
   cursor: pointer;
+  transition: all ${tokens.transitions.fast};
   background: ${({ $active }) =>
 		$active ? tokens.colors.primary : tokens.colors.surfaceContainerHigh};
   color: ${({ $active }) =>
 		$active ? tokens.colors.onPrimaryFixed : tokens.colors.onSurfaceVariant};
+
+  &:hover {
+    background: ${({ $active }) =>
+			$active ? tokens.colors.primary : tokens.colors.surfaceBright};
+  }
+  &:active { transform: scale(0.95); }
 `;
 
 const slideIn = keyframes`
@@ -141,9 +148,8 @@ const Card = styled.button`
   gap: 1rem;
   animation: ${slideIn} 0.3s ease-out both;
 
-  &:active {
-    background: ${tokens.colors.surfaceContainerHigh};
-  }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:active { transform: scale(0.99); }
 `;
 
 const CardInfo = styled.div`

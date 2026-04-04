@@ -8,6 +8,10 @@ const shimmer = keyframes`
   100% { background-position: 200% 0; }
 `;
 
+const fillIn = keyframes`
+  from { width: 0%; }
+`;
+
 const Page = styled.div`
   padding: 1.5rem 1.25rem;
   display: flex;
@@ -71,7 +75,7 @@ const BarFill = styled.div<{ $pct: number }>`
   border-radius: ${tokens.borderRadius.circle};
   background: linear-gradient(90deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
   background-size: 200% 100%;
-  animation: ${shimmer} 2s ease-in-out infinite;
+  animation: ${fillIn} 0.8s ease-out both, ${shimmer} 2s ease-in-out 0.8s infinite;
 `;
 
 const BarInfo = styled.div`
@@ -108,9 +112,8 @@ const CancelBtn = styled.button`
   letter-spacing: ${tokens.typography.letterSpacing.wider};
   cursor: pointer;
 
-  &:active {
-    background: ${tokens.colors.error}0d;
-  }
+  &:hover { background: ${tokens.colors.error}0d; }
+  &:active { transform: scale(0.98); }
 `;
 
 export function DownloadingPage() {

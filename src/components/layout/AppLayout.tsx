@@ -1,7 +1,7 @@
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
 import { tokens } from "@/theme/tokens";
 import type { ReactNode } from "react";
-import styled from "styled-components";
+import styled, { keyframes } from "styled-components";
 import { BottomNav } from "./BottomNav";
 
 interface AppLayoutProps {
@@ -49,13 +49,18 @@ const Actions = styled.div`
   gap: 0.25rem;
 `;
 
+const contentFadeIn = keyframes`
+  from { opacity: 0; }
+  to { opacity: 1; }
+`;
+
 const Content = styled.main`
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
+  animation: ${contentFadeIn} 0.2s ease-out both;
 
-  /* Hide scrollbar but keep scrollable */
   &::-webkit-scrollbar {
     width: 0;
   }

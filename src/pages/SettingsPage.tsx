@@ -33,6 +33,10 @@ const ToggleRow = styled.div`
   justify-content: space-between;
   padding: 0.875rem 1rem;
   gap: 0.75rem;
+  transition: background ${tokens.transitions.fast};
+  border-radius: ${tokens.borderRadius.md};
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
 `;
 
 const RowLeft = styled.div`
@@ -167,7 +171,9 @@ const UpdateBtn = styled.button`
   font-weight: ${tokens.typography.fontWeight.medium};
   color: ${tokens.colors.onSurface};
   cursor: pointer;
+  transition: all ${tokens.transitions.fast};
 
+  &:hover { background: ${tokens.colors.surfaceBright}; }
   &:active { transform: scale(0.97); }
 `;
 

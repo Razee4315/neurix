@@ -162,9 +162,8 @@ const ChatItem = styled.button`
   transition: background ${tokens.transitions.fast};
   animation: ${slideIn} 0.3s ease-out both;
 
-  &:active {
-    background: ${tokens.colors.surfaceContainerHigh};
-  }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:active { transform: scale(0.99); }
 `;
 
 const ChatIcon = styled.div`
