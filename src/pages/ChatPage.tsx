@@ -135,6 +135,7 @@ function CopyButton({ code }: { code: string }) {
 	const handleCopy = (e: React.MouseEvent) => {
 		e.stopPropagation();
 		navigator.clipboard.writeText(code);
+		if (navigator.vibrate) navigator.vibrate(5);
 		setCopied(true);
 		setTimeout(() => setCopied(false), 2000);
 	};
@@ -170,16 +171,14 @@ const ChatContainer = styled.div`
   height: 100%;
 `;
 
-const FONT_SIZES = { small: "13px", medium: "15px", large: "17px" };
-
-const MessagesArea = styled.div<{ $fontSize?: string }>`
+const MessagesArea = styled.div`
   flex: 1;
   overflow-y: auto;
   padding: 1rem 1rem 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  font-size: ${({ $fontSize }) => $fontSize || "15px"};
+  font-size: 15px;
 
   &::-webkit-scrollbar { width: 0; }
   scrollbar-width: none;
@@ -530,6 +529,7 @@ function MessageCopyBtn({ text }: { text: string }) {
 
 	const handleCopy = () => {
 		navigator.clipboard.writeText(text);
+		if (navigator.vibrate) navigator.vibrate(5);
 		setCopied(true);
 		setTimeout(() => setCopied(false), 2000);
 	};
@@ -566,7 +566,9 @@ export function ChatPage() {
 
 	// Load existing conversation if navigated from history
 	useEffect(() => {
-		const state = location.state as { conversationId?: string } | null;
+		const state = location.state as { conversationId?: string; freshChat?: boolean } | null;
+		// freshChat=true means user clicked "Use Model" / "Engage" — start a clean chat
+		if (state?.freshChat) return;
 		if (state?.conversationId) {
 			historyService.loadConversation(state.conversationId).then((conv) => {
 				if (conv) {
@@ -584,8 +586,8 @@ export function ChatPage() {
 
 	// On mount: if no conversation loaded from history, load the most recent one
 	useEffect(() => {
-		const state = location.state as { conversationId?: string } | null;
-		if (state?.conversationId) return; // Already loading from history nav
+		const state = location.state as { conversationId?: string; freshChat?: boolean } | null;
+		if (state?.conversationId || state?.freshChat) return; // Already handled or fresh chat requested
 		historyService.getConversations().then((convos) => {
 			if (convos.length > 0) {
 				// Load the most recent conversation
@@ -988,7 +990,7 @@ export function ChatPage() {
 			}
 		>
 			<ChatContainer>
-				<MessagesArea $fontSize={FONT_SIZES[settings?.font_size || "medium"]}>
+				<MessagesArea>
 					{messages.length === 0 && !isGenerating && !streamedText && (
 						<EmptyState
 						icon="chat_bubble"

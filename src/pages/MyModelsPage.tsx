@@ -372,7 +372,7 @@ export function MyModelsPage() {
 
 	const handleUse = async (model: DownloadedModel) => {
 		if (activeModel === model.name) {
-			navigate("/chat");
+			navigate("/chat", { state: { freshChat: true } });
 			return;
 		}
 		setLoadingModelId(model.id);
@@ -380,7 +380,8 @@ export function MyModelsPage() {
 		try {
 			await modelService.loadModel(model.id);
 			await refreshActiveModel();
-			navigate("/chat");
+			if (navigator.vibrate) navigator.vibrate(15);
+			navigate("/chat", { state: { freshChat: true } });
 		} catch (err) {
 			showAlert("Load Failed", String(err));
 		} finally {

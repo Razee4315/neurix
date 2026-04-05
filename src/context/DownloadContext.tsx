@@ -2,13 +2,19 @@ import { createContext, useCallback, useContext, useRef, useState } from "react"
 import { modelService, settingsService } from "@/services";
 import type { DownloadEvent, ModelInfo, Settings } from "@/services/types";
 
-// Network detection using Navigator.connection API
+// Network detection — navigator.connection.type is stale on Android WebView after
+// WiFi reconnect. Use navigator.onLine as primary check (reliably updated by the OS),
+// with connection.type as a secondary hint when available.
 function isOnWifi(): boolean {
+	// If the browser says we're offline, we're definitely not on WiFi
+	if (!navigator.onLine) return false;
+
 	const nav = navigator as Navigator & {
 		connection?: { type?: string; effectiveType?: string };
 	};
 	const conn = nav.connection;
-	if (!conn || !conn.type) return true; // Unknown = allow (desktop fallback)
+	// If connection API unavailable or type unknown, trust navigator.onLine
+	if (!conn || !conn.type) return true;
 	return conn.type === "wifi" || conn.type === "ethernet";
 }
 
@@ -165,7 +171,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 	const resumeDownload = useCallback((model: ModelInfo) => {
 		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
-		startDownload(model);
+		// Small delay lets the network API update its stale state after WiFi reconnect.
+		// Without this, navigator.connection.type can still report the old value.
+		setTimeout(() => startDownload(model), 300);
 	}, [startDownload]);
 
 	const cancelDownload = useCallback((modelId: string) => {

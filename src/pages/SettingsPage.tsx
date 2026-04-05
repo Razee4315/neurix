@@ -138,35 +138,6 @@ const PromptArea = styled.textarea`
   &:focus { box-shadow: inset 0 -2px 0 ${tokens.colors.primary}; }
 `;
 
-/* ── Font Size Selector ── */
-
-const FontSizeRow = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.875rem 1rem;
-  gap: 0.75rem;
-`;
-
-const FontSizeOptions = styled.div`
-  display: flex;
-  gap: 0.25rem;
-  background: ${tokens.colors.surfaceContainerHighest};
-  border-radius: ${tokens.borderRadius.md};
-  padding: 2px;
-`;
-
-const FontSizeBtn = styled.button<{ $active: boolean }>`
-  padding: 0.3rem 0.625rem;
-  border-radius: ${tokens.borderRadius.sm};
-  border: none;
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.medium};
-  cursor: pointer;
-  transition: all ${tokens.transitions.fast};
-  background: ${({ $active }) => $active ? tokens.colors.primary : "transparent"};
-  color: ${({ $active }) => $active ? "#fff" : tokens.colors.onSurfaceVariant};
-`;
 
 /* ── Slider ── */
 
@@ -268,7 +239,6 @@ export function SettingsPage() {
 	const [wifiOnly, setWifiOnly] = useState(false);
 	const [saveHistory, setSaveHistory] = useState(true);
 	const [showSpeed, setShowSpeed] = useState(true);
-	const [fontSize, setFontSize] = useState<"small" | "medium" | "large">("medium");
 	const [prompt, setPrompt] = useState("");
 	const [temperature, setTemperature] = useState(0.7);
 	const [topP, setTopP] = useState(0.9);
@@ -281,7 +251,6 @@ export function SettingsPage() {
 			setWifiOnly(settings.wifi_only);
 			setSaveHistory(settings.save_history);
 			setShowSpeed(settings.show_speed);
-			setFontSize(settings.font_size || "medium");
 			setPrompt(settings.system_prompt);
 			setTemperature(settings.temperature);
 			setTopP(settings.top_p);
@@ -314,11 +283,6 @@ export function SettingsPage() {
 		const next = !showSpeed;
 		setShowSpeed(next);
 		persist({ show_speed: next });
-	};
-
-	const handleFontSize = (size: "small" | "medium" | "large") => {
-		setFontSize(size);
-		persist({ font_size: size });
 	};
 
 	const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -388,7 +352,6 @@ export function SettingsPage() {
 			temperature: 0.4,
 			top_p: 0.9,
 			max_tokens: 512,
-			font_size: "medium",
 			last_model_id: settings?.last_model_id ?? null,
 		};
 		await settingsService.updateSettings(defaults);
@@ -440,22 +403,7 @@ export function SettingsPage() {
 						<Toggle $on={showSpeed} onClick={toggleSpeed} />
 					</ToggleRow>
 
-					<FontSizeRow>
-						<RowLeft>
-							<RowIcon>
-								<Icon name="format_size" size={18} color={tokens.colors.primary} />
-							</RowIcon>
-							<RowText>
-								<RowTitle>Chat font size</RowTitle>
-							</RowText>
-						</RowLeft>
-						<FontSizeOptions>
-							<FontSizeBtn $active={fontSize === "small"} onClick={() => handleFontSize("small")}>S</FontSizeBtn>
-							<FontSizeBtn $active={fontSize === "medium"} onClick={() => handleFontSize("medium")}>M</FontSizeBtn>
-							<FontSizeBtn $active={fontSize === "large"} onClick={() => handleFontSize("large")}>L</FontSizeBtn>
-						</FontSizeOptions>
-					</FontSizeRow>
-				</Section>
+					</Section>
 
 				<SectionLabel>System Prompt</SectionLabel>
 				<PromptArea

@@ -423,5 +423,9 @@ pub fn run_generation(
 }
 
 fn decode_token(tokenizer: &Tokenizer, token_id: u32) -> Option<String> {
-    tokenizer.decode(&[token_id], true).ok()
+    // skip_special_tokens must be false — Phi3 and other BPE tokenizers encode
+    // leading spaces as part of tokens (e.g. "▁Hello"). With true, these space
+    // tokens get stripped, producing output with no spaces between words.
+    // Stop sequences are handled separately in the generation loop.
+    tokenizer.decode(&[token_id], false).ok()
 }

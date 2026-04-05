@@ -184,6 +184,7 @@ export function ModelDetailPage() {
 			cancelLabel: "Cancel",
 		});
 		if (!ok) return;
+		if (navigator.vibrate) navigator.vibrate(10);
 		startDownload(model);
 		navigate("/downloading", { state: { model } });
 	};

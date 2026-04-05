@@ -46,7 +46,7 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             parameters: "1 Billion".into(),
             quantization: "Q4_K_M (4-bit)".into(),
             best_for: vec!["Quick chat".into(), "Simple Q&A".into(), "Low-end devices".into()],
-            context_length: 2048,
+            context_length: 4096,
         },
         ModelInfo {
             id: "smollm2-1.7b".into(),
@@ -63,7 +63,7 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             parameters: "1.7 Billion".into(),
             quantization: "Q4_K_M (4-bit)".into(),
             best_for: vec!["General chat".into(), "Summarization".into(), "Fast responses".into()],
-            context_length: 2048,
+            context_length: 4096,
         },
         ModelInfo {
             id: "gemma-2-2b".into(),
@@ -97,7 +97,7 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             parameters: "3 Billion".into(),
             quantization: "Q4_K_M (4-bit)".into(),
             best_for: vec!["Chat & reasoning".into(), "Creative writing".into(), "Best overall".into()],
-            context_length: 2048,
+            context_length: 4096,
         },
         ModelInfo {
             id: "phi-3.5-mini".into(),
@@ -131,7 +131,7 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             parameters: "0.5 Billion".into(),
             quantization: "Q4_K_M (4-bit)".into(),
             best_for: vec!["Ultra-fast".into(), "Basic tasks".into(), "Any device".into()],
-            context_length: 2048,
+            context_length: 4096,
         },
         ModelInfo {
             id: "qwen-2.5-1.5b".into(),
@@ -148,7 +148,7 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             parameters: "1.5 Billion".into(),
             quantization: "Q4_K_M (4-bit)".into(),
             best_for: vec!["Multilingual".into(), "Reasoning".into(), "Good balance".into()],
-            context_length: 2048,
+            context_length: 4096,
         },
         ModelInfo {
             id: "qwen-2.5-3b".into(),
@@ -165,7 +165,7 @@ pub fn get_catalog() -> Vec<ModelInfo> {
             parameters: "3 Billion".into(),
             quantization: "Q4_K_M (4-bit)".into(),
             best_for: vec!["Complex tasks".into(), "Multilingual".into(), "High quality".into()],
-            context_length: 2048,
+            context_length: 4096,
         },
     ]
 }
