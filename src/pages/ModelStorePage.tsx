@@ -18,14 +18,6 @@ const Page = styled.div`
   padding: 1.25rem;
 `;
 
-const Title = styled.h1`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: clamp(1.75rem, 6vw, 2.25rem);
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
-  margin-bottom: 1.25rem;
-`;
-
 const SearchBox = styled.div`
   position: relative;
   margin-bottom: 0.75rem;
@@ -279,12 +271,10 @@ export function ModelStorePage() {
 	};
 
 	return (
-		<AppLayout>
+		<AppLayout title="Model Store">
 			<OfflineBanner />
 			<Page>
-				<Title>Model Store</Title>
-
-				<SearchBox>
+<SearchBox>
 					<SearchIconWrap>
 						<Icon name="search" size={18} />
 					</SearchIconWrap>

@@ -192,7 +192,7 @@ export function ModelDetailPage() {
 	};
 
 	return (
-		<AppLayout>
+		<AppLayout title={model?.name || "Model"}>
 			<OfflineBanner />
 			<Page>
 				<BackBtn onClick={() => navigate("/store")}>

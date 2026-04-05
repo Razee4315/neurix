@@ -60,7 +60,7 @@ const Section = styled.div`
 const SectionTitle = styled.h2`
   font-size: ${tokens.typography.fontSize.sm};
   text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
+  letter-spacing: ${tokens.typography.letterSpacing.wide};
   color: ${tokens.colors.onSurfaceVariant};
   margin-bottom: 0.5rem;
   padding-left: 0.25rem;
@@ -76,6 +76,7 @@ const LinkRow = styled.button`
   border: none;
   cursor: pointer;
   transition: background ${tokens.transitions.fast};
+  min-height: 48px;
 
   &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
   &:active { transform: scale(0.99); }
@@ -108,25 +109,6 @@ const LinkSub = styled.div`
   color: ${tokens.colors.onSurfaceVariant};
 `;
 
-const TechStack = styled.div`
-  width: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  justify-content: center;
-`;
-
-const TechBadge = styled.span`
-  font-size: 10px;
-  font-weight: ${tokens.typography.fontWeight.bold};
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.25rem 0.5rem;
-  border-radius: ${tokens.borderRadius.sm};
-  background: ${tokens.colors.surfaceContainerHigh};
-  color: ${tokens.colors.onSurfaceVariant};
-`;
-
 const Footer = styled.div`
   font-size: ${tokens.typography.fontSize.sm};
   color: ${tokens.colors.outline};
@@ -140,55 +122,20 @@ export function AboutPage() {
 	};
 
 	return (
-		<AppLayout>
+		<AppLayout title="About">
 			<Page>
 				<LogoSection>
 					<NeurixLogo size={64} />
 					<AppName>NEU<span>RIX</span></AppName>
-					<Version>v{import.meta.env.VITE_APP_VERSION || "0.1.2"}</Version>
+					<Version>v{import.meta.env.VITE_APP_VERSION || "0.2.0"}</Version>
 				</LogoSection>
 
 				<Tagline>
-					Your AI. Your phone. No cloud. Run powerful language models
-					directly on your device -- fully offline, completely private.
+					Run powerful AI models directly on your device.
+					Fully offline. Completely private.
 				</Tagline>
 
-				<SectionTitle>Developer</SectionTitle>
-				<Section>
-					<LinkRow onClick={() => openLink("https://github.com/Razee4315")}>
-						<LinkIcon>
-							<Icon name="code" size={18} color={tokens.colors.primary} />
-						</LinkIcon>
-						<LinkText>
-							<LinkTitle>GitHub</LinkTitle>
-							<LinkSub>@Razee4315</LinkSub>
-						</LinkText>
-						<Icon name="open_in_new" size={16} color={tokens.colors.onSurfaceVariant} />
-					</LinkRow>
-					<LinkRow onClick={() => openLink("https://www.linkedin.com/in/saqlainrazee/")}>
-						<LinkIcon>
-							<Icon name="person" size={18} color={tokens.colors.primary} />
-						</LinkIcon>
-						<LinkText>
-							<LinkTitle>LinkedIn</LinkTitle>
-							<LinkSub>Saqlain Abbas</LinkSub>
-						</LinkText>
-						<Icon name="open_in_new" size={16} color={tokens.colors.onSurfaceVariant} />
-					</LinkRow>
-				</Section>
-
-				<SectionTitle>Built With</SectionTitle>
-				<TechStack>
-					<TechBadge>Tauri 2</TechBadge>
-					<TechBadge>React 18</TechBadge>
-					<TechBadge>Rust</TechBadge>
-					<TechBadge>Candle ML</TechBadge>
-					<TechBadge>GGUF</TechBadge>
-					<TechBadge>TypeScript</TechBadge>
-					<TechBadge>styled-components</TechBadge>
-				</TechStack>
-
-				<SectionTitle>Project</SectionTitle>
+				<SectionTitle>Links</SectionTitle>
 				<Section>
 					<LinkRow onClick={() => openLink("https://github.com/Razee4315/neurix")}>
 						<LinkIcon>
@@ -196,7 +143,7 @@ export function AboutPage() {
 						</LinkIcon>
 						<LinkText>
 							<LinkTitle>Source Code</LinkTitle>
-							<LinkSub>github.com/Razee4315/neurix</LinkSub>
+							<LinkSub>Open source on GitHub</LinkSub>
 						</LinkText>
 						<Icon name="open_in_new" size={16} color={tokens.colors.onSurfaceVariant} />
 					</LinkRow>
@@ -213,7 +160,7 @@ export function AboutPage() {
 				</Section>
 
 				<Footer>
-					Made with determination by Saqlain Abbas
+					Made by Saqlain Abbas
 				</Footer>
 			</Page>
 		</AppLayout>

@@ -948,10 +948,11 @@ export function ChatPage() {
 			<LoadingOverlay>
 				<Spinner />
 				<LoadingTitle>Loading Model</LoadingTitle>
-				<LoadingSubtitle>Preparing model for inference...</LoadingSubtitle>
+				<LoadingSubtitle>This may take a moment...</LoadingSubtitle>
 			</LoadingOverlay>
 		)}
 		<AppLayout
+			title="Chat"
 			rightActions={
 				<TopBarRight>
 					{activeModel ? (
@@ -995,8 +996,8 @@ export function ChatPage() {
 					{messages.length === 0 && !isGenerating && !streamedText && (
 						<EmptyState
 						icon="chat_bubble"
-						message="Start a conversation"
-						subtitle="Tip: Larger models (3B) give better answers but run slower. Smaller models (1B) are faster."
+						message="What's on your mind?"
+						subtitle="Type a message to start chatting with your AI."
 					/>
 					)}
 					{messages.map((msg, i) => (

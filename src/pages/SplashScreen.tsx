@@ -241,7 +241,21 @@ export function SplashScreen() {
 		return () => { cancelled = true; };
 	}, [navigate]);
 
-	if (!ready) return null;
+	// Show a branded loading screen while the app boots (instead of blank white/black screen)
+	if (!ready) return (
+		<Container>
+			<HeroSection>
+				<LogoBlock>
+					<LogoWrapper>
+						<NeurixLogo size={64} />
+					</LogoWrapper>
+					<BrandName>
+						NEU<span>RIX</span>
+					</BrandName>
+				</LogoBlock>
+			</HeroSection>
+		</Container>
+	);
 
 	return (
 		<Container data-testid="splash-screen">
@@ -280,7 +294,7 @@ export function SplashScreen() {
 						fill
 						color={tokens.colors.secondary}
 					/>
-					<BadgeLabel>No account needed</BadgeLabel>
+					<BadgeLabel>100% Private</BadgeLabel>
 				</SecurityBadge>
 			</Footer>
 		</Container>

@@ -54,7 +54,7 @@ const TabLabel = styled.span<{ $active: boolean }>`
   font-family: ${tokens.typography.fontFamily.label};
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
+  letter-spacing: ${tokens.typography.letterSpacing.wide};
   color: ${({ $active }) =>
 		$active ? tokens.colors.primary : tokens.colors.onSurfaceVariant};
   transition: color ${tokens.transitions.fast};

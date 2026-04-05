@@ -6,6 +6,7 @@ import { BottomNav } from "./BottomNav";
 
 interface AppLayoutProps {
 	children: ReactNode;
+	title?: string;
 	rightActions?: ReactNode;
 }
 
@@ -30,18 +31,17 @@ const TopBar = styled.header`
   background: ${tokens.colors.surfaceContainerLow};
 `;
 
-const LogoGroup = styled.div`
+const TitleGroup = styled.div`
   display: flex;
   align-items: center;
   gap: 0.5rem;
 `;
 
-const BrandName = styled.span`
+const PageTitle = styled.span`
   font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.xl};
+  font-size: ${tokens.typography.fontSize.lg};
   font-weight: ${tokens.typography.fontWeight.bold};
-  letter-spacing: ${tokens.typography.letterSpacing.tighter};
-  color: ${tokens.colors.primary};
+  color: ${tokens.colors.onSurface};
 `;
 
 const Actions = styled.div`
@@ -68,14 +68,14 @@ const Content = styled.main`
   scrollbar-width: none;
 `;
 
-export function AppLayout({ children, rightActions }: AppLayoutProps) {
+export function AppLayout({ children, title, rightActions }: AppLayoutProps) {
 	return (
 		<Shell>
 			<TopBar>
-				<LogoGroup>
-					<NeurixLogo size={26} />
-					<BrandName>NEURIX</BrandName>
-				</LogoGroup>
+				<TitleGroup>
+					<NeurixLogo size={22} />
+					{title && <PageTitle>{title}</PageTitle>}
+				</TitleGroup>
 				{rightActions && <Actions>{rightActions}</Actions>}
 			</TopBar>
 			<Content>{children}</Content>

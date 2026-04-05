@@ -249,7 +249,7 @@ export function DownloadingPage() {
 	};
 
 	return (
-		<AppLayout>
+		<AppLayout title="Downloading">
 			<Page>
 				<Header>
 					<ModelName>{model.name} · {model.size_label}</ModelName>

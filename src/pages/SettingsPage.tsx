@@ -15,14 +15,6 @@ const Page = styled.div`
   padding: 1.25rem;
 `;
 
-const Title = styled.h1`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: clamp(1.75rem, 6vw, 2.25rem);
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
-  margin-bottom: 1.5rem;
-`;
-
 /* ── Toggle Rows ── */
 
 const Section = styled.div`
@@ -187,46 +179,14 @@ const SliderInput = styled.input`
 
 /* ── Version ── */
 
-const VersionCard = styled.div`
-  background: ${tokens.colors.surfaceContainerLow};
-  border-radius: ${tokens.borderRadius.lg};
-  padding: 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 1rem;
-`;
-
-const VersionInfo = styled.div``;
-
-const VersionNumber = styled.div`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.xl};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.primary};
-`;
-
-const VersionSub = styled.div`
+const VersionFooter = styled.div`
+  text-align: center;
+  padding: 1.5rem 0 1rem;
   font-size: ${tokens.typography.fontSize.sm};
-  color: ${tokens.colors.onSurfaceVariant};
-`;
-
-const UpdateBtn = styled.button`
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.5rem 0.75rem;
-  background: ${tokens.colors.surfaceContainerHighest};
-  border: none;
-  border-radius: ${tokens.borderRadius.md};
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.medium};
-  color: ${tokens.colors.onSurface};
+  color: ${tokens.colors.outline};
   cursor: pointer;
-  transition: all ${tokens.transitions.fast};
 
-  &:hover { background: ${tokens.colors.surfaceBright}; }
-  &:active { transform: scale(0.97); }
+  &:active { opacity: 0.6; }
 `;
 
 /* ── Component ── */
@@ -360,9 +320,8 @@ export function SettingsPage() {
 	};
 
 	return (
-		<AppLayout>
+		<AppLayout title="Settings">
 			<Page>
-				<Title>Settings</Title>
 
 				<Section>
 					<ToggleRow>
@@ -408,7 +367,7 @@ export function SettingsPage() {
 
 				<SectionLabel>System Prompt</SectionLabel>
 				<PromptArea
-					placeholder="Customize how the AI responds..."
+					placeholder="Set your AI's personality..."
 					value={prompt}
 					onChange={handlePromptChange}
 				/>
@@ -504,16 +463,9 @@ export function SettingsPage() {
 					</ToggleRow>
 				</Section>
 
-				<VersionCard>
-					<VersionInfo>
-						<VersionNumber>v{import.meta.env.VITE_APP_VERSION || "0.2.0"}</VersionNumber>
-						<VersionSub>Neurix</VersionSub>
-					</VersionInfo>
-					<UpdateBtn onClick={() => navigate("/about")}>
-						<Icon name="info" size={16} color={tokens.colors.onSurface} />
-						About
-					</UpdateBtn>
-				</VersionCard>
+				<VersionFooter onClick={() => navigate("/about")}>
+					Neurix v{import.meta.env.VITE_APP_VERSION || "0.2.0"}
+				</VersionFooter>
 			</Page>
 		</AppLayout>
 	);

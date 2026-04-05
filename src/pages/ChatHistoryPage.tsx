@@ -22,13 +22,6 @@ const Header = styled.div`
   margin-bottom: 1rem;
 `;
 
-const Title = styled.h1`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: clamp(1.75rem, 6vw, 2.25rem);
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
-`;
-
 const ClearBtn = styled.button`
   background: none;
   border: none;
@@ -356,10 +349,9 @@ export function ChatHistoryPage() {
 	const groups = groupByDate(filtered);
 
 	return (
-		<AppLayout>
+		<AppLayout title="Chat History">
 			<Page>
 				<Header>
-					<Title>Chat History</Title>
 					<ClearBtn onClick={handleClearAll}>Clear all</ClearBtn>
 				</Header>
 

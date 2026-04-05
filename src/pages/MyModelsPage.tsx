@@ -46,14 +46,6 @@ const SearchIconWrap = styled.div`
   display: flex;
 `;
 
-const Title = styled.h1`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: clamp(1.75rem, 6vw, 2.25rem);
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
-  margin-bottom: 1.25rem;
-`;
-
 /* ── Storage ── */
 
 const StorageSection = styled.div`
@@ -425,21 +417,19 @@ export function MyModelsPage() {
 	const usedGB = formatStorageGB(storage.used_bytes);
 
 	return (
-		<AppLayout>
+		<AppLayout title="My Models">
 			{loadingModelName && (
 				<LoadingOverlay>
 					<Spinner />
 					<LoadingTitle>Loading {loadingModelName}</LoadingTitle>
-					<LoadingSubtitle>Preparing model for inference. This may take a moment on first load.</LoadingSubtitle>
+					<LoadingSubtitle>This may take a moment...</LoadingSubtitle>
 				</LoadingOverlay>
 			)}
 			<Page ref={pageRef} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
 				<PullIndicator $visible={isRefreshing}>
 					<RefreshSpinner />
 				</PullIndicator>
-				<Title>My Models</Title>
-
-				<SearchBox>
+<SearchBox>
 					<SearchIconWrap>
 						<Icon name="search" size={18} />
 					</SearchIconWrap>
@@ -468,7 +458,7 @@ export function MyModelsPage() {
 					<ListTitle>Downloaded</ListTitle>
 					<AddButton onClick={() => navigate("/store")}>
 						<Icon name="add" size={16} color={tokens.colors.primary} />
-						Get more
+						Browse Store
 					</AddButton>
 				</ListHeader>
 
@@ -511,7 +501,7 @@ export function MyModelsPage() {
 											{loadingModelId === m.id
 												? "Loading..."
 												: isActive
-													? "Engaged"
+													? "Active"
 													: "Use Model"}
 										</UseBtn>
 										<DeleteBtn onClick={() => handleDelete(m)}>
