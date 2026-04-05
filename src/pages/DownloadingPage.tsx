@@ -78,9 +78,17 @@ const BarFill = styled.div<{ $pct: number }>`
   height: 100%;
   width: ${({ $pct }) => $pct}%;
   border-radius: ${tokens.borderRadius.circle};
-  background: linear-gradient(90deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: linear-gradient(
+    90deg,
+    ${tokens.colors.primary} 0%,
+    ${tokens.colors.primaryContainer} 40%,
+    rgba(255, 255, 255, 0.3) 50%,
+    ${tokens.colors.primaryContainer} 60%,
+    ${tokens.colors.primary} 100%
+  );
   background-size: 200% 100%;
-  animation: ${fillIn} 0.8s ease-out both, ${shimmer} 2s ease-in-out 0.8s infinite;
+  animation: ${fillIn} 0.8s ease-out both, ${shimmer} 1.8s ease-in-out 0.8s infinite;
+  transition: width 0.3s ease;
 `;
 
 const BarInfo = styled.div`
@@ -102,6 +110,31 @@ const Hint = styled.p`
   font-size: ${tokens.typography.fontSize.base};
   color: ${tokens.colors.onSurfaceVariant};
   line-height: ${tokens.typography.lineHeight.relaxed};
+`;
+
+const springIn = keyframes`
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.2); }
+  80% { transform: scale(0.95); }
+  100% { transform: scale(1); opacity: 1; }
+`;
+
+const SuccessBlock = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+`;
+
+const SuccessCircle = styled.div`
+  width: 56px;
+  height: 56px;
+  border-radius: ${tokens.borderRadius.circle};
+  background: ${tokens.colors.secondary}18;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: ${springIn} 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 `;
 
 const ActionRow = styled.div`
@@ -276,9 +309,14 @@ export function DownloadingPage() {
 				)}
 
 				{status === "finished" && (
-					<Hint style={{ color: tokens.colors.secondary }}>
-						Model ready! Redirecting to My Models...
-					</Hint>
+					<SuccessBlock>
+						<SuccessCircle>
+							<Icon name="check" size={28} color={tokens.colors.secondary} />
+						</SuccessCircle>
+						<Hint style={{ color: tokens.colors.secondary }}>
+							Model ready! Redirecting to My Models...
+						</Hint>
+					</SuccessBlock>
 				)}
 
 				{status === "downloading" && (
