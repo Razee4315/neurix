@@ -185,9 +185,9 @@ const MessagesArea = styled.div`
 `;
 
 const Bubble = styled.div<{ $role: "ai" | "user" }>`
-  max-width: 88%;
+  max-width: 85%;
   padding: 0.75rem 1rem;
-  border-radius: ${tokens.borderRadius.xl};
+  border-radius: 18px;
   font-size: ${tokens.typography.fontSize.base};
   line-height: ${tokens.typography.lineHeight.relaxed};
   align-self: ${({ $role }) => ($role === "user" ? "flex-end" : "flex-start")};
@@ -196,14 +196,16 @@ const Bubble = styled.div<{ $role: "ai" | "user" }>`
   ${({ $role }) =>
 		$role === "user"
 			? `
-    background: ${tokens.colors.surfaceContainerHigh};
+    background: rgba(143, 245, 255, 0.08);
+    border: 1px solid rgba(143, 245, 255, 0.12);
     color: ${tokens.colors.onSurface};
-    border-bottom-right-radius: ${tokens.borderRadius.sm};
+    border-bottom-right-radius: 4px;
   `
 			: `
-    background: ${tokens.colors.surfaceContainerLow};
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
     color: ${tokens.colors.onSurfaceVariant};
-    border-bottom-left-radius: ${tokens.borderRadius.sm};
+    border-bottom-left-radius: 4px;
   `}
 `;
 
@@ -380,21 +382,22 @@ const TypingDots = styled.div`
 
 const InputBar = styled.div`
   flex-shrink: 0;
-  padding: 0.5rem 0.75rem 0.75rem;
+  padding: 0.5rem 0.75rem 0.625rem;
   display: flex;
   align-items: flex-end;
   gap: 0.5rem;
   background: ${tokens.colors.surfaceContainer};
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 `;
 
 const TextInput = styled.textarea`
   flex: 1;
   min-height: 40px;
   max-height: 120px;
-  padding: 0.625rem 0.75rem;
-  background: ${tokens.colors.surfaceContainerHighest};
-  border: none;
-  border-radius: ${tokens.borderRadius.lg};
+  padding: 0.625rem 0.875rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
   font-size: ${tokens.typography.fontSize.base};
   font-family: ${tokens.typography.fontFamily.body};
   color: ${tokens.colors.onSurface};
@@ -403,13 +406,13 @@ const TextInput = styled.textarea`
   line-height: 1.4;
 
   &::placeholder { color: ${tokens.colors.outline}; }
-  &:focus { box-shadow: inset 0 -2px 0 ${tokens.colors.primary}; }
+  &:focus { border-color: ${tokens.colors.primary}40; }
 `;
 
 const SendBtn = styled.button<{ $hasText: boolean }>`
   width: 40px;
   height: 40px;
-  border-radius: ${tokens.borderRadius.md};
+  border-radius: 20px;
   border: none;
   display: flex;
   align-items: center;
@@ -421,7 +424,7 @@ const SendBtn = styled.button<{ $hasText: boolean }>`
   ${({ $hasText }) =>
 		$hasText
 			? `background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});`
-			: `background: ${tokens.colors.surfaceContainerHighest};`}
+			: `background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.08);`}
 
   &:hover { opacity: 0.85; }
   &:active { transform: scale(0.9); }

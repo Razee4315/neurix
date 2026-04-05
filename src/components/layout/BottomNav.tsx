@@ -11,63 +11,70 @@ const NAV_TABS = [
 	{ icon: "settings", label: "Settings", path: "/settings" },
 ] as const;
 
-const Nav = styled.nav`
+/* ── Floating glass nav bar ── */
+
+const NavOuter = styled.div`
   width: 100%;
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLowest};
-  box-shadow: ${tokens.shadows.nav};
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
   padding-bottom: env(safe-area-inset-bottom, 0px);
-`;
-
-const TabList = styled.div`
   display: flex;
-  justify-content: space-around;
-  align-items: center;
-  height: 60px;
-  padding: 0 0.5rem;
+  justify-content: center;
 `;
 
-const tabActivate = keyframes`
-  0% { transform: scale(0.92); }
-  60% { transform: scale(1.04); }
-  100% { transform: scale(1); }
+const NavBar = styled.nav`
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  width: 100%;
+  max-width: 360px;
+  height: 56px;
+  padding: 0 0.25rem;
+`;
+
+/* ── Tab button ── */
+
+const labelSlide = keyframes`
+  from { opacity: 0; max-width: 0; margin-left: 0; }
+  to { opacity: 1; max-width: 60px; margin-left: 6px; }
 `;
 
 const Tab = styled.button<{ $active: boolean }>`
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 0.375rem 0.75rem;
   border: none;
-  background: ${({ $active }) =>
-		$active ? tokens.colors.surfaceContainerHigh : "transparent"};
-  border-radius: ${tokens.borderRadius.md};
   cursor: pointer;
-  transition: background 0.25s ease, color ${tokens.transitions.fast};
-  min-width: 56px;
-  ${({ $active }) => $active && css`animation: ${tabActivate} 0.3s ease-out;`}
+  padding: 0.5rem 0.75rem;
+  border-radius: 20px;
+  transition: background 0.25s ease, transform 0.15s ease;
+  background: ${({ $active }) =>
+		$active ? `${tokens.colors.primary}18` : "transparent"};
+
+  &:active { transform: scale(0.9); }
 `;
 
 const TabLabel = styled.span<{ $active: boolean }>`
   font-family: ${tokens.typography.fontFamily.label};
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.wide};
-  color: ${({ $active }) =>
-		$active ? tokens.colors.primary : tokens.colors.onSurfaceVariant};
-  transition: color ${tokens.transitions.fast};
+  font-size: 12px;
+  font-weight: ${tokens.typography.fontWeight.bold};
+  color: ${tokens.colors.primary};
+  white-space: nowrap;
+  overflow: hidden;
+
+  ${({ $active }) => $active
+		? css`animation: ${labelSlide} 0.25s ease-out both;`
+		: css`max-width: 0; opacity: 0; margin-left: 0;`
+	}
 `;
+
+/* ── Component ── */
 
 export function BottomNav() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const [keyboardOpen, setKeyboardOpen] = useState(false);
-	// Capture the full viewport height once on mount — before any keyboard opens.
-	// On Android with adjustResize, window.innerHeight shrinks WITH the keyboard,
-	// so comparing visualViewport.height against window.innerHeight always passes.
-	// screen.height is stable and never changes, making it the correct reference.
 	const initialHeightRef = useRef(
 		Math.max(window.screen.height, window.innerHeight),
 	);
@@ -78,7 +85,6 @@ export function BottomNav() {
 
 		const onResize = () => {
 			const stableHeight = initialHeightRef.current;
-			// Keyboard is open when viewport shrinks by 25%+ of the stable reference
 			const keyboardVisible = vv.height < stableHeight * 0.75;
 			setKeyboardOpen(keyboardVisible);
 		};
@@ -90,8 +96,8 @@ export function BottomNav() {
 	if (keyboardOpen) return null;
 
 	return (
-		<Nav>
-			<TabList>
+		<NavOuter>
+			<NavBar>
 				{NAV_TABS.map((tab) => {
 					const isActive =
 						location.pathname.startsWith(tab.path) ||
@@ -119,7 +125,7 @@ export function BottomNav() {
 						</Tab>
 					);
 				})}
-			</TabList>
-		</Nav>
+			</NavBar>
+		</NavOuter>
 	);
 }
