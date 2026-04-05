@@ -5,10 +5,10 @@
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-  <!-- Left bracket [ — scaled to fit adaptive icon safe zone (center 66dp) -->
+  <!-- Left bracket [ — wider spread, inside safe zone (21-87dp) -->
   <path
-      android:pathData="M47,31 L39,31 L39,77 L47,77"
-      android:strokeWidth="4.5"
+      android:pathData="M43,30 L33,30 L33,78 L43,78"
+      android:strokeWidth="4.8"
       android:strokeColor="#00F0FF"
       android:strokeLineJoin="round"
       android:strokeLineCap="round"
@@ -16,8 +16,8 @@
 
   <!-- Right bracket ] -->
   <path
-      android:pathData="M61,31 L69,31 L69,77 L61,77"
-      android:strokeWidth="4.5"
+      android:pathData="M65,30 L75,30 L75,78 L65,78"
+      android:strokeWidth="4.8"
       android:strokeColor="#00F0FF"
       android:strokeLineJoin="round"
       android:strokeLineCap="round"
@@ -25,7 +25,7 @@
 
   <!-- Center green dot -->
   <path
-      android:pathData="M54,48.5a5.5,5.5 0,1 1,0 11a5.5,5.5 0,1 1,0 -11z"
+      android:pathData="M54,48a6,6 0,1 1,0 12a6,6 0,1 1,0 -12z"
       android:fillColor="#39FF14"/>
 
 </vector>

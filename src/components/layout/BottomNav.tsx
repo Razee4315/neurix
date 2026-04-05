@@ -16,7 +16,7 @@ const NAV_TABS = [
 const NavOuter = styled.div`
   width: 100%;
   flex-shrink: 0;
-  background: ${tokens.colors.surfaceContainerLowest};
+  background: ${tokens.colors.surfaceContainerLow};
   border-top: 1px solid rgba(255, 255, 255, 0.05);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: flex;

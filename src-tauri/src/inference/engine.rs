@@ -48,6 +48,44 @@ pub struct LoadedModel {
     pub chat_template: ChatTemplate,
     pub device: Device,
     pub context_length: usize,
+    pub model_path: PathBuf,
+    pub tokenizer_path: PathBuf,
+}
+
+/// Reload just the model weights from disk (fresh KV cache).
+/// The tokenizer is kept since it has no mutable state.
+pub fn reload_weights(model: &mut LoadedModel) -> Result<(), String> {
+    info!("Reloading model weights for fresh KV cache");
+    let mut file = std::fs::File::open(&model.model_path)
+        .map_err(|e| format!("Cannot open model: {}", e))?;
+    let content = gguf_file::Content::read(&mut file)
+        .map_err(|e| format!("Invalid GGUF: {}", e))?;
+
+    let weights = match &model.chat_template {
+        ChatTemplate::Llama3 | ChatTemplate::SmolLM => {
+            let w = qllama::ModelWeights::from_gguf(content, &mut file, &model.device)
+                .map_err(|e| format!("Failed to reload Llama weights: {}", e))?;
+            ModelWeights::Llama(w)
+        }
+        ChatTemplate::Qwen => {
+            let w = qqwen2::ModelWeights::from_gguf(content, &mut file, &model.device)
+                .map_err(|e| format!("Failed to reload Qwen2 weights: {}", e))?;
+            ModelWeights::Qwen2(w)
+        }
+        ChatTemplate::Phi3 => {
+            let w = qphi3::ModelWeights::from_gguf(false, content, &mut file, &model.device)
+                .map_err(|e| format!("Failed to reload Phi3 weights: {}", e))?;
+            ModelWeights::Phi3(w)
+        }
+        ChatTemplate::Gemma => {
+            let w = qgemma::ModelWeights::from_gguf(content, &mut file, &model.device)
+                .map_err(|e| format!("Failed to reload Gemma weights: {}", e))?;
+            ModelWeights::Gemma(w)
+        }
+    };
+    model.weights = weights;
+    info!("Model weights reloaded");
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +149,8 @@ pub fn load_model_from_disk(
         chat_template,
         device,
         context_length,
+        model_path: model_path.clone(),
+        tokenizer_path: tokenizer_path.clone(),
     })
 }
 
@@ -257,8 +297,11 @@ pub fn run_generation(
     channel: &Channel<InferenceEvent>,
     cancel_token: &CancellationToken,
 ) -> Result<(), String> {
-    // KV cache is automatically reset when the first chunk is processed at index_pos=0
-    // (candle's quantized models replace instead of append at pos 0).
+    // Reload weights to guarantee a fresh KV cache.
+    // Candle 0.9.2's quantized models accumulate KV cache entries across calls,
+    // and the pos=0 reset is unreliable with reused model instances.
+    // This takes ~1-3s but prevents "cannot broadcast [X] to [Y]" errors.
+    reload_weights(model)?;
 
     let tokens = model
         .tokenizer
@@ -267,14 +310,12 @@ pub fn run_generation(
     let mut prompt_tokens = tokens.get_ids().to_vec();
 
     // Truncate prompt to fit within context window: prompt + max_tokens must not exceed it.
-    // This prevents "cannot broadcast [X] to [Y]" errors from exceeding RoPE embeddings.
     let max_prompt_len = model.context_length.saturating_sub(max_tokens as usize);
     if prompt_tokens.len() > max_prompt_len {
         info!(
             "Truncating prompt from {} to {} tokens (context_length={}, max_tokens={})",
             prompt_tokens.len(), max_prompt_len, model.context_length, max_tokens
         );
-        // Keep the end of the prompt (most recent context is more important than old history)
         let start = prompt_tokens.len() - max_prompt_len;
         prompt_tokens = prompt_tokens[start..].to_vec();
     }
@@ -297,35 +338,15 @@ pub fn run_generation(
     let mut generated_count: usize = 0;
     let mut generated_text = String::new();
 
-    // Process prompt in chunks of PREFILL_CHUNK_SIZE tokens.
-    // This reduces peak memory usage by ~4x compared to processing the entire prompt
-    // in one forward pass, preventing OOM on phones with limited RAM.
-    // Each chunk feeds through the model's KV cache, so the final chunk's logits
-    // are equivalent to processing the full prompt at once.
-    const PREFILL_CHUNK_SIZE: usize = 128;
-
+    // Process entire prompt in one forward pass at position 0.
+    // Fresh weights guarantee clean KV cache, so no chunking needed.
     let mut logits = {
-        let num_chunks = (prompt_len + PREFILL_CHUNK_SIZE - 1) / PREFILL_CHUNK_SIZE;
-        let mut last_logits = None;
-        let mut pos = 0;
-
-        for chunk_idx in 0..num_chunks {
-            let chunk_start = chunk_idx * PREFILL_CHUNK_SIZE;
-            let chunk_end = (chunk_start + PREFILL_CHUNK_SIZE).min(prompt_len);
-            let chunk = &prompt_tokens[chunk_start..chunk_end];
-
-            let input = Tensor::new(chunk, &model.device)
-                .map_err(|e| format!("Tensor error: {}", e))?
-                .unsqueeze(0)
-                .map_err(|e| format!("Unsqueeze error: {}", e))?;
-            last_logits = Some(
-                model.weights.forward(&input, pos)
-                    .map_err(|e| format!("Forward pass error: {}", e))?
-            );
-            pos += chunk.len();
-        }
-
-        last_logits.ok_or_else(|| "Empty prompt".to_string())?
+        let input = Tensor::new(prompt_tokens.as_slice(), &model.device)
+            .map_err(|e| format!("Tensor error: {}", e))?
+            .unsqueeze(0)
+            .map_err(|e| format!("Unsqueeze error: {}", e))?;
+        model.weights.forward(&input, 0)
+            .map_err(|e| format!("Forward pass error: {}", e))?
     };
 
     // Minimum confidence threshold — if the model's top probability drops below this
