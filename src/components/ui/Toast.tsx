@@ -78,7 +78,7 @@ const ToastItem = styled.div<{ $variant: ToastVariant; $exiting: boolean }>`
 `;
 
 const ToastIcon = styled.span<{ $variant: ToastVariant }>`
-  font-family: "Material Symbols Rounded";
+  font-family: "Material Symbols Outlined";
   font-size: 20px;
   color: ${({ $variant }) => VARIANT_COLORS[$variant].accent};
   flex-shrink: 0;
