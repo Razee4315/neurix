@@ -97,6 +97,35 @@ const slideIn = keyframes`
   to { opacity: 1; transform: translateY(0); }
 `;
 
+const shimmer = keyframes`
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+`;
+
+const SkeletonCard = styled.div`
+  width: 100%;
+  background: ${tokens.colors.surfaceContainerLow};
+  border-radius: ${tokens.borderRadius.lg};
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+`;
+
+const SkeletonLine = styled.div<{ $w?: string; $h?: string }>`
+  width: ${({ $w }) => $w || "100%"};
+  height: ${({ $h }) => $h || "14px"};
+  border-radius: ${tokens.borderRadius.md};
+  background: linear-gradient(
+    90deg,
+    ${tokens.colors.surfaceContainerHighest} 25%,
+    ${tokens.colors.surfaceBright} 50%,
+    ${tokens.colors.surfaceContainerHighest} 75%
+  );
+  background-size: 200% 100%;
+  animation: ${shimmer} 1.5s ease-in-out infinite;
+`;
+
 const Cards = styled.div`
   display: flex;
   flex-direction: column;
@@ -281,7 +310,22 @@ export function ModelStorePage() {
 					</StorageHint>
 				)}
 
-				{filtered.length === 0 ? (
+				{catalog.length === 0 ? (
+					<Cards>
+						{[1, 2, 3, 4].map((i) => (
+							<SkeletonCard key={i} style={{ animationDelay: `${i * 80}ms` }}>
+								<div style={{ flex: 1 }}>
+									<SkeletonLine $w="60%" $h="16px" style={{ marginBottom: "6px" }} />
+									<SkeletonLine $w="90%" $h="12px" />
+								</div>
+								<div>
+									<SkeletonLine $w="48px" $h="12px" style={{ marginBottom: "6px" }} />
+									<SkeletonLine $w="32px" $h="32px" />
+								</div>
+							</SkeletonCard>
+						))}
+					</Cards>
+				) : filtered.length === 0 ? (
 					<EmptyState message="No models match your search" />
 				) : (
 					<Cards>

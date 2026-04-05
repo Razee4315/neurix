@@ -154,8 +154,8 @@ function CopyButton({ code }: { code: string }) {
 /* ── Animations ── */
 
 const dotPulse = keyframes`
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
+  0%, 100% { opacity: 0.3; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-4px); }
 `;
 
 const fadeInUp = keyframes`

@@ -1,7 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
 import { tokens } from "@/theme/tokens";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { css, keyframes } from "styled-components";
 
@@ -315,8 +315,10 @@ export function OnboardingScreen() {
 	const navigate = useNavigate();
 	const [currentStep, setCurrentStep] = useState(0);
 	const step = STEPS[currentStep];
+	const touchStartRef = useRef(0);
 
 	const handleNext = () => {
+		if (navigator.vibrate) navigator.vibrate(8);
 		if (currentStep < STEPS.length - 1) {
 			setCurrentStep((s) => s + 1);
 		} else {
@@ -325,9 +327,20 @@ export function OnboardingScreen() {
 	};
 
 	const handleBack = () => {
+		if (navigator.vibrate) navigator.vibrate(5);
 		if (currentStep > 0) {
 			setCurrentStep((s) => s - 1);
 		}
+	};
+
+	// Swipe gesture support — swipe left = next, swipe right = back
+	const handleTouchStart = (e: React.TouchEvent) => {
+		touchStartRef.current = e.touches[0].clientX;
+	};
+	const handleTouchEnd = (e: React.TouchEvent) => {
+		const diff = e.changedTouches[0].clientX - touchStartRef.current;
+		if (diff < -60) handleNext();        // swipe left
+		else if (diff > 60) handleBack();    // swipe right
 	};
 
 	const isFirst = currentStep === 0;
@@ -343,7 +356,7 @@ export function OnboardingScreen() {
 				<SkipButton onClick={() => navigate("/store")}>SKIP</SkipButton>
 			</Header>
 
-			<MainContent>
+			<MainContent onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
 				<StepContent key={currentStep}>
 					<IconCircle $color={step.iconColor}>
 						<Icon name={step.icon} size={36} fill color={step.iconColor} />

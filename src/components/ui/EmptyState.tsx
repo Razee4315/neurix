@@ -7,6 +7,11 @@ const fadeIn = keyframes`
   to { opacity: 1; transform: translateY(0); }
 `;
 
+const breathe = keyframes`
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.08); opacity: 1; }
+`;
+
 const Container = styled.div`
   display: flex;
   flex-direction: column;
@@ -26,6 +31,7 @@ const IconWrap = styled.div`
   align-items: center;
   justify-content: center;
   margin-bottom: 0.75rem;
+  animation: ${breathe} 3s ease-in-out infinite;
 `;
 
 const Message = styled.p`
