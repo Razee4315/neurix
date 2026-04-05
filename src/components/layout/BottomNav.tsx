@@ -2,7 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import styled, { keyframes } from "styled-components";
+import styled, { css, keyframes } from "styled-components";
 
 const NAV_TABS = [
 	{ icon: "storefront", label: "Store", path: "/store" },
@@ -47,7 +47,7 @@ const Tab = styled.button<{ $active: boolean }>`
   cursor: pointer;
   transition: background 0.25s ease, color ${tokens.transitions.fast};
   min-width: 56px;
-  ${({ $active }) => $active && `animation: ${tabActivate} 0.3s ease-out;`}
+  ${({ $active }) => $active && css`animation: ${tabActivate} 0.3s ease-out;`}
 `;
 
 const TabLabel = styled.span<{ $active: boolean }>`
