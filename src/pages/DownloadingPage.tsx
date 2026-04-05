@@ -214,10 +214,11 @@ export function DownloadingPage() {
 	// Auto-redirect on finish
 	useEffect(() => {
 		if (dl?.status === "finished") {
+			if (navigator.vibrate) navigator.vibrate([10, 50, 10]);
 			const timer = setTimeout(() => {
 				removeDownload(dl.modelId);
 				navigate("/models");
-			}, 1000);
+			}, 1500);
 			return () => clearTimeout(timer);
 		}
 	}, [dl, navigate, removeDownload]);

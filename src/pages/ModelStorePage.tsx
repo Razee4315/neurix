@@ -248,10 +248,14 @@ export function ModelStorePage() {
 		settingsService.getAvailableSpace().then((bytes) => {
 			setFreeSpace((bytes / (1024 * 1024 * 1024)).toFixed(1));
 		}).catch(() => {});
+	}, []);
+
+	// Refresh downloaded IDs whenever downloads change (catches completed downloads)
+	useEffect(() => {
 		modelService.getDownloadedModels().then((models) => {
 			setDownloadedIds(new Set(models.map((m) => m.id)));
 		});
-	}, []);
+	}, [downloads]);
 
 	const filtered = catalog.filter((m) => {
 		const matchesSearch =

@@ -566,6 +566,44 @@ export function ChatPage() {
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const [activeMessageIdx, setActiveMessageIdx] = useState<number | null>(null);
 	const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// Refs to track latest state for cleanup (closures capture stale values)
+	const streamedTextRef = useRef("");
+	const isGeneratingRef = useRef(false);
+	const messagesRef = useRef<Message[]>([]);
+
+	// Keep refs in sync with state
+	useEffect(() => { streamedTextRef.current = streamedText; }, [streamedText]);
+	useEffect(() => { isGeneratingRef.current = isGenerating; }, [isGenerating]);
+	useEffect(() => { messagesRef.current = messages; }, [messages]);
+
+	// Stop inference and save partial AI response when navigating away mid-generation
+	useEffect(() => {
+		return () => {
+			if (isGeneratingRef.current) {
+				chatService.stopInference();
+				const partial = streamedTextRef.current.trim();
+				if (partial && messagesRef.current.length > 0) {
+					// Save partial response so it's not lost
+					const updated = [...messagesRef.current, { role: "ai" as const, text: partial }];
+					// Fire-and-forget save — component is unmounting
+					const title = updated[0]?.text.slice(0, 50) || "Chat";
+					historyService.saveConversation({
+						id: crypto.randomUUID(),
+						title,
+						model_id: "",
+						model_name: "",
+						created_at: new Date().toISOString(),
+						updated_at: new Date().toISOString(),
+						messages: updated.map((m) => ({
+							role: m.role === "user" ? "user" : "assistant",
+							content: m.text,
+							timestamp: new Date().toISOString(),
+						})),
+					}).catch(() => {});
+				}
+			}
+		};
+	}, []);
 
 	// Load existing conversation if navigated from history
 	useEffect(() => {
