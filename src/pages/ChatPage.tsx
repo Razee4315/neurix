@@ -226,6 +226,8 @@ const BubbleLabel = styled.span<{ $role: "ai" | "user" }>`
 
 const BubbleBody = styled.div`
   word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
 `;
 
 /* ── Markdown Styles ── */
@@ -548,7 +550,70 @@ const SpeedBadge = styled.span`
   display: inline-block;
 `;
 
+/* ── Context Notice ── */
+
+const ContextNotice = styled.div`
+  align-self: center;
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.onSurfaceVariant};
+  background: ${tokens.colors.surfaceContainerHigh};
+  padding: 0.375rem 0.75rem;
+  border-radius: ${tokens.borderRadius.lg};
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  animation: ${fadeInUp} 0.25s ease-out both;
+`;
+
+/* ── Quick Copy (always visible below AI messages) ── */
+
+const QuickActions = styled.div`
+  display: flex;
+  gap: 0.125rem;
+  margin-top: 0.25rem;
+  align-self: flex-start;
+`;
+
+const QuickBtn = styled.button<{ $active?: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.375rem;
+  background: none;
+  border: none;
+  border-radius: ${tokens.borderRadius.sm};
+  cursor: pointer;
+  font-size: 10px;
+  color: ${({ $active }) => $active ? tokens.colors.secondary : tokens.colors.outline};
+  transition: all ${tokens.transitions.fast};
+
+  &:hover { color: ${tokens.colors.onSurfaceVariant}; }
+  &:active { transform: scale(0.9); }
+`;
+
 /* ── Message Copy Button ── */
+
+function QuickCopyBtn({ text }: { text: string }) {
+	const [copied, setCopied] = useState(false);
+
+	const handleCopy = () => {
+		navigator.clipboard.writeText(text);
+		if (navigator.vibrate) navigator.vibrate(5);
+		setCopied(true);
+		setTimeout(() => setCopied(false), 1500);
+	};
+
+	return (
+		<QuickBtn onClick={handleCopy} $active={copied}>
+			<Icon
+				name={copied ? "check" : "content_copy"}
+				size={12}
+				color={copied ? tokens.colors.secondary : tokens.colors.outline}
+			/>
+			{copied ? "Copied" : "Copy"}
+		</QuickBtn>
+	);
+}
 
 function MessageCopyBtn({ text }: { text: string }) {
 	const [copied, setCopied] = useState(false);
@@ -588,6 +653,7 @@ export function ChatPage() {
 	const messagesEndRef = useRef<HTMLDivElement>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const [activeMessageIdx, setActiveMessageIdx] = useState<number | null>(null);
+	const [contextNotice, setContextNotice] = useState<string | null>(null);
 	const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	// Refs to track latest state for cleanup (closures capture stale values)
 	const streamedTextRef = useRef("");
@@ -833,6 +899,13 @@ export function ChatPage() {
 				}
 				break;
 			}
+			case "ContextTrimmed": {
+				const d = data as { pairs_dropped: number };
+				setContextNotice(`Using recent messages only (${d.pairs_dropped} older messages excluded from context)`);
+				// Auto-dismiss after 4 seconds
+				setTimeout(() => setContextNotice(null), 4000);
+				break;
+			}
 			case "Error": {
 				setIsGenerating(false);
 				const d = data as { message: string };
@@ -846,8 +919,6 @@ export function ChatPage() {
 		}
 	}, []);
 
-	const MAX_HISTORY_PAIRS = 4; // 1B models barely use context beyond ~512 tokens — 4 pairs cuts prefill 60%
-
 	const buildHistory = (msgs: Message[]): ChatHistoryEntry[] => {
 		const pairs: ChatHistoryEntry[] = [];
 		for (let i = 0; i < msgs.length - 1; i += 2) {
@@ -855,7 +926,8 @@ export function ChatPage() {
 				pairs.push({ user: msgs[i].text, assistant: msgs[i + 1].text });
 			}
 		}
-		return pairs.slice(-MAX_HISTORY_PAIRS);
+		// Send ALL history �� backend does token-aware truncation with the actual tokenizer
+		return pairs;
 	};
 
 	const sendingRef = useRef(false);
@@ -1076,6 +1148,12 @@ export function ChatPage() {
 						subtitle="Type a message to start chatting with your AI."
 					/>
 					)}
+					{contextNotice && (
+						<ContextNotice>
+							<Icon name="info" size={14} color={tokens.colors.onSurfaceVariant} />
+							{contextNotice}
+						</ContextNotice>
+					)}
 					{messages.map((msg, i) => (
 						<BubbleWrap key={`msg-${i}-${msg.role}`}>
 							<Bubble
@@ -1091,6 +1169,11 @@ export function ChatPage() {
 									{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
 								</BubbleBody>
 							</Bubble>
+							{msg.role === "ai" && !isGenerating && (
+								<QuickActions>
+									<QuickCopyBtn text={msg.text} />
+								</QuickActions>
+							)}
 							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
 								<MessageCopyBtn text={msg.text} />
 								<MsgActionBtn onClick={() => handleShareMessage(msg.text)}>

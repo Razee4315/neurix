@@ -7,6 +7,10 @@ export const GlobalStyles = createGlobalStyle`
     margin: 0;
     padding: 0;
     -webkit-tap-highlight-color: transparent;
+    /* Disable text selection globally — feels native on mobile.
+       Re-enabled on chat bubbles and inputs where copying makes sense. */
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   a, button, input, select, textarea, label,
@@ -15,11 +19,6 @@ export const GlobalStyles = createGlobalStyle`
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     touch-action: manipulation;
-  }
-
-  button {
-    user-select: none;
-    -webkit-user-select: none;
   }
 
   html, body, #root {
@@ -56,7 +55,6 @@ export const GlobalStyles = createGlobalStyle`
 
   .material-symbols-outlined {
     font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-    user-select: none;
   }
 
   ::-webkit-scrollbar { width: 4px; height: 4px; }

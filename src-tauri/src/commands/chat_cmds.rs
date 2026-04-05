@@ -34,7 +34,7 @@ pub async fn run_inference(
     let cancel_token = CancellationToken::new();
 
     // Take the model out briefly to format prompt, then run generation WITHOUT holding the lock
-    let (mut model, formatted) = {
+    let (mut model, formatted, pairs_dropped) = {
         let mut s = state.lock().await;
         s.inference_cancel = Some(cancel_token.clone());
 
@@ -46,18 +46,33 @@ pub async fn run_inference(
             .map(|h| (h.user.clone(), h.assistant.clone()))
             .collect();
 
-        let formatted = engine::format_prompt(
-            &model.chat_template,
+        // Smart context management: trim oldest history pairs until prompt fits
+        // within context_length - max_tokens. Uses the actual tokenizer for precise counting.
+        let (trimmed_pairs, dropped) = engine::trim_history_to_fit(
+            &model,
             &system_prompt,
             &history_pairs,
             &prompt,
+            max_tokens,
+        )?;
+
+        let formatted = engine::format_prompt(
+            &model.chat_template,
+            &system_prompt,
+            &trimmed_pairs,
+            &prompt,
         );
 
-        (model, formatted)
+        (model, formatted, dropped)
     };
     // Lock is released here -- other commands (stop_inference, get_active_model) can proceed
 
     info!("Running inference, prompt length: {} chars", formatted.len());
+
+    // Notify frontend if context was trimmed so it can show a subtle indicator
+    if pairs_dropped > 0 {
+        let _ = on_event.send(InferenceEvent::ContextTrimmed { pairs_dropped });
+    }
 
     let mut sampler = LogitsSampler::new(
         temperature,

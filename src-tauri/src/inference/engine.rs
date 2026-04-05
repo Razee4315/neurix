@@ -95,6 +95,7 @@ pub enum InferenceEvent {
     ModelReady,
     TokenGenerated { token: String, tokens_per_second: f32 },
     GenerationComplete { total_tokens: usize, duration_ms: u64 },
+    ContextTrimmed { pairs_dropped: usize },
     Error { message: String },
 }
 
@@ -236,6 +237,62 @@ pub fn format_prompt(
             ));
             prompt
         }
+    }
+}
+
+/// Count tokens in a text string using the model's tokenizer.
+pub fn count_tokens(model: &LoadedModel, text: &str) -> Result<usize, String> {
+    let tokens = model
+        .tokenizer
+        .encode(text, true)
+        .map_err(|e| format!("Tokenization failed: {}", e))?;
+    Ok(tokens.get_ids().len())
+}
+
+/// Trim history pairs so that the full formatted prompt fits within the context budget.
+/// Returns the trimmed history (newest pairs preserved) and the number of pairs dropped.
+pub fn trim_history_to_fit(
+    model: &LoadedModel,
+    system_prompt: &str,
+    history: &[(String, String)],
+    user_msg: &str,
+    max_tokens: u32,
+) -> Result<(Vec<(String, String)>, usize), String> {
+    let safety_margin: usize = 32; // Buffer for special tokens and template overhead
+    let budget = model
+        .context_length
+        .saturating_sub(max_tokens as usize)
+        .saturating_sub(safety_margin);
+
+    let mut included: Vec<(String, String)> = history.to_vec();
+
+    loop {
+        let formatted = format_prompt(&model.chat_template, system_prompt, &included, user_msg);
+        let token_count = count_tokens(model, &formatted)?;
+
+        if token_count <= budget {
+            let dropped = history.len() - included.len();
+            if dropped > 0 {
+                info!(
+                    "Context management: dropped {} oldest pairs, using {}/{} tokens (budget={})",
+                    dropped, token_count, model.context_length, budget
+                );
+            }
+            return Ok((included, dropped));
+        }
+
+        // Remove oldest pair
+        if included.is_empty() {
+            // Even without history, prompt is too long — let run_generation handle raw truncation
+            info!(
+                "Context management: all history dropped, prompt still {} tokens (budget={})",
+                count_tokens(model, &format_prompt(&model.chat_template, system_prompt, &[], user_msg))
+                    .unwrap_or(0),
+                budget
+            );
+            return Ok((vec![], history.len()));
+        }
+        included.remove(0);
     }
 }
 

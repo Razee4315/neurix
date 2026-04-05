@@ -45,8 +45,8 @@ export interface DownloadedModel {
 }
 
 export interface InferenceEvent {
-	event: "TokenGenerated" | "GenerationComplete" | "Error";
-	data?: TokenGenerated | GenerationComplete | InferenceError;
+	event: "TokenGenerated" | "GenerationComplete" | "ContextTrimmed" | "Error";
+	data?: TokenGenerated | GenerationComplete | ContextTrimmed | InferenceError;
 }
 
 export interface TokenGenerated {
@@ -57,6 +57,10 @@ export interface TokenGenerated {
 export interface GenerationComplete {
 	total_tokens: number;
 	duration_ms: number;
+}
+
+export interface ContextTrimmed {
+	pairs_dropped: number;
 }
 
 export interface InferenceError {

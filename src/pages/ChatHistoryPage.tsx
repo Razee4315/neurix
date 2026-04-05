@@ -5,6 +5,7 @@ import { historyService } from "@/services";
 import type { ConversationMeta } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -184,6 +185,33 @@ const ChatMeta = styled.span`
   color: ${tokens.colors.onSurfaceVariant};
 `;
 
+const RenameInput = styled.input`
+  width: 100%;
+  background: ${tokens.colors.surfaceContainerHighest};
+  border: 1px solid ${tokens.colors.primary};
+  border-radius: ${tokens.borderRadius.sm};
+  padding: 0.25rem 0.375rem;
+  font-size: ${tokens.typography.fontSize.base};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  color: ${tokens.colors.onSurface};
+  outline: none;
+`;
+
+const EditBtn = styled.button`
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.5;
+  transition: opacity ${tokens.transitions.fast};
+
+  &:hover { opacity: 1; }
+  &:active { transform: scale(0.9); }
+`;
+
 /* ── Swipeable Row ── */
 
 function SwipeableRow({
@@ -277,8 +305,11 @@ function formatTime(dateStr: string): string {
 export function ChatHistoryPage() {
 	const navigate = useNavigate();
 	const { showConfirm } = useConfirm();
+	const { showToast } = useToast();
 	const [search, setSearch] = useState("");
 	const [conversations, setConversations] = useState<ConversationMeta[]>([]);
+	const [renamingId, setRenamingId] = useState<string | null>(null);
+	const [renameValue, setRenameValue] = useState("");
 
 	const refresh = useCallback(async () => {
 		const list = await historyService.getConversations();
@@ -327,6 +358,32 @@ export function ChatHistoryPage() {
 			}
 		}
 		await navigator.clipboard.writeText(text);
+	};
+
+	const handleStartRename = (id: string, currentTitle: string) => {
+		setRenamingId(id);
+		setRenameValue(currentTitle);
+	};
+
+	const handleFinishRename = async () => {
+		if (!renamingId || !renameValue.trim()) {
+			setRenamingId(null);
+			return;
+		}
+		try {
+			const conv = await historyService.loadConversation(renamingId);
+			if (conv) {
+				conv.title = renameValue.trim();
+				await historyService.saveConversation(conv);
+				setConversations((prev) =>
+					prev.map((c) => c.id === renamingId ? { ...c, title: renameValue.trim() } : c),
+				);
+				showToast("Conversation renamed", "success");
+			}
+		} catch {
+			showToast("Failed to rename", "error");
+		}
+		setRenamingId(null);
 	};
 
 	const handleClearAll = async () => {
@@ -388,18 +445,40 @@ export function ChatHistoryPage() {
 											<ChatItem
 												$offset={offset}
 												onClick={() => {
-													if (offset === 0) navigate("/chat", { state: { conversationId: entry.id } });
+													if (offset === 0 && renamingId !== entry.id) navigate("/chat", { state: { conversationId: entry.id } });
 												}}
 											>
 												<ChatIcon>
 													<Icon name="chat_bubble" size={18} color={tokens.colors.onSurfaceVariant} />
 												</ChatIcon>
 												<ChatInfo>
-													<ChatTitle>{entry.title}</ChatTitle>
+													{renamingId === entry.id ? (
+														<RenameInput
+															value={renameValue}
+															onChange={(e) => setRenameValue(e.target.value)}
+															onBlur={handleFinishRename}
+															onKeyDown={(e) => {
+																if (e.key === "Enter") handleFinishRename();
+																if (e.key === "Escape") setRenamingId(null);
+															}}
+															autoFocus
+															onClick={(e) => e.stopPropagation()}
+														/>
+													) : (
+														<ChatTitle>{entry.title}</ChatTitle>
+													)}
 													<ChatMeta>
 														{entry.model_name} · {formatTime(entry.updated_at)}
 													</ChatMeta>
 												</ChatInfo>
+												{renamingId !== entry.id && (
+													<EditBtn onClick={(e) => {
+														e.stopPropagation();
+														handleStartRename(entry.id, entry.title);
+													}}>
+														<Icon name="edit" size={16} color={tokens.colors.onSurfaceVariant} />
+													</EditBtn>
+												)}
 											</ChatItem>
 										)}
 									/>

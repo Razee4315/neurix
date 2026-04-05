@@ -127,7 +127,7 @@ export function AboutPage() {
 				<LogoSection>
 					<NeurixLogo size={64} />
 					<AppName>NEU<span>RIX</span></AppName>
-					<Version>v{import.meta.env.VITE_APP_VERSION || "0.2.0"}</Version>
+					<Version>v{import.meta.env.VITE_APP_VERSION || "0.3.0"}</Version>
 				</LogoSection>
 
 				<Tagline>
