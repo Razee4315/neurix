@@ -570,11 +570,13 @@ export function ChatPage() {
 	const streamedTextRef = useRef("");
 	const isGeneratingRef = useRef(false);
 	const messagesRef = useRef<Message[]>([]);
+	const activeModelRef = useRef(activeModel);
 
 	// Keep refs in sync with state
 	useEffect(() => { streamedTextRef.current = streamedText; }, [streamedText]);
 	useEffect(() => { isGeneratingRef.current = isGenerating; }, [isGenerating]);
 	useEffect(() => { messagesRef.current = messages; }, [messages]);
+	useEffect(() => { activeModelRef.current = activeModel; }, [activeModel]);
 
 	// Stop inference and save partial AI response when navigating away mid-generation
 	useEffect(() => {
@@ -590,8 +592,8 @@ export function ChatPage() {
 					historyService.saveConversation({
 						id: crypto.randomUUID(),
 						title,
-						model_id: "",
-						model_name: "",
+						model_id: activeModelRef.current || "",
+						model_name: activeModelRef.current || "",
 						created_at: new Date().toISOString(),
 						updated_at: new Date().toISOString(),
 						messages: updated.map((m) => ({
@@ -830,9 +832,12 @@ export function ChatPage() {
 		return pairs.slice(-MAX_HISTORY_PAIRS);
 	};
 
+	const sendingRef = useRef(false);
+
 	const handleSend = async () => {
 		const text = input.trim();
-		if (!text || isGenerating || isLoadingModel) return;
+		if (!text || isGenerating || isLoadingModel || sendingRef.current) return;
+		sendingRef.current = true;
 
 		// Haptic feedback
 		if (navigator.vibrate) navigator.vibrate(10);
@@ -841,6 +846,7 @@ export function ChatPage() {
 		if (!activeModel) {
 			const loaded = await ensureModelLoaded();
 			if (!loaded) {
+				sendingRef.current = false;
 				navigate("/models");
 				return;
 			}
@@ -872,6 +878,8 @@ export function ChatPage() {
 				...prev,
 				{ role: "ai", text: `**Error:** ${String(err)}` },
 			]);
+		} finally {
+			sendingRef.current = false;
 		}
 	};
 
@@ -969,11 +977,12 @@ export function ChatPage() {
 	};
 
 	const handleNewChat = () => {
+		if (isGenerating) chatService.stopInference();
 		setMessages([]);
 		setInput("");
 		setStreamedText("");
 		setIsGenerating(false);
-		setConversationId(null);
+		setConversationId(crypto.randomUUID());
 	};
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {

@@ -205,6 +205,33 @@ export function SettingsPage() {
 	const [maxTokens, setMaxTokens] = useState(2048);
 	const promptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const sliderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	// Refs to capture latest values for unmount flush
+	const promptRef = useRef(prompt);
+	const tempRef = useRef(temperature);
+	const topPRef = useRef(topP);
+	const maxTokensRef = useRef(maxTokens);
+
+	// Flush any pending debounced saves when leaving the page
+	useEffect(() => {
+		return () => {
+			if (promptTimerRef.current) {
+				clearTimeout(promptTimerRef.current);
+				// Fire the save with latest values
+				if (settings) {
+					settingsService.updateSettings({
+						...settings,
+						system_prompt: promptRef.current,
+						temperature: tempRef.current,
+						top_p: topPRef.current,
+						max_tokens: maxTokensRef.current,
+					}).catch(() => {});
+				}
+			}
+			if (sliderTimerRef.current) {
+				clearTimeout(sliderTimerRef.current);
+			}
+		};
+	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	useEffect(() => {
 		if (settings) {
@@ -248,9 +275,11 @@ export function SettingsPage() {
 	const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
 		const val = e.target.value;
 		setPrompt(val);
+		promptRef.current = val;
 		if (promptTimerRef.current) clearTimeout(promptTimerRef.current);
 		promptTimerRef.current = setTimeout(() => {
 			persist({ system_prompt: val });
+			promptTimerRef.current = null;
 		}, 500);
 	};
 
@@ -265,18 +294,21 @@ export function SettingsPage() {
 	const handleTemperature = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const val = Number.parseFloat(e.target.value);
 		setTemperature(val);
+		tempRef.current = val;
 		debouncedSliderPersist({ temperature: val });
 	};
 
 	const handleTopP = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const val = Number.parseFloat(e.target.value);
 		setTopP(val);
+		topPRef.current = val;
 		debouncedSliderPersist({ top_p: val });
 	};
 
 	const handleMaxTokens = (e: React.ChangeEvent<HTMLInputElement>) => {
 		const val = Number.parseInt(e.target.value);
 		setMaxTokens(val);
+		maxTokensRef.current = val;
 		debouncedSliderPersist({ max_tokens: val });
 	};
 

@@ -217,18 +217,20 @@ export function SplashScreen() {
 				if (cancelled) return;
 
 				if (models.length > 0) {
-					// Returning user — skip splash, go straight to chat
+					// Returning user — try to load last model, then go to chat
+					let modelLoaded = false;
 					if (settings.last_model_id) {
 						const exists = models.find((m) => m.id === settings.last_model_id);
 						if (exists) {
 							try {
 								await modelService.loadModel(exists.id);
+								modelLoaded = true;
 							} catch {
-								// model load failed — still navigate
+								// model load failed
 							}
 						}
 					}
-					navigate("/chat", { replace: true });
+					navigate(modelLoaded ? "/chat" : "/models", { replace: true });
 					return;
 				}
 			} catch {
