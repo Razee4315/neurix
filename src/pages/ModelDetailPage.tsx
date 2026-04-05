@@ -80,6 +80,8 @@ const Section = styled.div`
   border-radius: ${tokens.borderRadius.lg};
   margin-bottom: 1rem;
   overflow: hidden;
+  animation: ${fadeIn} 0.3s ease-out both;
+  animation-delay: 0.1s;
 `;
 
 const InfoRow = styled.div`

@@ -50,9 +50,9 @@ const Actions = styled.div`
   gap: 0.25rem;
 `;
 
-const contentFadeIn = keyframes`
-  from { opacity: 0; }
-  to { opacity: 1; }
+const contentSlideIn = keyframes`
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 `;
 
 const Content = styled.main`
@@ -60,7 +60,7 @@ const Content = styled.main`
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  animation: ${contentFadeIn} 0.2s ease-out both;
+  animation: ${contentSlideIn} 0.25s ease-out both;
 
   &::-webkit-scrollbar {
     width: 0;

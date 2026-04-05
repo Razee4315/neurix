@@ -248,6 +248,11 @@ const DeleteBtn = styled.button`
 
 /* ── Loading Overlay ── */
 
+const overlayFadeIn = keyframes`
+  from { opacity: 0; }
+  to { opacity: 1; }
+`;
+
 const loadingPulse = keyframes`
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }
@@ -256,6 +261,11 @@ const loadingPulse = keyframes`
 const loadingSpin = keyframes`
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+`;
+
+const glowRing = keyframes`
+  0%, 100% { box-shadow: 0 0 0 0 rgba(143, 245, 255, 0.3); }
+  50% { box-shadow: 0 0 20px 4px rgba(143, 245, 255, 0.15); }
 `;
 
 const LoadingOverlay = styled.div`
@@ -269,6 +279,7 @@ const LoadingOverlay = styled.div`
   gap: 1.5rem;
   background: ${tokens.colors.background}f2;
   padding: 2rem;
+  animation: ${overlayFadeIn} 0.2s ease-out both;
 `;
 
 const Spinner = styled.div`
@@ -277,7 +288,7 @@ const Spinner = styled.div`
   border: 3px solid ${tokens.colors.surfaceContainerHighest};
   border-top-color: ${tokens.colors.primary};
   border-radius: 50%;
-  animation: ${loadingSpin} 0.8s linear infinite;
+  animation: ${loadingSpin} 0.8s linear infinite, ${glowRing} 2s ease-in-out infinite;
 `;
 
 const LoadingTitle = styled.h2`
@@ -346,6 +357,7 @@ export function MyModelsPage() {
 	}, [refresh]);
 
 	const handlePullRefresh = async () => {
+		if (navigator.vibrate) navigator.vibrate(8);
 		setIsRefreshing(true);
 		await refresh();
 		setIsRefreshing(false);
@@ -404,6 +416,7 @@ export function MyModelsPage() {
 			danger: true,
 		});
 		if (!ok) return;
+		if (navigator.vibrate) navigator.vibrate(15);
 		await modelService.deleteModel(model.id);
 		await refresh();
 		await refreshActiveModel();

@@ -93,7 +93,10 @@ export function BottomNav() {
 						<Tab
 							key={tab.path}
 							$active={isActive}
-							onClick={() => navigate(tab.path)}
+							onClick={() => {
+								if (navigator.vibrate) navigator.vibrate(5);
+								navigate(tab.path);
+							}}
 						>
 							<Icon
 								name={tab.icon}

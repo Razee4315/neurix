@@ -835,6 +835,7 @@ export function ChatPage() {
 	};
 
 	const handleStop = () => {
+		if (navigator.vibrate) navigator.vibrate(12);
 		chatService.stopInference();
 	};
 

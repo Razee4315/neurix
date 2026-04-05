@@ -305,6 +305,7 @@ export function ChatHistoryPage() {
 			danger: true,
 		});
 		if (!ok) return;
+		if (navigator.vibrate) navigator.vibrate(12);
 		await historyService.deleteConversation(id);
 		setConversations((prev) => prev.filter((c) => c.id !== id));
 	};

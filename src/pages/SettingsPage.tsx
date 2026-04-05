@@ -329,6 +329,7 @@ export function SettingsPage() {
 			danger: true,
 		});
 		if (!ok) return;
+		if (navigator.vibrate) navigator.vibrate(15);
 		try {
 			await historyService.clearAllConversations();
 		} catch {
@@ -505,7 +506,7 @@ export function SettingsPage() {
 
 				<VersionCard>
 					<VersionInfo>
-						<VersionNumber>v{import.meta.env.VITE_APP_VERSION || "0.1.2"}</VersionNumber>
+						<VersionNumber>v{import.meta.env.VITE_APP_VERSION || "0.2.0"}</VersionNumber>
 						<VersionSub>Neurix</VersionSub>
 					</VersionInfo>
 					<UpdateBtn onClick={() => navigate("/about")}>
