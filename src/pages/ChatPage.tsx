@@ -163,10 +163,6 @@ const fadeInUp = keyframes`
   to { opacity: 1; transform: translateY(0); }
 `;
 
-const stopPulse = keyframes`
-  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 113, 108, 0.4); }
-  50% { box-shadow: 0 0 0 6px rgba(255, 113, 108, 0); }
-`;
 
 /* ── Styles ── */
 
@@ -441,17 +437,15 @@ const StopBtn = styled.button`
   width: 40px;
   height: 40px;
   border-radius: 20px;
-  border: 2px solid ${tokens.colors.error};
-  background: ${tokens.colors.error}18;
+  border: 1.5px solid ${tokens.colors.error}60;
+  background: ${tokens.colors.error}12;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  animation: ${stopPulse} 1.5s ease-in-out infinite;
   transition: all ${tokens.transitions.fast};
 
-  &:hover { background: ${tokens.colors.error}28; }
   &:active { transform: scale(0.9); }
 `;
 
@@ -565,55 +559,7 @@ const ContextNotice = styled.div`
   animation: ${fadeInUp} 0.25s ease-out both;
 `;
 
-/* ── Quick Copy (always visible below AI messages) ── */
-
-const QuickActions = styled.div`
-  display: flex;
-  gap: 0.125rem;
-  margin-top: 0.25rem;
-  align-self: flex-start;
-`;
-
-const QuickBtn = styled.button<{ $active?: boolean }>`
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.15rem 0.375rem;
-  background: none;
-  border: none;
-  border-radius: ${tokens.borderRadius.sm};
-  cursor: pointer;
-  font-size: 10px;
-  color: ${({ $active }) => $active ? tokens.colors.secondary : tokens.colors.outline};
-  transition: all ${tokens.transitions.fast};
-
-  &:hover { color: ${tokens.colors.onSurfaceVariant}; }
-  &:active { transform: scale(0.9); }
-`;
-
 /* ── Message Copy Button ── */
-
-function QuickCopyBtn({ text }: { text: string }) {
-	const [copied, setCopied] = useState(false);
-
-	const handleCopy = () => {
-		navigator.clipboard.writeText(text);
-		if (navigator.vibrate) navigator.vibrate(5);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 1500);
-	};
-
-	return (
-		<QuickBtn onClick={handleCopy} $active={copied}>
-			<Icon
-				name={copied ? "check" : "content_copy"}
-				size={12}
-				color={copied ? tokens.colors.secondary : tokens.colors.outline}
-			/>
-			{copied ? "Copied" : "Copy"}
-		</QuickBtn>
-	);
-}
 
 function MessageCopyBtn({ text }: { text: string }) {
 	const [copied, setCopied] = useState(false);
@@ -1169,11 +1115,6 @@ export function ChatPage() {
 									{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
 								</BubbleBody>
 							</Bubble>
-							{msg.role === "ai" && !isGenerating && (
-								<QuickActions>
-									<QuickCopyBtn text={msg.text} />
-								</QuickActions>
-							)}
 							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
 								<MessageCopyBtn text={msg.text} />
 								<MsgActionBtn onClick={() => handleShareMessage(msg.text)}>

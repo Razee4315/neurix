@@ -204,10 +204,11 @@ const DownloadingBadge = styled.span`
   font-weight: ${tokens.typography.fontWeight.bold};
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 0.125rem 0.375rem;
+  padding: 0.15rem 0.5rem;
   border-radius: ${tokens.borderRadius.sm};
-  background: ${tokens.colors.primary}18;
-  color: ${tokens.colors.primary};
+  background: ${tokens.colors.tertiary}22;
+  color: ${tokens.colors.tertiary};
+  border: 1px solid ${tokens.colors.tertiary}33;
 `;
 
 const RecommendedBadge = styled.span`

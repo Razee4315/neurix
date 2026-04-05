@@ -395,6 +395,15 @@ pub fn run_generation(
     let mut generated_count: usize = 0;
     let mut generated_text = String::new();
 
+    // Use DecodeStream for incremental decoding instead of decoding each token
+    // in isolation. Single-token decode (tokenizer.decode(&[id], false)) loses
+    // leading spaces because BPE/SentencePiece tokenizers encode spaces as part
+    // of the token (e.g. "▁How" -> " How"). When decoded alone, the decoder has
+    // no context and may strip the space prefix. DecodeStream maintains internal
+    // state so that multi-byte sequences and space prefixes are handled correctly
+    // across successive .step() calls.
+    let mut decode_stream = model.tokenizer.decode_stream(false);
+
     // Process entire prompt in one forward pass at position 0.
     // Fresh weights guarantee clean KV cache, so no chunking needed.
     let mut logits = {
@@ -418,7 +427,9 @@ pub fn run_generation(
     generated_tokens.push(next_token);
     generated_count += 1;
 
-    if let Some(text) = decode_token(&model.tokenizer, next_token) {
+    if let Some(text) = decode_stream.step(next_token)
+        .map_err(|e| format!("Decode error: {}", e))?
+    {
         generated_text.push_str(&text);
         let tps = generated_count as f32 / start.elapsed().as_secs_f32().max(0.001);
         let _ = channel.send(InferenceEvent::TokenGenerated {
@@ -481,7 +492,9 @@ pub fn run_generation(
             low_confidence_streak = 0;
         }
 
-        if let Some(text) = decode_token(&model.tokenizer, next_token) {
+        if let Some(text) = decode_stream.step(next_token)
+            .map_err(|e| format!("Decode error: {}", e))?
+        {
             generated_text.push_str(&text);
             let tps = generated_count as f32 / start.elapsed().as_secs_f32().max(0.001);
             let _ = channel.send(InferenceEvent::TokenGenerated {
@@ -500,10 +513,3 @@ pub fn run_generation(
     Ok(())
 }
 
-fn decode_token(tokenizer: &Tokenizer, token_id: u32) -> Option<String> {
-    // skip_special_tokens must be false — Phi3 and other BPE tokenizers encode
-    // leading spaces as part of tokens (e.g. "▁Hello"). With true, these space
-    // tokens get stripped, producing output with no spaces between words.
-    // Stop sequences are handled separately in the generation loop.
-    tokenizer.decode(&[token_id], false).ok()
-}

@@ -6,7 +6,6 @@ import { modelService, settingsService } from "@/services";
 import type { DownloadedModel, StorageInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
-import { useToast } from "@/components/ui/Toast";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -329,7 +328,6 @@ export function MyModelsPage() {
 	const navigate = useNavigate();
 	const { activeModel, refreshActiveModel } = useAppContext();
 	const { showConfirm, showAlert } = useConfirm();
-	const { showToast } = useToast();
 	const [search, setSearch] = useState("");
 	const [models, setModels] = useState<DownloadedModel[]>([]);
 	const [isRefreshing, setIsRefreshing] = useState(false);
@@ -387,10 +385,8 @@ export function MyModelsPage() {
 			await modelService.loadModel(model.id);
 			await refreshActiveModel();
 			if (navigator.vibrate) navigator.vibrate(15);
-			showToast(`${model.name} loaded`, "success");
 			navigate("/chat", { state: { freshChat: true } });
 		} catch (err) {
-			showToast(`Failed to load ${model.name}`, "error");
 			showAlert("Load Failed", String(err));
 		} finally {
 			setLoadingModelId(null);
@@ -416,7 +412,6 @@ export function MyModelsPage() {
 		await modelService.deleteModel(model.id);
 		await refresh();
 		await refreshActiveModel();
-		showToast(`${model.name} deleted`, "info");
 	};
 
 	const usedGB = formatStorageGB(storage.used_bytes);

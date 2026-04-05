@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useRef, useState } from "react";
-import { useToast } from "@/components/ui/Toast";
 import { modelService, settingsService, notificationService } from "@/services";
 import type { DownloadEvent, ModelInfo, Settings } from "@/services/types";
 
@@ -50,7 +49,6 @@ const DownloadContext = createContext<DownloadContextValue>({
 
 export function DownloadProvider({ children }: { children: React.ReactNode }) {
 	const [downloads, setDownloads] = useState<Record<string, DownloadState>>({});
-	const { showToast } = useToast();
 	// Tracks model IDs that have an active invoke call (download in progress on Rust side)
 	const activeRef = useRef<Set<string>>(new Set());
 	// Tracks model IDs that are in the process of starting (async pre-checks)
@@ -137,18 +135,12 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 								speedBps: event.data.speed_bps,
 								status: "downloading",
 							});
-							// System notification for background progress (throttled internally)
-							const pct = event.data.total_bytes > 0
-								? (event.data.bytes_downloaded / event.data.total_bytes) * 100
-								: 0;
-							notificationService.notifyDownloadProgress(model.name, pct);
 						}
 						break;
 					case "Finished":
 						updateDownload(model.id, { status: "finished", speedBps: 0 });
 						activeRef.current.delete(model.id);
 						notificationService.notifyDownloadComplete(model.name);
-						showToast(`${model.name} downloaded successfully`, "success");
 						break;
 					case "Failed": {
 						const errMsg = event.data && "error" in event.data ? event.data.error : "Unknown error";
@@ -159,7 +151,6 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 						});
 						activeRef.current.delete(model.id);
 						notificationService.notifyDownloadFailed(model.name, errMsg);
-						showToast(`${model.name} download failed`, "error");
 						break;
 					}
 					case "Cancelled":
@@ -174,10 +165,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 				updateDownload(model.id, { status: "failed", error: String(err) });
 				activeRef.current.delete(model.id);
 				notificationService.notifyDownloadFailed(model.name, String(err));
-				showToast(`${model.name} download failed`, "error");
 			});
 		})();
-	}, [updateDownload, showToast]);
+	}, [updateDownload]);
 
 	const pauseDownload = useCallback((modelId: string) => {
 		if (!activeRef.current.has(modelId)) return; // Nothing to pause
