@@ -1,5 +1,6 @@
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
+import { ToastProvider } from "@/components/ui/Toast";
 import { AppProvider } from "@/context/AppContext";
 import { DownloadProvider } from "@/context/DownloadContext";
 import { ChatHistoryPage } from "@/pages/ChatHistoryPage";
@@ -22,6 +23,7 @@ function App() {
 		<ThemeProvider theme={theme}>
 			<GlobalStyles />
 			<AppProvider>
+				<ToastProvider>
 				<DownloadProvider>
 				<ConfirmProvider>
 				<HashRouter>
@@ -43,6 +45,7 @@ function App() {
 				</HashRouter>
 				</ConfirmProvider>
 				</DownloadProvider>
+				</ToastProvider>
 			</AppProvider>
 		</ThemeProvider>
 		</ErrorBoundary>

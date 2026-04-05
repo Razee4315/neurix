@@ -33,6 +33,7 @@
     "fs:allow-exists",
     "fs:allow-read-dir",
     "fs:allow-stat",
+    "notification:default",
     "http:default",
     {
       "identifier": "http:allow-fetch",

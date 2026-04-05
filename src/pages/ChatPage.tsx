@@ -163,6 +163,11 @@ const fadeInUp = keyframes`
   to { opacity: 1; transform: translateY(0); }
 `;
 
+const stopPulse = keyframes`
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 113, 108, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(255, 113, 108, 0); }
+`;
+
 /* ── Styles ── */
 
 const ChatContainer = styled.div`
@@ -427,6 +432,24 @@ const SendBtn = styled.button<{ $hasText: boolean }>`
 			: `background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.08);`}
 
   &:hover { opacity: 0.85; }
+  &:active { transform: scale(0.9); }
+`;
+
+const StopBtn = styled.button`
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  border: 2px solid ${tokens.colors.error};
+  background: ${tokens.colors.error}18;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  animation: ${stopPulse} 1.5s ease-in-out infinite;
+  transition: all ${tokens.transitions.fast};
+
+  &:hover { background: ${tokens.colors.error}28; }
   &:active { transform: scale(0.9); }
 `;
 
@@ -789,7 +812,9 @@ export function ChatPage() {
 				break;
 			}
 			case "GenerationComplete": {
-				setIsGenerating(false);
+				// Add message FIRST, then clear stream + generating flag in the same
+				// React batch so there's no 1-frame gap (flicker) between the streaming
+				// bubble disappearing and the permanent bubble appearing.
 				setStreamedText((finalText) => {
 					const cleaned = cleanResponse(finalText);
 					if (cleaned) {
@@ -799,6 +824,7 @@ export function ChatPage() {
 							return updated;
 						});
 					}
+					setIsGenerating(false);
 					return "";
 				});
 				const d = data as { total_tokens: number; duration_ms: number };
@@ -1118,9 +1144,9 @@ export function ChatPage() {
 						disabled={isGenerating || isLoadingModel}
 					/>
 					{isGenerating ? (
-						<SendBtn $hasText onClick={handleStop}>
-							<Icon name="stop" size={20} color={tokens.colors.error} />
-						</SendBtn>
+						<StopBtn onClick={handleStop}>
+							<Icon name="stop_circle" size={22} fill color={tokens.colors.error} />
+						</StopBtn>
 					) : (
 						<SendBtn $hasText={input.trim().length > 0} onClick={handleSend}>
 							<Icon

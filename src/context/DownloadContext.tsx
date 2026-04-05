@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState } from "react";
-import { modelService, settingsService } from "@/services";
+import { useToast } from "@/components/ui/Toast";
+import { modelService, settingsService, notificationService } from "@/services";
 import type { DownloadEvent, ModelInfo, Settings } from "@/services/types";
 
 // Network detection — navigator.connection.type is stale on Android WebView after
@@ -49,6 +50,7 @@ const DownloadContext = createContext<DownloadContextValue>({
 
 export function DownloadProvider({ children }: { children: React.ReactNode }) {
 	const [downloads, setDownloads] = useState<Record<string, DownloadState>>({});
+	const { showToast } = useToast();
 	// Tracks model IDs that have an active invoke call (download in progress on Rust side)
 	const activeRef = useRef<Set<string>>(new Set());
 	// Tracks model IDs that are in the process of starting (async pre-checks)
@@ -135,23 +137,35 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 								speedBps: event.data.speed_bps,
 								status: "downloading",
 							});
+							// System notification for background progress (throttled internally)
+							const pct = event.data.total_bytes > 0
+								? (event.data.bytes_downloaded / event.data.total_bytes) * 100
+								: 0;
+							notificationService.notifyDownloadProgress(model.name, pct);
 						}
 						break;
 					case "Finished":
 						updateDownload(model.id, { status: "finished", speedBps: 0 });
 						activeRef.current.delete(model.id);
+						notificationService.notifyDownloadComplete(model.name);
+						showToast(`${model.name} downloaded successfully`, "success");
 						break;
-					case "Failed":
+					case "Failed": {
+						const errMsg = event.data && "error" in event.data ? event.data.error : "Unknown error";
 						updateDownload(model.id, {
 							status: "failed",
 							speedBps: 0,
-							error: event.data && "error" in event.data ? event.data.error : "Unknown error",
+							error: errMsg,
 						});
 						activeRef.current.delete(model.id);
+						notificationService.notifyDownloadFailed(model.name, errMsg);
+						showToast(`${model.name} download failed`, "error");
 						break;
+					}
 					case "Cancelled":
 						updateDownload(model.id, { status: "paused", speedBps: 0 });
 						activeRef.current.delete(model.id);
+						notificationService.clearDownloadNotification();
 						break;
 				}
 			};
@@ -159,9 +173,11 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 			modelService.downloadModel(model.id, handleEvent).catch((err) => {
 				updateDownload(model.id, { status: "failed", error: String(err) });
 				activeRef.current.delete(model.id);
+				notificationService.notifyDownloadFailed(model.name, String(err));
+				showToast(`${model.name} download failed`, "error");
 			});
 		})();
-	}, [updateDownload]);
+	}, [updateDownload, showToast]);
 
 	const pauseDownload = useCallback((modelId: string) => {
 		if (!activeRef.current.has(modelId)) return; // Nothing to pause
@@ -180,6 +196,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		modelService.cancelDownload(modelId);
 		activeRef.current.delete(modelId);
 		startingRef.current.delete(modelId);
+		notificationService.clearDownloadNotification();
 		setDownloads((prev) => {
 			const next = { ...prev };
 			delete next[modelId];

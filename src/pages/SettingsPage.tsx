@@ -5,6 +5,7 @@ import { useAppContext } from "@/context/AppContext";
 import type { Settings } from "@/services/types";
 import { historyService, settingsService } from "@/services";
 import { tokens } from "@/theme/tokens";
+import { useToast } from "@/components/ui/Toast";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
@@ -195,6 +196,7 @@ export function SettingsPage() {
 	const navigate = useNavigate();
 	const { settings, refreshSettings } = useAppContext();
 	const { showConfirm } = useConfirm();
+	const { showToast } = useToast();
 	const [showInference, setShowInference] = useState(false);
 	const [wifiOnly, setWifiOnly] = useState(false);
 	const [saveHistory, setSaveHistory] = useState(true);
@@ -324,8 +326,9 @@ export function SettingsPage() {
 		if (navigator.vibrate) navigator.vibrate(15);
 		try {
 			await historyService.clearAllConversations();
+			showToast("Chat history cleared", "success");
 		} catch {
-			// silent fail
+			showToast("Failed to clear history", "error");
 		}
 	};
 
@@ -349,6 +352,7 @@ export function SettingsPage() {
 		};
 		await settingsService.updateSettings(defaults);
 		refreshSettings();
+		showToast("Settings restored to defaults", "success");
 	};
 
 	return (

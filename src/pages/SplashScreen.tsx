@@ -1,6 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
-import { modelService, settingsService } from "@/services";
+import { modelService, settingsService, notificationService } from "@/services";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -213,6 +213,7 @@ export function SplashScreen() {
 				const [models, settings] = await Promise.all([
 					modelService.getDownloadedModels(),
 					settingsService.getSettings(),
+					notificationService.init(),
 				]);
 				if (cancelled) return;
 

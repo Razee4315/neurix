@@ -1,5 +1,6 @@
 import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
+import { notificationService } from "@/services";
 import { tokens } from "@/theme/tokens";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -317,11 +318,13 @@ export function OnboardingScreen() {
 	const step = STEPS[currentStep];
 	const touchStartRef = useRef(0);
 
-	const handleNext = () => {
+	const handleNext = async () => {
 		if (navigator.vibrate) navigator.vibrate(8);
 		if (currentStep < STEPS.length - 1) {
 			setCurrentStep((s) => s + 1);
 		} else {
+			// Request notification permission before navigating to store
+			await notificationService.requestNotificationPermission();
 			navigate("/store");
 		}
 	};
