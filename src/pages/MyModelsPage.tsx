@@ -256,8 +256,8 @@ const loadingSpin = keyframes`
 `;
 
 const glowRing = keyframes`
-  0%, 100% { box-shadow: 0 0 0 0 rgba(143, 245, 255, 0.3); }
-  50% { box-shadow: 0 0 20px 4px rgba(143, 245, 255, 0.15); }
+  0%, 100% { box-shadow: 0 0 0 0 ${tokens.colors.primary}4d; }
+  50% { box-shadow: 0 0 20px 4px ${tokens.colors.primary}26; }
 `;
 
 const LoadingOverlay = styled.div`

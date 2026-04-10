@@ -231,7 +231,7 @@ const ProgressDot = styled.div<{
 			case "completed":
 				return css`
           width: 2rem;
-          background: rgba(143, 245, 255, 0.2);
+          background: ${tokens.colors.primary}33;
         `;
 			case "active":
 				return css`
@@ -303,7 +303,7 @@ const NextButton = styled.button<{ $fullWidth: boolean }>`
   transition: all ${tokens.transitions.normal};
 
   &:hover {
-    box-shadow: 0 0 30px rgba(143, 245, 255, 0.25);
+    box-shadow: 0 0 30px ${tokens.colors.primary}40;
   }
   &:active {
     transform: scale(0.98);

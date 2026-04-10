@@ -17,7 +17,7 @@ const NavOuter = styled.div`
   width: 100%;
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLow};
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid ${tokens.colors.outlineVariant}30;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: flex;
   justify-content: center;

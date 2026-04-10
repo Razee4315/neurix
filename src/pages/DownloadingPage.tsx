@@ -82,7 +82,7 @@ const BarFill = styled.div<{ $pct: number }>`
     90deg,
     ${tokens.colors.primary} 0%,
     ${tokens.colors.primaryContainer} 40%,
-    rgba(255, 255, 255, 0.3) 50%,
+    ${tokens.colors.surfaceBright} 50%,
     ${tokens.colors.primaryContainer} 60%,
     ${tokens.colors.primary} 100%
   );

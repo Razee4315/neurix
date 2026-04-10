@@ -29,7 +29,7 @@ const TopBar = styled.header`
   height: 56px;
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLow};
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid ${tokens.colors.outlineVariant}30;
 `;
 
 const TitleGroup = styled.div`

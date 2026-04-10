@@ -20,7 +20,7 @@ const primaryStyles = css`
   color: ${tokens.colors.onPrimaryFixed};
   border: none;
   box-shadow: ${tokens.shadows.glow.primary};
-  &:hover:not(:disabled) { box-shadow: 0 0 30px rgba(143, 245, 255, 0.25); }
+  &:hover:not(:disabled) { box-shadow: 0 0 30px ${tokens.colors.primary}40; }
   &:active:not(:disabled) { transform: scale(0.98); }
 `;
 
