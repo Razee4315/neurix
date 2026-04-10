@@ -258,6 +258,45 @@ jobs:
           NDK_HOME: ${{ env.NDK_HOME }}
         run: npx tauri android build --target aarch64
 
+      - name: Sign AAB and APK with release keystore
+        if: steps.android-check.outputs.ready == 'true' && hashFiles('src-tauri/gen/android/app/neurix-release.keystore') != ''
+        env:
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          AAB=$(find src-tauri/gen/android -name "*.aab" -type f | head -1)
+          APK=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
+          KEYSTORE="src-tauri/gen/android/app/neurix-release.keystore"
+
+          if [ -n "$AAB" ]; then
+            echo "Signing AAB: $AAB"
+            jarsigner -keystore "$KEYSTORE" \
+              -storepass "$ANDROID_STORE_PASSWORD" \
+              -keypass "$ANDROID_KEY_PASSWORD" \
+              "$AAB" "$ANDROID_KEY_ALIAS"
+            jarsigner -verify "$AAB" && echo "AAB signed successfully"
+          fi
+
+          if [ -n "$APK" ]; then
+            echo "Signing APK: $APK"
+            # Use apksigner for APK (jarsigner v1 only, apksigner adds v2/v3)
+            APKSIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" | sort -V | tail -1)
+            if [ -n "$APKSIGNER" ]; then
+              "$APKSIGNER" sign --ks "$KEYSTORE" \
+                --ks-pass "pass:$ANDROID_STORE_PASSWORD" \
+                --ks-key-alias "$ANDROID_KEY_ALIAS" \
+                --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+                "$APK"
+              echo "APK signed successfully"
+            else
+              jarsigner -keystore "$KEYSTORE" \
+                -storepass "$ANDROID_STORE_PASSWORD" \
+                -keypass "$ANDROID_KEY_PASSWORD" \
+                "$APK" "$ANDROID_KEY_ALIAS"
+            fi
+          fi
+
       - name: Rename and upload Android artifacts
         if: steps.android-check.outputs.ready == 'true'
         env:
@@ -265,19 +304,14 @@ jobs:
         run: |
           VERSION=${{ needs.check-and-bump.outputs.version }}
 
-          # Find the APK and AAB (debug or release depending on signing)
           APK=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
           AAB=$(find src-tauri/gen/android -name "*.aab" -type f | head -1)
 
-          # Wait for Windows job to create the release (max 5 min)
-          for i in $(seq 1 30); do
-            if gh release view "v$VERSION" &>/dev/null; then
-              echo "Release v$VERSION found"
-              break
-            fi
-            echo "Waiting for release... ($i/30)"
-            sleep 10
-          done
+          # Release should already exist from Windows job
+          if ! gh release view "v$VERSION" &>/dev/null; then
+            echo "Release v$VERSION not found — creating it"
+            gh release create "v$VERSION" --title "Neurix v$VERSION" --notes "Release v$VERSION"
+          fi
 
           if [ -n "$APK" ]; then
             cp "$APK" "Neurix_${VERSION}_android.apk"
