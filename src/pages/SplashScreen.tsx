@@ -49,7 +49,7 @@ const Container = styled.div`
     height: 60%;
     background: radial-gradient(
       ellipse at center,
-      rgba(143, 245, 255, 0.04) 0%,
+      ${tokens.colors.primary}0a 0%,
       transparent 70%
     );
     pointer-events: none;
@@ -92,7 +92,7 @@ const LogoWrapper = styled.div`
     inset: -20%;
     background: radial-gradient(
       circle,
-      rgba(143, 245, 255, 0.15) 0%,
+      ${tokens.colors.primary}26 0%,
       transparent 70%
     );
     border-radius: ${tokens.borderRadius.circle};

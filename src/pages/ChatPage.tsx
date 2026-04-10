@@ -197,14 +197,14 @@ const Bubble = styled.div<{ $role: "ai" | "user" }>`
   ${({ $role }) =>
 		$role === "user"
 			? `
-    background: rgba(143, 245, 255, 0.08);
-    border: 1px solid rgba(143, 245, 255, 0.12);
+    background: ${tokens.colors.primaryContainer}14;
+    border: 1px solid ${tokens.colors.primaryContainer}20;
     color: ${tokens.colors.onSurface};
     border-bottom-right-radius: 4px;
   `
 			: `
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: ${tokens.colors.surfaceContainerHigh};
+    border: 1px solid ${tokens.colors.outlineVariant}30;
     color: ${tokens.colors.onSurfaceVariant};
     border-bottom-left-radius: 4px;
   `}
@@ -390,7 +390,7 @@ const InputBar = styled.div`
   align-items: flex-end;
   gap: 0.5rem;
   background: ${tokens.colors.surfaceContainer};
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid ${tokens.colors.outlineVariant}30;
 `;
 
 const TextInput = styled.textarea`
@@ -398,8 +398,8 @@ const TextInput = styled.textarea`
   min-height: 40px;
   max-height: 120px;
   padding: 0.625rem 0.875rem;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: ${tokens.colors.surfaceContainerHigh};
+  border: 1px solid ${tokens.colors.outlineVariant}30;
   border-radius: 20px;
   font-size: ${tokens.typography.fontSize.base};
   font-family: ${tokens.typography.fontFamily.body};
@@ -427,7 +427,7 @@ const SendBtn = styled.button<{ $hasText: boolean }>`
   ${({ $hasText }) =>
 		$hasText
 			? `background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});`
-			: `background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.08);`}
+			: `background: ${tokens.colors.surfaceContainerHigh}; border: 1px solid ${tokens.colors.outlineVariant}30;`}
 
   &:hover { opacity: 0.85; }
   &:active { transform: scale(0.9); }
