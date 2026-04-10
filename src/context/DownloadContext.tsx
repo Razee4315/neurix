@@ -62,7 +62,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, []);
 
-	const startDownload = useCallback((model: ModelInfo) => {
+	const startDownload = useCallback((model: ModelInfo, skipWifiCheck = false) => {
 		// Guard: don't start if already downloading or already starting
 		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
 		startingRef.current.add(model.id);
@@ -83,19 +83,21 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 		// Run async pre-checks then start the actual download
 		(async () => {
-			// Enforce WiFi-only setting
-			try {
-				const currentSettings: Settings = await settingsService.getSettings();
-				if (currentSettings.wifi_only && !isOnWifi()) {
-					startingRef.current.delete(model.id);
-					updateDownload(model.id, {
-						status: "failed",
-						error: "WiFi-only mode is enabled. Connect to WiFi to download.",
-					});
-					return;
+			// Enforce WiFi-only setting (skip on resume — connection API is stale in WebView)
+			if (!skipWifiCheck) {
+				try {
+					const currentSettings: Settings = await settingsService.getSettings();
+					if (currentSettings.wifi_only && !isOnWifi()) {
+						startingRef.current.delete(model.id);
+						updateDownload(model.id, {
+							status: "failed",
+							error: "WiFi-only mode is enabled. Connect to WiFi to download.",
+						});
+						return;
+					}
+				} catch {
+					// If settings check fails, proceed anyway
 				}
-			} catch {
-				// If settings check fails, proceed anyway
 			}
 
 			// Check available disk space
@@ -177,9 +179,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 	const resumeDownload = useCallback((model: ModelInfo) => {
 		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
-		// Small delay lets the network API update its stale state after WiFi reconnect.
-		// Without this, navigator.connection.type can still report the old value.
-		setTimeout(() => startDownload(model), 300);
+		// Skip WiFi check on resume — user explicitly chose to resume,
+		// and navigator.connection.type is unreliable in Android WebView after reconnect.
+		startDownload(model, true);
 	}, [startDownload]);
 
 	const cancelDownload = useCallback((modelId: string) => {
