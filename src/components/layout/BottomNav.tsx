@@ -5,9 +5,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import styled, { css, keyframes } from "styled-components";
 
 const NAV_TABS = [
-	{ icon: "storefront", label: "Store", path: "/store" },
-	{ icon: "deployed_code", label: "Models", path: "/models" },
 	{ icon: "chat_bubble", label: "Chat", path: "/chat" },
+	{ icon: "deployed_code", label: "Models", path: "/models" },
+	{ icon: "storefront", label: "Store", path: "/store" },
 	{ icon: "settings", label: "Settings", path: "/settings" },
 ] as const;
 
