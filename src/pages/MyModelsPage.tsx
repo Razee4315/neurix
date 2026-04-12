@@ -443,6 +443,7 @@ export function MyModelsPage() {
 						onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
 							setSearch(e.target.value)
 						}
+						aria-label="Search downloaded models"
 					/>
 				</SearchBox>
 
@@ -508,8 +509,8 @@ export function MyModelsPage() {
 													? "Active"
 													: "Use Model"}
 										</UseBtn>
-										<DeleteBtn onClick={() => handleDelete(m)}>
-											<Icon name="delete" size={16} color={tokens.colors.error} />
+										<DeleteBtn onClick={() => handleDelete(m)} aria-label={`Delete ${m.name}`}>
+											<Icon name="delete" size={18} color={tokens.colors.error} />
 										</DeleteBtn>
 									</CardActions>
 								</Card>

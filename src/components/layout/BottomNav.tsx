@@ -110,6 +110,8 @@ export function BottomNav() {
 								if (navigator.vibrate) navigator.vibrate(5);
 								navigate(tab.path);
 							}}
+							aria-label={tab.label}
+							aria-current={isActive ? "page" : undefined}
 						>
 							<Icon
 								name={tab.icon}

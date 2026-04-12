@@ -285,6 +285,7 @@ export function ModelStorePage() {
 						placeholder="Search models..."
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
+						aria-label="Search models"
 					/>
 				</SearchBox>
 

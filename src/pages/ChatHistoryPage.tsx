@@ -335,6 +335,7 @@ export function ChatHistoryPage() {
 						placeholder="Search chats..."
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
+						aria-label="Search conversations"
 					/>
 				</SearchBox>
 

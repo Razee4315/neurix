@@ -365,7 +365,13 @@ export function SettingsPage() {
 								<RowSub>Save mobile data</RowSub>
 							</RowText>
 						</RowLeft>
-						<Toggle $on={wifiOnly} onClick={toggleWifi} />
+						<Toggle
+							$on={wifiOnly}
+							onClick={toggleWifi}
+							role="switch"
+							aria-checked={wifiOnly}
+							aria-label="WiFi-only downloads"
+						/>
 					</ToggleRow>
 
 					<ToggleRow>
@@ -378,7 +384,13 @@ export function SettingsPage() {
 								<RowSub>Keep conversations locally</RowSub>
 							</RowText>
 						</RowLeft>
-						<Toggle $on={saveHistory} onClick={toggleHistory} />
+						<Toggle
+							$on={saveHistory}
+							onClick={toggleHistory}
+							role="switch"
+							aria-checked={saveHistory}
+							aria-label="Save chat history"
+						/>
 					</ToggleRow>
 
 					<ToggleRow>
@@ -391,7 +403,13 @@ export function SettingsPage() {
 								<RowSub>Display inference speed in chat</RowSub>
 							</RowText>
 						</RowLeft>
-						<Toggle $on={showSpeed} onClick={toggleSpeed} />
+						<Toggle
+							$on={showSpeed}
+							onClick={toggleSpeed}
+							role="switch"
+							aria-checked={showSpeed}
+							aria-label="Show token speed"
+						/>
 					</ToggleRow>
 
 					</Section>
