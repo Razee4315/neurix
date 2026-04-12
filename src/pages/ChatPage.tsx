@@ -342,6 +342,32 @@ const BubbleWrap = styled.div`
   flex-direction: column;
 `;
 
+const BubbleRow = styled.div<{ $role: "ai" | "user" }>`
+  display: flex;
+  align-items: flex-start;
+  gap: 0.25rem;
+  flex-direction: ${({ $role }) => $role === "user" ? "row-reverse" : "row"};
+`;
+
+const MenuBtn = styled.button`
+  width: 28px;
+  height: 28px;
+  border-radius: ${tokens.borderRadius.circle};
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.4;
+  transition: all ${tokens.transitions.fast};
+  flex-shrink: 0;
+  margin-top: 0.5rem;
+
+  &:hover { opacity: 1; background: ${tokens.colors.surfaceContainerHigh}; }
+  &:active { transform: scale(0.9); }
+`;
+
 const MsgActionBtn = styled.button<{ $copied?: boolean }>`
   display: flex;
   align-items: center;
@@ -1103,32 +1129,40 @@ export function ChatPage() {
 					)}
 					{messages.map((msg, i) => (
 						<BubbleWrap key={`msg-${i}-${msg.role}`}>
-							<Bubble
-								$role={msg.role}
-								onTouchStart={() => handleLongPressStart(i)}
-								onTouchEnd={handleLongPressEnd}
-								onTouchCancel={handleLongPressEnd}
-							>
-								<BubbleLabel $role={msg.role}>
-									{msg.role === "ai" ? "Neurix" : "You"}
-								</BubbleLabel>
-								<BubbleBody>
-									{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
-								</BubbleBody>
-							</Bubble>
+							<BubbleRow $role={msg.role}>
+								<Bubble
+									$role={msg.role}
+									onTouchStart={() => handleLongPressStart(i)}
+									onTouchEnd={handleLongPressEnd}
+									onTouchCancel={handleLongPressEnd}
+								>
+									<BubbleLabel $role={msg.role}>
+										{msg.role === "ai" ? "Neurix" : "You"}
+									</BubbleLabel>
+									<BubbleBody>
+										{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
+									</BubbleBody>
+								</Bubble>
+								<MenuBtn
+									onClick={() => setActiveMessageIdx(prev => prev === i ? null : i)}
+									aria-label="Message options"
+								>
+									<Icon name="more_vert" size={16} color={tokens.colors.onSurfaceVariant} />
+								</MenuBtn>
+							</BubbleRow>
 							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
 								<MessageCopyBtn text={msg.text} />
 								<MsgActionBtn onClick={() => handleShareMessage(msg.text)}>
-									<Icon name="share" size={12} />
+									<Icon name="share" size={14} />
 									Share
 								</MsgActionBtn>
 								<MsgActionBtn onClick={() => handleDeleteMessage(i)}>
-									<Icon name="delete" size={12} />
+									<Icon name="delete" size={14} />
 									Delete
 								</MsgActionBtn>
 								{msg.role === "ai" && i === messages.length - 1 && (
 									<MsgActionBtn onClick={handleRegenerate}>
-										<Icon name="refresh" size={12} />
+										<Icon name="refresh" size={14} />
 										Retry
 									</MsgActionBtn>
 								)}
