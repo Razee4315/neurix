@@ -6,7 +6,7 @@ import type { ConversationMeta } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -99,42 +99,7 @@ const slideIn = keyframes`
   to { opacity: 1; transform: translateY(0); }
 `;
 
-const SwipeContainer = styled.div`
-  position: relative;
-  overflow: hidden;
-  border-radius: ${tokens.borderRadius.lg};
-  animation: ${slideIn} 0.3s ease-out both;
-`;
-
-const SwipeActions = styled.div`
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 80px;
-  display: flex;
-  align-items: stretch;
-  border-radius: 0 ${tokens.borderRadius.lg} ${tokens.borderRadius.lg} 0;
-  overflow: hidden;
-`;
-
-const SwipeShareBg = styled.div`
-  flex: 1;
-  background: ${tokens.colors.primary};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`;
-
-const SwipeDeleteBg = styled.div`
-  flex: 1;
-  background: ${tokens.colors.error};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-`;
-
-const ChatItem = styled.div<{ $offset?: number }>`
+const ChatItem = styled.div`
   width: 100%;
   text-align: left;
   display: flex;
@@ -145,12 +110,11 @@ const ChatItem = styled.div<{ $offset?: number }>`
   border: none;
   border-radius: ${tokens.borderRadius.lg};
   cursor: pointer;
-  transition: ${({ $offset }) => $offset === 0 ? `transform 0.2s ease-out` : "none"};
-  transform: translateX(${({ $offset }) => $offset ?? 0}px);
-  position: relative;
-  z-index: 1;
+  transition: background ${tokens.transitions.fast};
+  animation: ${slideIn} 0.3s ease-out both;
 
-  &:active { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:active { background: ${tokens.colors.surfaceContainerHighest}; }
 `;
 
 const ChatIcon = styled.div`
@@ -196,10 +160,10 @@ const RenameInput = styled.input`
   outline: none;
 `;
 
-const EditBtn = styled.button`
-  width: 44px;
-  height: 44px;
-  background: none;
+const ActionBtn = styled.button<{ $danger?: boolean }>`
+  width: 40px;
+  height: 40px;
+  background: ${({ $danger }) => $danger ? tokens.colors.error + "12" : tokens.colors.surfaceContainerHighest};
   border: none;
   border-radius: ${tokens.borderRadius.md};
   cursor: pointer;
@@ -207,70 +171,19 @@ const EditBtn = styled.button`
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  opacity: 0.6;
-  transition: opacity ${tokens.transitions.fast}, background ${tokens.transitions.fast};
+  transition: all ${tokens.transitions.fast};
 
-  &:hover { opacity: 1; background: ${tokens.colors.surfaceContainerHighest}; }
+  &:hover {
+    background: ${({ $danger }) => $danger ? tokens.colors.error + "22" : tokens.colors.surfaceBright};
+  }
   &:active { transform: scale(0.9); }
 `;
 
-/* ── Swipeable Row ── */
-
-function SwipeableRow({
-	renderItem,
-	onDelete,
-	onShare,
-}: { renderItem: (offset: number) => React.ReactNode; onDelete: () => void; onShare: () => void }) {
-	const [offset, setOffset] = useState(0);
-	const startXRef = useRef(0);
-	const currentXRef = useRef(0);
-	const swipingRef = useRef(false);
-
-	const handleTouchStart = (e: React.TouchEvent) => {
-		startXRef.current = e.touches[0].clientX;
-		currentXRef.current = 0;
-		swipingRef.current = false;
-	};
-
-	const handleTouchMove = (e: React.TouchEvent) => {
-		const diff = e.touches[0].clientX - startXRef.current;
-		if (diff < -10) swipingRef.current = true;
-		if (swipingRef.current) {
-			const clamped = Math.max(Math.min(diff, 0), -80);
-			currentXRef.current = clamped;
-			setOffset(clamped);
-		}
-	};
-
-	const handleTouchEnd = () => {
-		if (currentXRef.current < -50) {
-			setOffset(-80);
-		} else {
-			setOffset(0);
-		}
-		swipingRef.current = false;
-	};
-
-	return (
-		<SwipeContainer>
-			<SwipeActions>
-				<SwipeShareBg onClick={onShare}>
-					<Icon name="share" size={18} color="#fff" />
-				</SwipeShareBg>
-				<SwipeDeleteBg onClick={onDelete}>
-					<Icon name="delete" size={18} color="#fff" />
-				</SwipeDeleteBg>
-			</SwipeActions>
-			<div
-				onTouchStart={handleTouchStart}
-				onTouchMove={handleTouchMove}
-				onTouchEnd={handleTouchEnd}
-			>
-				{renderItem(offset)}
-			</div>
-		</SwipeContainer>
-	);
-}
+const ActionGroup = styled.div`
+  display: flex;
+  gap: 0.25rem;
+  flex-shrink: 0;
+`;
 
 /* ── Component ── */
 
@@ -439,51 +352,68 @@ export function ChatHistoryPage() {
 							</GroupLabel>
 							<ChatList>
 								{items.map((entry) => (
-									<SwipeableRow
+									<ChatItem
 										key={entry.id}
-										onDelete={() => handleDeleteOne(entry.id, entry.title)}
-										onShare={() => handleExport(entry.id, entry.title)}
-										renderItem={(offset) => (
-											<ChatItem
-												$offset={offset}
-												onClick={() => {
-													if (offset === 0 && renamingId !== entry.id) navigate("/chat", { state: { conversationId: entry.id } });
-												}}
-											>
-												<ChatIcon>
-													<Icon name="chat_bubble" size={18} color={tokens.colors.onSurfaceVariant} />
-												</ChatIcon>
-												<ChatInfo>
-													{renamingId === entry.id ? (
-														<RenameInput
-															value={renameValue}
-															onChange={(e) => setRenameValue(e.target.value)}
-															onBlur={handleFinishRename}
-															onKeyDown={(e) => {
-																if (e.key === "Enter") handleFinishRename();
-																if (e.key === "Escape") setRenamingId(null);
-															}}
-															autoFocus
-															onClick={(e) => e.stopPropagation()}
-														/>
-													) : (
-														<ChatTitle>{entry.title}</ChatTitle>
-													)}
-													<ChatMeta>
-														{entry.model_name} · {formatTime(entry.updated_at)}
-													</ChatMeta>
-												</ChatInfo>
-												{renamingId !== entry.id && (
-													<EditBtn onClick={(e) => {
+										onClick={() => {
+											if (renamingId !== entry.id) navigate("/chat", { state: { conversationId: entry.id } });
+										}}
+									>
+										<ChatIcon>
+											<Icon name="chat_bubble" size={18} color={tokens.colors.onSurfaceVariant} />
+										</ChatIcon>
+										<ChatInfo>
+											{renamingId === entry.id ? (
+												<RenameInput
+													value={renameValue}
+													onChange={(e) => setRenameValue(e.target.value)}
+													onBlur={handleFinishRename}
+													onKeyDown={(e) => {
+														if (e.key === "Enter") handleFinishRename();
+														if (e.key === "Escape") setRenamingId(null);
+													}}
+													autoFocus
+													onClick={(e) => e.stopPropagation()}
+												/>
+											) : (
+												<ChatTitle>{entry.title}</ChatTitle>
+											)}
+											<ChatMeta>
+												{entry.model_name} · {formatTime(entry.updated_at)}
+											</ChatMeta>
+										</ChatInfo>
+										{renamingId !== entry.id && (
+											<ActionGroup>
+												<ActionBtn
+													onClick={(e) => {
 														e.stopPropagation();
 														handleStartRename(entry.id, entry.title);
-													}}>
-														<Icon name="edit" size={16} color={tokens.colors.onSurfaceVariant} />
-													</EditBtn>
-												)}
-											</ChatItem>
+													}}
+													aria-label="Rename conversation"
+												>
+													<Icon name="edit" size={18} color={tokens.colors.onSurfaceVariant} />
+												</ActionBtn>
+												<ActionBtn
+													onClick={(e) => {
+														e.stopPropagation();
+														handleExport(entry.id, entry.title);
+													}}
+													aria-label="Share conversation"
+												>
+													<Icon name="share" size={18} color={tokens.colors.onSurfaceVariant} />
+												</ActionBtn>
+												<ActionBtn
+													$danger
+													onClick={(e) => {
+														e.stopPropagation();
+														handleDeleteOne(entry.id, entry.title);
+													}}
+													aria-label="Delete conversation"
+												>
+													<Icon name="delete" size={18} color={tokens.colors.error} />
+												</ActionBtn>
+											</ActionGroup>
 										)}
-									/>
+									</ChatItem>
 								))}
 							</ChatList>
 						</div>
