@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { modelService, settingsService, notificationService } from "@/services";
 import type { DownloadEvent, ModelInfo, Settings } from "@/services/types";
 
-// Network detection result: true = on WiFi, false = not on WiFi, null = can't determine
+// Network detection result: true = on WiFi, false = on mobile data, null = can't determine
 function detectNetwork(): { isWifi: boolean | null; apiAvailable: boolean } {
 	// If the browser says we're offline, we're definitely not on WiFi
 	if (!navigator.onLine) return { isWifi: false, apiAvailable: true };
@@ -15,8 +15,12 @@ function detectNetwork(): { isWifi: boolean | null; apiAvailable: boolean } {
 	// If connection API unavailable, we can't determine network type
 	if (!conn || !conn.type) return { isWifi: null, apiAvailable: false };
 
-	const isWifi = conn.type === "wifi" || conn.type === "ethernet";
-	return { isWifi, apiAvailable: true };
+	// Only block on explicitly mobile connections
+	// "cellular" is mobile data - block this
+	// "wifi", "ethernet", "wimax" - allow
+	// "unknown", "other", "none", "bluetooth" - can't be sure, allow to avoid false blocks
+	const isMobileData = conn.type === "cellular";
+	return { isWifi: !isMobileData, apiAvailable: true };
 }
 
 export interface DownloadState {
@@ -89,17 +93,16 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 				const currentSettings: Settings = await settingsService.getSettings();
 				if (currentSettings.wifi_only) {
 					const network = detectNetwork();
-					// If API is available and we're NOT on WiFi, block the download
+					// Only block if we can confirm user is on mobile data (cellular)
+					// Allow download on WiFi, ethernet, or when we can't determine
 					if (network.apiAvailable && network.isWifi === false) {
 						startingRef.current.delete(model.id);
 						updateDownload(model.id, {
 							status: "paused",
-							error: "WiFi-only mode is enabled. Connect to WiFi to download.",
+							error: "Mobile data detected. Connect to WiFi to download.",
 						});
 						return;
 					}
-					// If API unavailable, allow download (can't enforce without detection)
-					// User opted into wifi-only but we can't verify - proceed with warning logged
 				}
 			} catch {
 				// If settings check fails, fail-closed: don't proceed
@@ -247,9 +250,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 				return; // Can't verify settings, don't interrupt
 			}
 
-			// If WiFi is lost, pause all active downloads
+			// Pause downloads if switched to mobile data
 			const network = detectNetwork();
-			// Only pause if we can confirm we're NOT on WiFi
+			// Only pause if we can confirm user is now on cellular/mobile data
 			if (network.apiAvailable && network.isWifi === false) {
 				for (const modelId of activeRef.current) {
 					modelService.cancelDownload(modelId);
@@ -262,7 +265,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 								...existing,
 								status: "paused",
 								speedBps: 0,
-								error: "Download paused: WiFi disconnected",
+								error: "Download paused: switched to mobile data",
 							},
 						};
 					});
