@@ -337,7 +337,7 @@ export function SettingsPage() {
 		});
 		if (!ok) return;
 		const defaults: Settings = {
-			wifi_only: false,
+			wifi_only: true,
 			save_history: true,
 			show_speed: true,
 			system_prompt: "",

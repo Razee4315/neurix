@@ -1,10 +1,9 @@
-import { createContext, useCallback, useContext, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { modelService, settingsService, notificationService } from "@/services";
 import type { DownloadEvent, ModelInfo, Settings } from "@/services/types";
 
-// Network detection — navigator.connection.type is stale on Android WebView after
-// WiFi reconnect. Use navigator.onLine as primary check (reliably updated by the OS),
-// with connection.type as a secondary hint when available.
+// Network detection — fail-closed: if we can't determine network type, assume not WiFi.
+// This protects users from unexpected mobile data usage.
 function isOnWifi(): boolean {
 	// If the browser says we're offline, we're definitely not on WiFi
 	if (!navigator.onLine) return false;
@@ -13,8 +12,9 @@ function isOnWifi(): boolean {
 		connection?: { type?: string; effectiveType?: string };
 	};
 	const conn = nav.connection;
-	// If connection API unavailable or type unknown, trust navigator.onLine
-	if (!conn || !conn.type) return true;
+	// Fail-closed: if connection API unavailable or type unknown, assume NOT WiFi
+	// to protect user's mobile data
+	if (!conn || !conn.type) return false;
 	return conn.type === "wifi" || conn.type === "ethernet";
 }
 
@@ -62,7 +62,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, []);
 
-	const startDownload = useCallback((model: ModelInfo, skipWifiCheck = false) => {
+	const startDownload = useCallback((model: ModelInfo) => {
 		// Guard: don't start if already downloading or already starting
 		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
 		startingRef.current.add(model.id);
@@ -83,21 +83,25 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 		// Run async pre-checks then start the actual download
 		(async () => {
-			// Enforce WiFi-only setting (skip on resume — connection API is stale in WebView)
-			if (!skipWifiCheck) {
-				try {
-					const currentSettings: Settings = await settingsService.getSettings();
-					if (currentSettings.wifi_only && !isOnWifi()) {
-						startingRef.current.delete(model.id);
-						updateDownload(model.id, {
-							status: "failed",
-							error: "WiFi-only mode is enabled. Connect to WiFi to download.",
-						});
-						return;
-					}
-				} catch {
-					// If settings check fails, proceed anyway
+			// Enforce WiFi-only setting - always check, even on resume
+			try {
+				const currentSettings: Settings = await settingsService.getSettings();
+				if (currentSettings.wifi_only && !isOnWifi()) {
+					startingRef.current.delete(model.id);
+					updateDownload(model.id, {
+						status: "paused",
+						error: "WiFi-only mode is enabled. Connect to WiFi to download.",
+					});
+					return;
 				}
+			} catch {
+				// If settings check fails, fail-closed: don't proceed
+				startingRef.current.delete(model.id);
+				updateDownload(model.id, {
+					status: "failed",
+					error: "Could not verify network settings. Please try again.",
+				});
+				return;
 			}
 
 			// Check available disk space
@@ -179,9 +183,8 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 	const resumeDownload = useCallback((model: ModelInfo) => {
 		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
-		// Skip WiFi check on resume — user explicitly chose to resume,
-		// and navigator.connection.type is unreliable in Android WebView after reconnect.
-		startDownload(model, true);
+		// Always check WiFi on resume - user's data protection takes priority
+		startDownload(model);
 	}, [startDownload]);
 
 	const cancelDownload = useCallback((modelId: string) => {
@@ -202,6 +205,62 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 			delete next[modelId];
 			return next;
 		});
+	}, []);
+
+	// Monitor network changes and pause downloads when WiFi is lost (if wifi_only is enabled)
+	useEffect(() => {
+		const nav = navigator as Navigator & {
+			connection?: EventTarget & { type?: string };
+		};
+		const conn = nav.connection;
+
+		const handleNetworkChange = async () => {
+			// Check if we have active downloads
+			if (activeRef.current.size === 0) return;
+
+			// Check if wifi_only is enabled
+			try {
+				const settings = await settingsService.getSettings();
+				if (!settings.wifi_only) return;
+			} catch {
+				return; // Can't verify settings, don't interrupt
+			}
+
+			// If WiFi is lost, pause all active downloads
+			if (!isOnWifi()) {
+				for (const modelId of activeRef.current) {
+					modelService.cancelDownload(modelId);
+					setDownloads((prev) => {
+						const existing = prev[modelId];
+						if (!existing) return prev;
+						return {
+							...prev,
+							[modelId]: {
+								...existing,
+								status: "paused",
+								speedBps: 0,
+								error: "Download paused: WiFi disconnected",
+							},
+						};
+					});
+				}
+				activeRef.current.clear();
+			}
+		};
+
+		// Listen for connection changes
+		if (conn) {
+			conn.addEventListener("change", handleNetworkChange);
+		}
+		// Also listen for online/offline events as fallback
+		window.addEventListener("offline", handleNetworkChange);
+
+		return () => {
+			if (conn) {
+				conn.removeEventListener("change", handleNetworkChange);
+			}
+			window.removeEventListener("offline", handleNetworkChange);
+		};
 	}, []);
 
 	return (
