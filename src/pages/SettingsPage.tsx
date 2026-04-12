@@ -105,8 +105,7 @@ const Toggle = styled.button<{ $on: boolean }>`
 
 const SectionLabel = styled.h2`
   font-size: ${tokens.typography.fontSize.sm};
-  text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
+  font-weight: ${tokens.typography.fontWeight.semibold};
   color: ${tokens.colors.onSurfaceVariant};
   margin-bottom: 0.5rem;
   padding-left: 0.25rem;

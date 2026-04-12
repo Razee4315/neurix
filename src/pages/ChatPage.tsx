@@ -212,9 +212,9 @@ const Bubble = styled.div<{ $role: "ai" | "user" }>`
 
 const BubbleLabel = styled.span<{ $role: "ai" | "user" }>`
   display: block;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  letter-spacing: ${tokens.typography.letterSpacing.wide};
   margin-bottom: 0.25rem;
   color: ${({ $role }) =>
 		$role === "ai" ? tokens.colors.primary : tokens.colors.onSurfaceVariant};
@@ -286,9 +286,8 @@ const CodeBlock = styled.div`
 const CodeLang = styled.span`
   display: block;
   padding: 0.375rem 0.75rem;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.medium};
   color: ${tokens.colors.onSurfaceVariant};
   background: ${tokens.colors.surfaceContainerHigh};
 `;
