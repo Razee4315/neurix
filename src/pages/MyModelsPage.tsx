@@ -507,6 +507,14 @@ export function MyModelsPage() {
 		refresh();
 	}, [refresh]);
 
+	// Auto-refresh installed models when any download completes
+	useEffect(() => {
+		const hasFinished = Object.values(downloads).some(d => d.status === "finished");
+		if (hasFinished) {
+			refresh();
+		}
+	}, [downloads, refresh]);
+
 	const handlePullRefresh = async () => {
 		if (navigator.vibrate) navigator.vibrate(8);
 		setIsRefreshing(true);
