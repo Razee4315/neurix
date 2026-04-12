@@ -1128,33 +1128,21 @@ export function ChatPage() {
 					)}
 					{messages.map((msg, i) => (
 						<BubbleWrap key={`msg-${i}-${msg.role}`}>
-							<BubbleRow $role={msg.role}>
-								<Bubble
-									$role={msg.role}
-									onTouchStart={() => handleLongPressStart(i)}
-									onTouchEnd={handleLongPressEnd}
-									onTouchCancel={handleLongPressEnd}
-								>
-									<BubbleLabel $role={msg.role}>
-										{msg.role === "ai" ? "Neurix" : "You"}
-									</BubbleLabel>
-									<BubbleBody>
-										{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
-									</BubbleBody>
-								</Bubble>
-								<MenuBtn
-									onClick={() => setActiveMessageIdx(prev => prev === i ? null : i)}
-									aria-label="Message options"
-								>
-									<Icon name="more_vert" size={16} color={tokens.colors.onSurfaceVariant} />
-								</MenuBtn>
-							</BubbleRow>
+							<Bubble
+								$role={msg.role}
+								onTouchStart={() => handleLongPressStart(i)}
+								onTouchEnd={handleLongPressEnd}
+								onTouchCancel={handleLongPressEnd}
+							>
+								<BubbleLabel $role={msg.role}>
+									{msg.role === "ai" ? "Neurix" : "You"}
+								</BubbleLabel>
+								<BubbleBody>
+									{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
+								</BubbleBody>
+							</Bubble>
 							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
 								<MessageCopyBtn text={msg.text} />
-								<MsgActionBtn onClick={() => handleShareMessage(msg.text)}>
-									<Icon name="share" size={14} />
-									Share
-								</MsgActionBtn>
 								<MsgActionBtn onClick={() => handleDeleteMessage(i)}>
 									<Icon name="delete" size={14} />
 									Delete
