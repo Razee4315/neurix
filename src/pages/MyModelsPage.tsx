@@ -334,13 +334,13 @@ export function MyModelsPage() {
 	const pullStartRef = useRef(0);
 	const pageRef = useRef<HTMLDivElement>(null);
 	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0 });
-	const [availableSpace, setAvailableSpace] = useState<number>(0);
+	const [availableSpace, setAvailableSpace] = useState<number | null>(null);
 
 	const refresh = useCallback(async () => {
 		const [downloaded, info, available] = await Promise.all([
 			modelService.getDownloadedModels(),
 			settingsService.getStorageInfo(),
-			settingsService.getAvailableSpace().catch(() => 0),
+			settingsService.getAvailableSpace().catch(() => null),
 		]);
 		setModels(downloaded);
 		setStorage(info);
@@ -418,9 +418,10 @@ export function MyModelsPage() {
 	};
 
 	const usedGB = formatStorageGB(storage.used_bytes);
-	const totalSpace = storage.used_bytes + availableSpace;
-	const usagePercent = totalSpace > 0 ? (storage.used_bytes / totalSpace) * 100 : 0;
-	const freeGB = formatStorageGB(availableSpace);
+	const storageKnown = availableSpace !== null;
+	const totalSpace = storageKnown ? storage.used_bytes + availableSpace : 0;
+	const usagePercent = storageKnown && totalSpace > 0 ? (storage.used_bytes / totalSpace) * 100 : 0;
+	const freeGB = storageKnown ? formatStorageGB(availableSpace) : null;
 
 	return (
 		<AppLayout title="My Models">
@@ -451,14 +452,19 @@ export function MyModelsPage() {
 
 				<StorageSection>
 					<StorageHeader>
-						<StorageLabel>{storage.models_count} model{storage.models_count !== 1 ? "s" : ""} · {freeGB} GB free</StorageLabel>
+						<StorageLabel>
+							{storage.models_count} model{storage.models_count !== 1 ? "s" : ""}
+							{freeGB !== null ? ` · ${freeGB} GB free` : ""}
+						</StorageLabel>
 						<StorageValue>
 							{usedGB} <span>GB</span>
 						</StorageValue>
 					</StorageHeader>
-					<StorageBar>
-						<StorageFill $pct={Math.min(usagePercent, 100)} />
-					</StorageBar>
+					{storageKnown && (
+						<StorageBar>
+							<StorageFill $pct={Math.min(usagePercent, 100)} />
+						</StorageBar>
+					)}
 				</StorageSection>
 
 				<ListHeader>
