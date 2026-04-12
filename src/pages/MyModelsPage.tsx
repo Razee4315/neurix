@@ -340,8 +340,8 @@ const DownloadActions = styled.div`
 
 const DownloadActionBtn = styled.button<{ $primary?: boolean }>`
   flex: 1;
-  height: 40px;
-  border-radius: ${tokens.borderRadius.md};
+  height: 44px;
+  border-radius: ${tokens.borderRadius.lg};
   border: none;
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.semibold};
