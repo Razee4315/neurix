@@ -350,8 +350,8 @@ const BubbleRow = styled.div<{ $role: "ai" | "user" }>`
 `;
 
 const MenuBtn = styled.button`
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   border-radius: ${tokens.borderRadius.circle};
   border: none;
   background: transparent;
@@ -362,7 +362,6 @@ const MenuBtn = styled.button`
   opacity: 0.4;
   transition: all ${tokens.transitions.fast};
   flex-shrink: 0;
-  margin-top: 0.5rem;
 
   &:hover { opacity: 1; background: ${tokens.colors.surfaceContainerHigh}; }
   &:active { transform: scale(0.9); }

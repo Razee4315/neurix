@@ -161,11 +161,11 @@ const RenameInput = styled.input`
 `;
 
 const ActionBtn = styled.button<{ $danger?: boolean }>`
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   background: ${({ $danger }) => $danger ? tokens.colors.error + "12" : tokens.colors.surfaceContainerHighest};
   border: none;
-  border-radius: ${tokens.borderRadius.md};
+  border-radius: ${tokens.borderRadius.lg};
   cursor: pointer;
   display: flex;
   align-items: center;
