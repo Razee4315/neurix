@@ -74,9 +74,8 @@ const GroupLabel = styled.div`
 `;
 
 const GroupText = styled.span`
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.semibold};
   color: ${tokens.colors.onSurfaceVariant};
   flex-shrink: 0;
 `;

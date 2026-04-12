@@ -63,13 +63,11 @@ const Chips = styled.div`
 
 const Chip = styled.button<{ $active: boolean }>`
   flex-shrink: 0;
-  padding: 0.375rem 0.75rem;
+  padding: 0.5rem 0.875rem;
   border-radius: ${tokens.borderRadius.md};
   border: none;
-  font-size: 11px;
-  font-weight: ${tokens.typography.fontWeight.bold};
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.semibold};
   cursor: pointer;
   transition: all ${tokens.transitions.fast};
   background: ${({ $active }) =>
