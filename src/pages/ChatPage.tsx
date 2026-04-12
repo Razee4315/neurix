@@ -1087,7 +1087,7 @@ export function ChatPage() {
 						</ModelTag>
 					)}
 					{messages.length > 0 && (
-						<TopBarBtn onClick={handleShareChat}>
+						<TopBarBtn onClick={handleShareChat} aria-label="Share chat">
 							<Icon
 								name="share"
 								size={18}
@@ -1095,14 +1095,14 @@ export function ChatPage() {
 							/>
 						</TopBarBtn>
 					)}
-					<TopBarBtn onClick={handleNewChat}>
+					<TopBarBtn onClick={handleNewChat} aria-label="New chat">
 						<Icon
 							name="edit_square"
 							size={18}
 							color={tokens.colors.onSurfaceVariant}
 						/>
 					</TopBarBtn>
-					<TopBarBtn onClick={() => navigate("/chat/history")}>
+					<TopBarBtn onClick={() => navigate("/chat/history")} aria-label="Chat history">
 						<Icon
 							name="history"
 							size={18}
@@ -1203,11 +1203,11 @@ export function ChatPage() {
 						disabled={isGenerating || isLoadingModel}
 					/>
 					{isGenerating ? (
-						<StopBtn onClick={handleStop}>
+						<StopBtn onClick={handleStop} aria-label="Stop generating">
 							<Icon name="stop_circle" size={22} fill color={tokens.colors.error} />
 						</StopBtn>
 					) : (
-						<SendBtn $hasText={input.trim().length > 0} onClick={handleSend}>
+						<SendBtn $hasText={input.trim().length > 0} onClick={handleSend} aria-label="Send message">
 							<Icon
 								name="arrow_upward"
 								size={20}
