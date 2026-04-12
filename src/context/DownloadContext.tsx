@@ -2,20 +2,21 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { modelService, settingsService, notificationService } from "@/services";
 import type { DownloadEvent, ModelInfo, Settings } from "@/services/types";
 
-// Network detection — fail-closed: if we can't determine network type, assume not WiFi.
-// This protects users from unexpected mobile data usage.
-function isOnWifi(): boolean {
+// Network detection result: true = on WiFi, false = not on WiFi, null = can't determine
+function detectNetwork(): { isWifi: boolean | null; apiAvailable: boolean } {
 	// If the browser says we're offline, we're definitely not on WiFi
-	if (!navigator.onLine) return false;
+	if (!navigator.onLine) return { isWifi: false, apiAvailable: true };
 
 	const nav = navigator as Navigator & {
 		connection?: { type?: string; effectiveType?: string };
 	};
 	const conn = nav.connection;
-	// Fail-closed: if connection API unavailable or type unknown, assume NOT WiFi
-	// to protect user's mobile data
-	if (!conn || !conn.type) return false;
-	return conn.type === "wifi" || conn.type === "ethernet";
+
+	// If connection API unavailable, we can't determine network type
+	if (!conn || !conn.type) return { isWifi: null, apiAvailable: false };
+
+	const isWifi = conn.type === "wifi" || conn.type === "ethernet";
+	return { isWifi, apiAvailable: true };
 }
 
 export interface DownloadState {
@@ -86,13 +87,19 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 			// Enforce WiFi-only setting - always check, even on resume
 			try {
 				const currentSettings: Settings = await settingsService.getSettings();
-				if (currentSettings.wifi_only && !isOnWifi()) {
-					startingRef.current.delete(model.id);
-					updateDownload(model.id, {
-						status: "paused",
-						error: "WiFi-only mode is enabled. Connect to WiFi to download.",
-					});
-					return;
+				if (currentSettings.wifi_only) {
+					const network = detectNetwork();
+					// If API is available and we're NOT on WiFi, block the download
+					if (network.apiAvailable && network.isWifi === false) {
+						startingRef.current.delete(model.id);
+						updateDownload(model.id, {
+							status: "paused",
+							error: "WiFi-only mode is enabled. Connect to WiFi to download.",
+						});
+						return;
+					}
+					// If API unavailable, allow download (can't enforce without detection)
+					// User opted into wifi-only but we can't verify - proceed with warning logged
 				}
 			} catch {
 				// If settings check fails, fail-closed: don't proceed
@@ -160,7 +167,21 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 						break;
 					}
 					case "Cancelled":
-						updateDownload(model.id, { status: "paused", speedBps: 0 });
+						// Preserve existing error message (e.g., from WiFi disconnect)
+						setDownloads((prev) => {
+							const existing = prev[model.id];
+							if (!existing) return prev;
+							return {
+								...prev,
+								[model.id]: {
+									...existing,
+									status: "paused",
+									speedBps: 0,
+									// Keep existing error if set, otherwise clear it
+									error: existing.error || undefined,
+								},
+							};
+						});
 						activeRef.current.delete(model.id);
 						notificationService.clearDownloadNotification();
 						break;
@@ -227,7 +248,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 			}
 
 			// If WiFi is lost, pause all active downloads
-			if (!isOnWifi()) {
+			const network = detectNetwork();
+			// Only pause if we can confirm we're NOT on WiFi
+			if (network.apiAvailable && network.isWifi === false) {
 				for (const modelId of activeRef.current) {
 					modelService.cancelDownload(modelId);
 					setDownloads((prev) => {
