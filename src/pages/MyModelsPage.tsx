@@ -332,14 +332,17 @@ export function MyModelsPage() {
 	const pullStartRef = useRef(0);
 	const pageRef = useRef<HTMLDivElement>(null);
 	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0 });
+	const [availableSpace, setAvailableSpace] = useState<number>(0);
 
 	const refresh = useCallback(async () => {
-		const [downloaded, info] = await Promise.all([
+		const [downloaded, info, available] = await Promise.all([
 			modelService.getDownloadedModels(),
 			settingsService.getStorageInfo(),
+			settingsService.getAvailableSpace().catch(() => 0),
 		]);
 		setModels(downloaded);
 		setStorage(info);
+		setAvailableSpace(available);
 	}, []);
 
 	useEffect(() => {
@@ -413,6 +416,9 @@ export function MyModelsPage() {
 	};
 
 	const usedGB = formatStorageGB(storage.used_bytes);
+	const totalSpace = storage.used_bytes + availableSpace;
+	const usagePercent = totalSpace > 0 ? (storage.used_bytes / totalSpace) * 100 : 0;
+	const freeGB = formatStorageGB(availableSpace);
 
 	return (
 		<AppLayout title="My Models">
@@ -442,13 +448,13 @@ export function MyModelsPage() {
 
 				<StorageSection>
 					<StorageHeader>
-						<StorageLabel>Storage used</StorageLabel>
+						<StorageLabel>{storage.models_count} model{storage.models_count !== 1 ? "s" : ""} · {freeGB} GB free</StorageLabel>
 						<StorageValue>
-							{usedGB} <span>GB · {storage.models_count} model{storage.models_count !== 1 ? "s" : ""}</span>
+							{usedGB} <span>GB</span>
 						</StorageValue>
 					</StorageHeader>
 					<StorageBar>
-						<StorageFill $pct={Math.min((storage.used_bytes / (10 * 1024 * 1024 * 1024)) * 100, 100)} />
+						<StorageFill $pct={Math.min(usagePercent, 100)} />
 					</StorageBar>
 				</StorageSection>
 
