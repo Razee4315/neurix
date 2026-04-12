@@ -197,17 +197,20 @@ const RenameInput = styled.input`
 `;
 
 const EditBtn = styled.button`
+  width: 44px;
+  height: 44px;
   background: none;
   border: none;
-  padding: 0.25rem;
+  border-radius: ${tokens.borderRadius.md};
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: center;
   flex-shrink: 0;
-  opacity: 0.5;
-  transition: opacity ${tokens.transitions.fast};
+  opacity: 0.6;
+  transition: opacity ${tokens.transitions.fast}, background ${tokens.transitions.fast};
 
-  &:hover { opacity: 1; }
+  &:hover { opacity: 1; background: ${tokens.colors.surfaceContainerHighest}; }
   &:active { transform: scale(0.9); }
 `;
 

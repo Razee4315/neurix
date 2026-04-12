@@ -175,9 +175,9 @@ const CardSize = styled.span`
 `;
 
 const DlIcon = styled.div`
-  width: 32px;
-  height: 32px;
-  border-radius: ${tokens.borderRadius.md};
+  width: 44px;
+  height: 44px;
+  border-radius: ${tokens.borderRadius.lg};
   background: ${tokens.colors.surfaceContainerHighest};
   display: flex;
   align-items: center;

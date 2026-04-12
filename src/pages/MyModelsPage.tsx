@@ -197,13 +197,11 @@ const CardActions = styled.div`
 
 const UseBtn = styled.button<{ $active: boolean }>`
   flex: 1;
-  height: 36px;
-  border-radius: ${tokens.borderRadius.md};
+  height: 44px;
+  border-radius: ${tokens.borderRadius.lg};
   border: none;
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
   cursor: pointer;
   transition: all ${tokens.transitions.fast};
 
@@ -223,9 +221,9 @@ const UseBtn = styled.button<{ $active: boolean }>`
 `;
 
 const DeleteBtn = styled.button`
-  width: 36px;
-  height: 36px;
-  border-radius: ${tokens.borderRadius.md};
+  width: 44px;
+  height: 44px;
+  border-radius: ${tokens.borderRadius.lg};
   border: none;
   background: ${tokens.colors.error}12;
   display: flex;
