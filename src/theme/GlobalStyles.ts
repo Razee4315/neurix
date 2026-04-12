@@ -7,10 +7,6 @@ export const GlobalStyles = createGlobalStyle`
     margin: 0;
     padding: 0;
     -webkit-tap-highlight-color: transparent;
-    /* Disable text selection globally — feels native on mobile.
-       Re-enabled on chat bubbles and inputs where copying makes sense. */
-    user-select: none;
-    -webkit-user-select: none;
   }
 
   a, button, input, select, textarea, label,
