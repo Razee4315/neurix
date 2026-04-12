@@ -22,7 +22,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            wifi_only: false,
+            wifi_only: true,
             save_history: true,
             show_speed: true,
             system_prompt: "You are a helpful assistant. Give clear, concise answers. Do not repeat yourself.".to_string(),
