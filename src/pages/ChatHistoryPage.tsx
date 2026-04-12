@@ -394,15 +394,6 @@ export function ChatHistoryPage() {
 													<Icon name="edit" size={18} color={tokens.colors.onSurfaceVariant} />
 												</ActionBtn>
 												<ActionBtn
-													onClick={(e) => {
-														e.stopPropagation();
-														handleExport(entry.id, entry.title);
-													}}
-													aria-label="Share conversation"
-												>
-													<Icon name="share" size={18} color={tokens.colors.onSurfaceVariant} />
-												</ActionBtn>
-												<ActionBtn
 													$danger
 													onClick={(e) => {
 														e.stopPropagation();
