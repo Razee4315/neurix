@@ -345,13 +345,15 @@ const BubbleWrap = styled.div`
 const MsgActionBtn = styled.button<{ $copied?: boolean }>`
   display: flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.2rem 0.4rem;
-  background: ${({ $copied }) => $copied ? tokens.colors.secondary + "18" : "none"};
+  gap: 0.375rem;
+  min-height: 36px;
+  padding: 0.5rem 0.75rem;
+  background: ${({ $copied }) => $copied ? tokens.colors.secondary + "18" : tokens.colors.surfaceContainerHigh};
   border: none;
-  border-radius: ${tokens.borderRadius.sm};
+  border-radius: ${tokens.borderRadius.md};
   cursor: pointer;
-  font-size: 10px;
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.medium};
   color: ${({ $copied }) => $copied ? tokens.colors.secondary : tokens.colors.onSurfaceVariant};
   transition: all ${tokens.transitions.fast};
 
@@ -457,9 +459,9 @@ const TopBarRight = styled.div`
 `;
 
 const TopBarBtn = styled.button`
-  width: 36px;
-  height: 36px;
-  border-radius: ${tokens.borderRadius.md};
+  width: 44px;
+  height: 44px;
+  border-radius: ${tokens.borderRadius.lg};
   border: none;
   background: ${tokens.colors.surfaceContainerHigh};
   display: flex;
