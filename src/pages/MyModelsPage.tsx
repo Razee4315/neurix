@@ -148,7 +148,11 @@ const Card = styled.div<{ $active: boolean }>`
   border-radius: ${tokens.borderRadius.lg};
   padding: 1rem;
   animation: ${slideIn} 0.3s ease-out both;
-  ${({ $active }) => $active && `box-shadow: ${tokens.shadows.ambient};`}
+  border: 2px solid ${({ $active }) =>
+		$active ? tokens.colors.primary : "transparent"};
+  ${({ $active }) => $active && `
+    box-shadow: 0 0 0 1px ${tokens.colors.primary}20, ${tokens.shadows.ambient};
+  `}
 `;
 
 const CardTop = styled.div`
@@ -172,14 +176,12 @@ const ModelName = styled.span`
 `;
 
 const ActiveBadge = styled.span`
-  font-size: 10px;
+  font-size: ${tokens.typography.fontSize.xs};
   font-weight: ${tokens.typography.fontWeight.bold};
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.125rem 0.375rem;
-  border-radius: ${tokens.borderRadius.sm};
-  background: ${tokens.colors.primary}18;
-  color: ${tokens.colors.primary};
+  padding: 0.25rem 0.5rem;
+  border-radius: ${tokens.borderRadius.md};
+  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  color: ${tokens.colors.onPrimaryFixed};
 `;
 
 const CardMeta = styled.div`
