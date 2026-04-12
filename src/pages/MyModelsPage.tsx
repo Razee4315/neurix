@@ -2,8 +2,9 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { useAppContext } from "@/context/AppContext";
+import { useDownloads } from "@/context/DownloadContext";
 import { modelService, settingsService } from "@/services";
-import type { DownloadedModel, StorageInfo } from "@/services/types";
+import type { DownloadedModel, ModelInfo, StorageInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -238,6 +239,144 @@ const DeleteBtn = styled.button`
   &:active { transform: scale(0.95); }
 `;
 
+/* ── Downloading Section ── */
+
+const DownloadSection = styled.div`
+  margin-bottom: 1.5rem;
+`;
+
+const SectionTitle = styled.h2`
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize.md};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  color: ${tokens.colors.onSurface};
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+`;
+
+const DownloadCard = styled.div`
+  background: ${tokens.colors.surfaceContainerLow};
+  border-radius: ${tokens.borderRadius.lg};
+  padding: 1rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid ${tokens.colors.tertiary}30;
+`;
+
+const DownloadCardTop = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+`;
+
+const DownloadName = styled.span`
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize.md};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  color: ${tokens.colors.onSurface};
+`;
+
+const DownloadStatus = styled.span<{ $status: string }>`
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  padding: 0.25rem 0.5rem;
+  border-radius: ${tokens.borderRadius.md};
+  background: ${({ $status }) => {
+		switch ($status) {
+			case "downloading": return tokens.colors.tertiary + "22";
+			case "paused": return tokens.colors.outline + "22";
+			case "failed": return tokens.colors.error + "22";
+			default: return tokens.colors.surfaceContainerHighest;
+		}
+	}};
+  color: ${({ $status }) => {
+		switch ($status) {
+			case "downloading": return tokens.colors.tertiary;
+			case "paused": return tokens.colors.onSurfaceVariant;
+			case "failed": return tokens.colors.error;
+			default: return tokens.colors.onSurfaceVariant;
+		}
+	}};
+`;
+
+const ProgressBarContainer = styled.div`
+  width: 100%;
+  height: 8px;
+  background: ${tokens.colors.surfaceContainerHighest};
+  border-radius: ${tokens.borderRadius.circle};
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+`;
+
+const ProgressBarFill = styled.div<{ $pct: number }>`
+  height: 100%;
+  width: ${({ $pct }) => $pct}%;
+  background: linear-gradient(90deg, ${tokens.colors.tertiary}, ${tokens.colors.primary});
+  border-radius: ${tokens.borderRadius.circle};
+  transition: width 0.3s ease;
+`;
+
+const DownloadMeta = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.onSurfaceVariant};
+  margin-bottom: 0.75rem;
+`;
+
+const DownloadSpeed = styled.span`
+  font-family: ${tokens.typography.fontFamily.mono};
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.tertiary};
+`;
+
+const DownloadActions = styled.div`
+  display: flex;
+  gap: 0.5rem;
+`;
+
+const DownloadActionBtn = styled.button<{ $primary?: boolean }>`
+  flex: 1;
+  height: 40px;
+  border-radius: ${tokens.borderRadius.md};
+  border: none;
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  transition: all ${tokens.transitions.fast};
+
+  ${({ $primary }) =>
+		$primary
+			? `
+    background: ${tokens.colors.tertiary}22;
+    color: ${tokens.colors.tertiary};
+    &:hover { background: ${tokens.colors.tertiary}33; }
+  `
+			: `
+    background: ${tokens.colors.surfaceContainerHighest};
+    color: ${tokens.colors.onSurfaceVariant};
+    &:hover { background: ${tokens.colors.surfaceBright}; }
+  `}
+
+  &:active { transform: scale(0.98); }
+`;
+
+const DownloadError = styled.div`
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.error};
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+`;
+
 /* ── Loading Overlay ── */
 
 const overlayFadeIn = keyframes`
@@ -324,9 +463,23 @@ function formatStorageGB(bytes: number): string {
 	return (bytes / (1024 * 1024 * 1024)).toFixed(1);
 }
 
+function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatSpeed(bps: number): string {
+	if (bps < 1024) return `${bps} B/s`;
+	if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
+	return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
+}
+
 export function MyModelsPage() {
 	const navigate = useNavigate();
 	const { activeModel, refreshActiveModel } = useAppContext();
+	const { downloads, pauseDownload, resumeDownload, cancelDownload } = useDownloads();
 	const { showConfirm, showAlert } = useConfirm();
 	const [search, setSearch] = useState("");
 	const [models, setModels] = useState<DownloadedModel[]>([]);
@@ -335,16 +488,19 @@ export function MyModelsPage() {
 	const pageRef = useRef<HTMLDivElement>(null);
 	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0 });
 	const [availableSpace, setAvailableSpace] = useState<number | null>(null);
+	const [catalog, setCatalog] = useState<ModelInfo[]>([]);
 
 	const refresh = useCallback(async () => {
-		const [downloaded, info, available] = await Promise.all([
+		const [downloaded, info, available, catalogData] = await Promise.all([
 			modelService.getDownloadedModels(),
 			settingsService.getStorageInfo(),
 			settingsService.getAvailableSpace().catch(() => null),
+			modelService.getCatalog().catch(() => []),
 		]);
 		setModels(downloaded);
 		setStorage(info);
 		setAvailableSpace(available);
+		setCatalog(catalogData);
 	}, []);
 
 	useEffect(() => {
@@ -467,8 +623,83 @@ export function MyModelsPage() {
 					)}
 				</StorageSection>
 
+				{/* Downloading Section */}
+				{Object.values(downloads).filter(d => d.status !== "finished").length > 0 && (
+					<DownloadSection>
+						<SectionTitle>
+							<Icon name="downloading" size={18} color={tokens.colors.tertiary} />
+							Downloading
+						</SectionTitle>
+						{Object.values(downloads)
+							.filter(d => d.status !== "finished")
+							.map((dl) => {
+								const progress = dl.totalBytes > 0
+									? (dl.downloadedBytes / dl.totalBytes) * 100
+									: 0;
+								const modelInfo = catalog.find(m => m.id === dl.modelId);
+
+								return (
+									<DownloadCard key={dl.modelId}>
+										<DownloadCardTop>
+											<DownloadName>{dl.modelName}</DownloadName>
+											<DownloadStatus $status={dl.status}>
+												{dl.status === "downloading" ? "Downloading" :
+													dl.status === "paused" ? "Paused" :
+													dl.status === "failed" ? "Failed" : dl.status}
+											</DownloadStatus>
+										</DownloadCardTop>
+
+										{dl.error && (
+											<DownloadError>
+												<Icon name="error" size={14} color={tokens.colors.error} />
+												{dl.error}
+											</DownloadError>
+										)}
+
+										<ProgressBarContainer>
+											<ProgressBarFill $pct={progress} />
+										</ProgressBarContainer>
+
+										<DownloadMeta>
+											<span>
+												{formatBytes(dl.downloadedBytes)} / {dl.sizeLabel}
+												{" · "}{Math.round(progress)}%
+											</span>
+											{dl.status === "downloading" && dl.speedBps > 0 && (
+												<DownloadSpeed>{formatSpeed(dl.speedBps)}</DownloadSpeed>
+											)}
+										</DownloadMeta>
+
+										<DownloadActions>
+											{dl.status === "downloading" ? (
+												<DownloadActionBtn onClick={() => pauseDownload(dl.modelId)}>
+													<Icon name="pause" size={16} />
+													Pause
+												</DownloadActionBtn>
+											) : dl.status === "paused" && modelInfo ? (
+												<DownloadActionBtn $primary onClick={() => resumeDownload(modelInfo)}>
+													<Icon name="play_arrow" size={16} />
+													Resume
+												</DownloadActionBtn>
+											) : dl.status === "failed" && modelInfo ? (
+												<DownloadActionBtn $primary onClick={() => resumeDownload(modelInfo)}>
+													<Icon name="refresh" size={16} />
+													Retry
+												</DownloadActionBtn>
+											) : null}
+											<DownloadActionBtn onClick={() => cancelDownload(dl.modelId)}>
+												<Icon name="close" size={16} />
+												Cancel
+											</DownloadActionBtn>
+										</DownloadActions>
+									</DownloadCard>
+								);
+							})}
+					</DownloadSection>
+				)}
+
 				<ListHeader>
-					<ListTitle>Downloaded</ListTitle>
+					<ListTitle>Installed</ListTitle>
 					<AddButton onClick={() => navigate("/store")}>
 						<Icon name="add" size={16} color={tokens.colors.primary} />
 						Browse Store
