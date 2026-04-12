@@ -342,31 +342,6 @@ const BubbleWrap = styled.div`
   flex-direction: column;
 `;
 
-const BubbleRow = styled.div<{ $role: "ai" | "user" }>`
-  display: flex;
-  align-items: flex-start;
-  gap: 0.25rem;
-  flex-direction: ${({ $role }) => $role === "user" ? "row-reverse" : "row"};
-`;
-
-const MenuBtn = styled.button`
-  width: 44px;
-  height: 44px;
-  border-radius: ${tokens.borderRadius.circle};
-  border: none;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  opacity: 0.4;
-  transition: all ${tokens.transitions.fast};
-  flex-shrink: 0;
-
-  &:hover { opacity: 1; background: ${tokens.colors.surfaceContainerHigh}; }
-  &:active { transform: scale(0.9); }
-`;
-
 const MsgActionBtn = styled.button<{ $copied?: boolean }>`
   display: flex;
   align-items: center;
@@ -1017,14 +992,6 @@ export function ChatPage() {
 
 	const handleDeleteMessage = (idx: number) => {
 		setMessages((prev) => prev.filter((_, i) => i !== idx));
-		setActiveMessageIdx(null);
-	};
-
-	const handleShareMessage = async (text: string) => {
-		if (navigator.share) {
-			try { await navigator.share({ text }); return; } catch { /* cancelled */ }
-		}
-		await navigator.clipboard.writeText(text);
 		setActiveMessageIdx(null);
 	};
 

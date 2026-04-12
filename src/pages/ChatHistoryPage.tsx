@@ -249,32 +249,6 @@ export function ChatHistoryPage() {
 		setConversations((prev) => prev.filter((c) => c.id !== id));
 	};
 
-	const handleExport = async (id: string, title: string) => {
-		const conv = await historyService.loadConversation(id);
-		if (!conv) return;
-
-		const lines = [
-			`# ${title}`,
-			`Model: ${conv.model_name}`,
-			`Date: ${new Date(conv.created_at).toLocaleDateString()}`,
-			"",
-			...conv.messages.map((m) =>
-				`**${m.role === "user" ? "You" : "Neurix"}**: ${m.content}`
-			),
-		];
-		const text = lines.join("\n\n");
-
-		if (navigator.share) {
-			try {
-				await navigator.share({ title: `Neurix - ${title}`, text });
-				return;
-			} catch {
-				// Cancelled or failed
-			}
-		}
-		await navigator.clipboard.writeText(text);
-	};
-
 	const handleStartRename = (id: string, currentTitle: string) => {
 		setRenamingId(id);
 		setRenameValue(currentTitle);
