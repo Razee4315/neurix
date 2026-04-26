@@ -1,12 +1,14 @@
+import { CharacterPicker } from "@/components/character/CharacterPicker";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
+import { useCharacters } from "@/context/CharacterContext";
 import type { Settings } from "@/services/types";
 import { historyService, settingsService } from "@/services";
 import { tokens } from "@/theme/tokens";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -102,81 +104,6 @@ const Toggle = styled.button<{ $on: boolean }>`
   }
 `;
 
-/* ── System Prompt ── */
-
-const SectionLabel = styled.h2`
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.semibold};
-  color: ${tokens.colors.onSurfaceVariant};
-  margin-bottom: 0.5rem;
-  padding-left: 0.25rem;
-`;
-
-const PromptArea = styled.textarea`
-  width: 100%;
-  min-height: 100px;
-  padding: 0.875rem;
-  background: ${tokens.colors.surfaceContainerHighest};
-  border: none;
-  border-radius: ${tokens.borderRadius.lg};
-  font-size: ${tokens.typography.fontSize.base};
-  font-family: ${tokens.typography.fontFamily.body};
-  color: ${tokens.colors.onSurface};
-  resize: vertical;
-  outline: none;
-  line-height: ${tokens.typography.lineHeight.relaxed};
-
-  &::placeholder { color: ${tokens.colors.outline}; }
-  &:focus { box-shadow: inset 0 -2px 0 ${tokens.colors.primary}; }
-`;
-
-
-/* ── Slider ── */
-
-const SliderRow = styled.div`
-  padding: 0.75rem 1rem;
-`;
-
-const SliderLabel = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-`;
-
-const SliderTitle = styled.span`
-  font-size: ${tokens.typography.fontSize.base};
-  font-weight: ${tokens.typography.fontWeight.medium};
-  color: ${tokens.colors.onSurface};
-`;
-
-const SliderValue = styled.span`
-  font-family: ${tokens.typography.fontFamily.mono};
-  font-size: ${tokens.typography.fontSize.sm};
-  color: ${tokens.colors.primary};
-  font-weight: ${tokens.typography.fontWeight.bold};
-`;
-
-const SliderInput = styled.input`
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  outline: none;
-  appearance: none;
-  background: ${tokens.colors.surfaceContainerHighest};
-  cursor: pointer;
-
-  &::-webkit-slider-thumb {
-    appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: ${tokens.colors.primary};
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  }
-`;
-
 /* ── Version ── */
 
 const VersionFooter = styled.div`
@@ -194,55 +121,19 @@ const VersionFooter = styled.div`
 export function SettingsPage() {
 	const navigate = useNavigate();
 	const { settings, refreshSettings } = useAppContext();
+	const { activeCharacter } = useCharacters();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
-	const [showInference, setShowInference] = useState(false);
+	const [pickerOpen, setPickerOpen] = useState(false);
 	const [wifiOnly, setWifiOnly] = useState(false);
 	const [saveHistory, setSaveHistory] = useState(true);
 	const [showSpeed, setShowSpeed] = useState(true);
-	const [prompt, setPrompt] = useState("");
-	const [temperature, setTemperature] = useState(0.7);
-	const [topP, setTopP] = useState(0.9);
-	const [maxTokens, setMaxTokens] = useState(2048);
-	const promptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const sliderTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	// Refs to capture latest values for unmount flush
-	const promptRef = useRef(prompt);
-	const tempRef = useRef(temperature);
-	const topPRef = useRef(topP);
-	const maxTokensRef = useRef(maxTokens);
-
-	// Flush any pending debounced saves when leaving the page
-	useEffect(() => {
-		return () => {
-			if (promptTimerRef.current) {
-				clearTimeout(promptTimerRef.current);
-				// Fire the save with latest values
-				if (settings) {
-					settingsService.updateSettings({
-						...settings,
-						system_prompt: promptRef.current,
-						temperature: tempRef.current,
-						top_p: topPRef.current,
-						max_tokens: maxTokensRef.current,
-					}).catch(() => {});
-				}
-			}
-			if (sliderTimerRef.current) {
-				clearTimeout(sliderTimerRef.current);
-			}
-		};
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 
 	useEffect(() => {
 		if (settings) {
 			setWifiOnly(settings.wifi_only);
 			setSaveHistory(settings.save_history);
 			setShowSpeed(settings.show_speed);
-			setPrompt(settings.system_prompt);
-			setTemperature(settings.temperature);
-			setTopP(settings.top_p);
-			setMaxTokens(settings.max_tokens);
 		}
 	}, [settings]);
 
@@ -253,8 +144,6 @@ export function SettingsPage() {
 			settingsService.updateSettings(updated)
 				.then(() => refreshSettings())
 				.catch(() => {
-					// Fire-and-forget save failed — surface it so the user knows
-					// the toggle they just flipped didn't actually persist.
 					showToast("Couldn't save setting. Please try again.", "error");
 				});
 		},
@@ -277,46 +166,6 @@ export function SettingsPage() {
 		const next = !showSpeed;
 		setShowSpeed(next);
 		persist({ show_speed: next });
-	};
-
-	const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-		const val = e.target.value;
-		setPrompt(val);
-		promptRef.current = val;
-		if (promptTimerRef.current) clearTimeout(promptTimerRef.current);
-		promptTimerRef.current = setTimeout(() => {
-			persist({ system_prompt: val });
-			promptTimerRef.current = null;
-		}, 500);
-	};
-
-	const debouncedSliderPersist = useCallback(
-		(patch: Partial<Settings>) => {
-			if (sliderTimerRef.current) clearTimeout(sliderTimerRef.current);
-			sliderTimerRef.current = setTimeout(() => persist(patch), 300);
-		},
-		[persist],
-	);
-
-	const handleTemperature = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const val = Number.parseFloat(e.target.value);
-		setTemperature(val);
-		tempRef.current = val;
-		debouncedSliderPersist({ temperature: val });
-	};
-
-	const handleTopP = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const val = Number.parseFloat(e.target.value);
-		setTopP(val);
-		topPRef.current = val;
-		debouncedSliderPersist({ top_p: val });
-	};
-
-	const handleMaxTokens = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const val = Number.parseInt(e.target.value);
-		setMaxTokens(val);
-		maxTokensRef.current = val;
-		debouncedSliderPersist({ max_tokens: val });
 	};
 
 	const handleClearHistory = async () => {
@@ -349,10 +198,14 @@ export function SettingsPage() {
 			save_history: true,
 			show_speed: true,
 			system_prompt: "",
-			temperature: 0.4,
+			temperature: 0.7,
 			top_p: 0.9,
 			max_tokens: 512,
 			last_model_id: settings?.last_model_id ?? null,
+			active_character_id: "preset:default",
+			// Keep user's custom characters — resetting settings shouldn't
+			// nuke creative work.
+			custom_characters: settings?.custom_characters ?? [],
 		};
 		await settingsService.updateSettings(defaults);
 		refreshSettings();
@@ -422,77 +275,27 @@ export function SettingsPage() {
 
 					</Section>
 
-				<SectionLabel>System Prompt</SectionLabel>
-				<PromptArea
-					placeholder="Set your AI's personality..."
-					value={prompt}
-					onChange={handlePromptChange}
-				/>
-
 				<Section style={{ marginTop: "1rem" }}>
-					<ToggleRow onClick={() => setShowInference(!showInference)} style={{ cursor: "pointer" }}>
+					<ToggleRow onClick={() => setPickerOpen(true)} style={{ cursor: "pointer" }}>
 						<RowLeft>
 							<RowIcon>
-								<Icon name="tune" size={18} color={tokens.colors.primary} />
+								<Icon
+									name={activeCharacter?.icon ?? "auto_awesome"}
+									size={18}
+									color={tokens.colors.primary}
+								/>
 							</RowIcon>
 							<RowText>
-								<RowTitle>Inference Settings</RowTitle>
-								<RowSub>Temperature, Top P, Max Tokens</RowSub>
+								<RowTitle>Default character</RowTitle>
+								<RowSub>
+									{activeCharacter
+										? `${activeCharacter.name} — ${activeCharacter.description || "Custom"}`
+										: "Choose a personality"}
+								</RowSub>
 							</RowText>
 						</RowLeft>
-						<Icon
-							name={showInference ? "expand_less" : "expand_more"}
-							size={20}
-							color={tokens.colors.onSurfaceVariant}
-						/>
+						<Icon name="chevron_right" size={20} color={tokens.colors.onSurfaceVariant} />
 					</ToggleRow>
-
-					{showInference && (
-						<>
-							<SliderRow>
-								<SliderLabel>
-									<SliderTitle>Temperature</SliderTitle>
-									<SliderValue>{temperature.toFixed(2)}</SliderValue>
-								</SliderLabel>
-								<SliderInput
-									type="range"
-									min="0"
-									max="2"
-									step="0.05"
-									value={temperature}
-									onChange={handleTemperature}
-								/>
-							</SliderRow>
-							<SliderRow>
-								<SliderLabel>
-									<SliderTitle>Top P</SliderTitle>
-									<SliderValue>{topP.toFixed(2)}</SliderValue>
-								</SliderLabel>
-								<SliderInput
-									type="range"
-									min="0.1"
-									max="1"
-									step="0.05"
-									value={topP}
-									onChange={handleTopP}
-								/>
-							</SliderRow>
-							<SliderRow>
-								<SliderLabel>
-									<SliderTitle>Max Tokens</SliderTitle>
-									<SliderValue>{maxTokens}</SliderValue>
-								</SliderLabel>
-								<SliderInput
-									type="range"
-									min="256"
-									max="4096"
-									step="256"
-									value={maxTokens}
-									onChange={handleMaxTokens}
-								/>
-							</SliderRow>
-						</>
-					)}
 				</Section>
 
 				<Section style={{ marginTop: "1rem" }}>
@@ -524,6 +327,7 @@ export function SettingsPage() {
 					Neurix v{import.meta.env.VITE_APP_VERSION || "0.3.0"}
 				</VersionFooter>
 			</Page>
+			<CharacterPicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
 		</AppLayout>
 	);
 }
