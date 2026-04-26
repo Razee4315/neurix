@@ -1,6 +1,7 @@
 use log::info;
 use std::env;
 
+mod characters;
 mod chat;
 mod commands;
 mod inference;
@@ -34,6 +35,7 @@ fn configure_thread_pool() {
 }
 
 use commands::{
+    character_cmds::get_preset_characters,
     chat_cmds::{get_active_model, run_inference, stop_inference},
     history_cmds::{clear_all_conversations, delete_conversation, get_conversations, load_conversation, save_conversation},
     model_cmds::{cancel_download, delete_model, download_model, get_active_downloads, get_downloaded_models, get_model_catalog, load_model},
@@ -98,6 +100,7 @@ pub fn run() {
             get_storage_info,
             check_available_space,
             get_available_space,
+            get_preset_characters,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Neurix")

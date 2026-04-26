@@ -4,3 +4,4 @@ export * as chatService from "./chatService";
 export * as historyService from "./historyService";
 export * as settingsService from "./settingsService";
 export * as notificationService from "./notificationService";
+export * as characterService from "./characterService";

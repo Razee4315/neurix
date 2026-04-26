@@ -67,16 +67,39 @@ export interface InferenceError {
 	message: string;
 }
 
+export interface Character {
+	/** "preset:<slug>" for built-ins, "custom:<uuid>" for user-created. */
+	id: string;
+	name: string;
+	description: string;
+	/** Material Symbols icon name (e.g. "auto_awesome"). */
+	icon: string;
+	system_prompt: string;
+	temperature: number;
+	top_p: number;
+	max_tokens: number;
+	is_preset: boolean;
+	created_at?: string;
+}
+
 export interface Settings {
 	wifi_only: boolean;
 	save_history: boolean;
 	show_speed: boolean;
+	/**
+	 * Legacy free-form system prompt. Kept for read-only migration to a
+	 * custom character on first run after the character feature lands.
+	 */
 	system_prompt: string;
 	temperature: number;
 	top_p: number;
 	max_tokens: number;
 	font_size?: string;
 	last_model_id?: string | null;
+	/** ID of the character used when starting a new chat. */
+	active_character_id?: string;
+	/** User-created characters. Presets live in the Rust side and are not stored here. */
+	custom_characters?: Character[];
 }
 
 export interface StorageInfo {

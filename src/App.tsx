@@ -2,6 +2,7 @@ import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AppProvider } from "@/context/AppContext";
+import { CharacterProvider } from "@/context/CharacterContext";
 import { DownloadProvider } from "@/context/DownloadContext";
 import { SplashScreen } from "@/pages/SplashScreen";
 import { GlobalStyles, theme } from "@/theme";
@@ -36,6 +37,9 @@ const SettingsPage = lazy(() =>
 const AboutPage = lazy(() =>
 	import("@/pages/AboutPage").then((m) => ({ default: m.AboutPage })),
 );
+const CharacterEditPage = lazy(() =>
+	import("@/pages/CharacterEditPage").then((m) => ({ default: m.CharacterEditPage })),
+);
 
 function App() {
 	return (
@@ -43,6 +47,7 @@ function App() {
 		<ThemeProvider theme={theme}>
 			<GlobalStyles />
 			<AppProvider>
+				<CharacterProvider>
 				<ToastProvider>
 				<DownloadProvider>
 				<ConfirmProvider>
@@ -60,6 +65,8 @@ function App() {
 								<Route path="/chat/history" element={<ChatHistoryPage />} />
 								<Route path="/settings" element={<SettingsPage />} />
 								<Route path="/about" element={<AboutPage />} />
+								<Route path="/character/new" element={<CharacterEditPage />} />
+								<Route path="/character/edit" element={<CharacterEditPage />} />
 								<Route path="*" element={<Navigate to="/" replace />} />
 							</Routes>
 						</Suspense>
@@ -68,6 +75,7 @@ function App() {
 				</ConfirmProvider>
 				</DownloadProvider>
 				</ToastProvider>
+				</CharacterProvider>
 			</AppProvider>
 		</ThemeProvider>
 		</ErrorBoundary>
