@@ -6,7 +6,7 @@ import { chatService, historyService, modelService, settingsService } from "@/se
 import type { ChatHistoryEntry } from "@/services/chatService";
 import type { Conversation, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -584,6 +584,12 @@ function MessageCopyBtn({ text }: { text: string }) {
 	);
 }
 
+/* ── Memoized AI body so we don't re-parse markdown on every keystroke/token ── */
+
+const AiMessageBody = memo(function AiMessageBody({ text }: { text: string }) {
+	return <>{renderMarkdown(text)}</>;
+});
+
 /* ── Component ── */
 
 export function ChatPage() {
@@ -774,9 +780,16 @@ export function ChatPage() {
 		el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
 	}, []);
 
+	// Smooth scroll only when a new message is added or generation toggles.
+	// During streaming, individual tokens use `auto` to avoid 60Hz scroll jank.
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages, isGenerating, streamedText]);
+	}, [messages.length, isGenerating]);
+
+	useEffect(() => {
+		if (!streamedText) return;
+		messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+	}, [streamedText]);
 
 	// Scroll to bottom when keyboard opens (viewport resizes).
 	// Without this, messages stay at their stale scroll position and the latest
@@ -1105,7 +1118,7 @@ export function ChatPage() {
 									{msg.role === "ai" ? "Neurix" : "You"}
 								</BubbleLabel>
 								<BubbleBody>
-									{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
+									{msg.role === "ai" ? <AiMessageBody text={msg.text} /> : msg.text}
 								</BubbleBody>
 							</Bubble>
 							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
@@ -1127,8 +1140,8 @@ export function ChatPage() {
 						<Bubble $role="ai">
 							<BubbleLabel $role="ai">Neurix</BubbleLabel>
 							<BubbleBody>
-								{streamedText ? renderMarkdown(streamedText) : (
-									<TypingDots>
+								{streamedText ? <AiMessageBody text={streamedText} /> : (
+									<TypingDots role="status" aria-live="polite" aria-label="Generating response">
 										<span />
 										<span />
 										<span />
