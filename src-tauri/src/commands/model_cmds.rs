@@ -19,8 +19,29 @@ pub async fn download_model(
     app: AppHandle,
     state: State<'_, SharedState>,
     model_id: String,
+    confirmed_wifi: bool,
     on_event: Channel<DownloadEvent>,
 ) -> Result<(), String> {
+    // Defense-in-depth: re-enforce WiFi-only on the backend. The frontend
+    // gate can be bypassed by devtools or a future code path that forgets to
+    // call DownloadContext.startDownload. This is the second wall.
+    //
+    // We read the persisted settings ourselves rather than trusting any flag
+    // from the caller; the caller only tells us whether IT confirmed WiFi.
+    if let Ok(store) = app.store("settings.json") {
+        let settings = store
+            .get("settings")
+            .and_then(|v| serde_json::from_value::<crate::settings::Settings>(v).ok())
+            .unwrap_or_default();
+        if settings.wifi_only && !confirmed_wifi {
+            return Err(
+                "WiFi-only is enabled but the connection is not a confirmed WiFi network. \
+                 Connect to WiFi or disable WiFi-only in Settings."
+                    .to_string(),
+            );
+        }
+    }
+
     let models_dir = app
         .path()
         .app_local_data_dir()

@@ -210,7 +210,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 				}
 			};
 
-			modelService.downloadModel(model.id, handleEvent).catch((err) => {
+			// Pass our local network reading to the backend so it can refuse
+			// the download if WiFi-only is on but we couldn't confirm WiFi.
+			modelService.downloadModel(model.id, isOnWifi(), handleEvent).catch((err) => {
 				updateDownload(model.id, { status: "failed", error: String(err) });
 				activeRef.current.delete(model.id);
 				notificationService.notifyDownloadFailed(model.name, String(err));
