@@ -401,6 +401,20 @@ const InputBar = styled.div`
   gap: 0.5rem;
   background: ${tokens.colors.surfaceContainer};
   border-top: 1px solid ${tokens.colors.outlineVariant}30;
+  position: relative;
+`;
+
+const CharCounter = styled.span<{ $over: boolean }>`
+  position: absolute;
+  top: -1.25rem;
+  right: 0.75rem;
+  font-size: 11px;
+  font-family: ${tokens.typography.fontFamily.mono};
+  color: ${({ $over }) => ($over ? tokens.colors.error : tokens.colors.onSurfaceVariant)};
+  background: ${tokens.colors.surfaceContainer};
+  padding: 0.125rem 0.375rem;
+  border-radius: ${tokens.borderRadius.sm};
+  pointer-events: none;
 `;
 
 const TextInput = styled.textarea`
@@ -545,6 +559,45 @@ const LoadingSubtitle = styled.p`
   animation: ${loadingPulse} 2s ease-in-out infinite;
 `;
 
+const LoadErrorActions = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 280px;
+  margin-top: 0.5rem;
+`;
+
+const RetryLoadBtn = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.primary};
+  color: ${tokens.colors.onPrimary};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  border: none;
+  cursor: pointer;
+
+  &:active { transform: scale(0.96); }
+`;
+
+const DismissLoadBtn = styled.button`
+  padding: 0.75rem 1.25rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: transparent;
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  border: 1px solid ${tokens.colors.outlineVariant};
+  cursor: pointer;
+
+  &:active { transform: scale(0.96); }
+`;
+
 /* ── Speed Badge ── */
 
 const SpeedBadge = styled.span`
@@ -613,6 +666,7 @@ export function ChatPage() {
 	const [input, setInput] = useState("");
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isLoadingModel, setIsLoadingModel] = useState(false);
+	const [loadModelError, setLoadModelError] = useState<string | null>(null);
 	const [streamedText, setStreamedText] = useState("");
 	const [tokensPerSecond, setTokensPerSecond] = useState(0);
 	const [conversationId, setConversationId] = useState<string | null>(null);
@@ -704,35 +758,55 @@ export function ChatPage() {
 		});
 	}, []);
 
+	// Wraps modelService.loadModel with a hard timeout so a hanging Rust load
+	// (corrupt GGUF, OOM, etc.) doesn't leave the UI stuck on a spinner.
+	const LOAD_TIMEOUT_MS = 60_000;
+	const loadWithTimeout = async (modelId: string) => {
+		const timeoutPromise = new Promise<never>((_, reject) => {
+			setTimeout(
+				() => reject(new Error("Model load timed out. The file may be corrupt or too large for this device.")),
+				LOAD_TIMEOUT_MS,
+			);
+		});
+		await Promise.race([modelService.loadModel(modelId), timeoutPromise]);
+	};
+
 	// Auto-load last used model if none is active
 	const ensureModelLoaded = async (): Promise<boolean> => {
 		if (activeModel) return true;
 
+		const tryLoad = async (modelId: string): Promise<boolean> => {
+			setIsLoadingModel(true);
+			setLoadModelError(null);
+			try {
+				await loadWithTimeout(modelId);
+				await refreshActiveModel();
+				return true;
+			} catch (err) {
+				const msg = err instanceof Error ? err.message : String(err);
+				setLoadModelError(msg);
+				return false;
+			} finally {
+				setIsLoadingModel(false);
+			}
+		};
+
 		try {
 			const currentSettings = await settingsService.getSettings();
 			if (currentSettings.last_model_id) {
-				setIsLoadingModel(true);
-				await modelService.loadModel(currentSettings.last_model_id);
-				await refreshActiveModel();
-				setIsLoadingModel(false);
-				return true;
+				if (await tryLoad(currentSettings.last_model_id)) return true;
 			}
 		} catch {
-			setIsLoadingModel(false);
+			// fall through to downloaded-list path
 		}
 
-		// No last model — check if any models are downloaded
 		try {
 			const models = await modelService.getDownloadedModels();
 			if (models.length > 0) {
-				setIsLoadingModel(true);
-				await modelService.loadModel(models[0].id);
-				await refreshActiveModel();
-				setIsLoadingModel(false);
-				return true;
+				if (await tryLoad(models[0].id)) return true;
 			}
 		} catch {
-			setIsLoadingModel(false);
+			// no models available
 		}
 
 		return false;
@@ -1052,6 +1126,22 @@ export function ChatPage() {
 				<LoadingSubtitle>This may take a moment...</LoadingSubtitle>
 			</LoadingOverlay>
 		)}
+		{!isLoadingModel && loadModelError && (
+			<LoadingOverlay>
+				<Icon name="error_outline" size={40} color={tokens.colors.error} />
+				<LoadingTitle>Couldn't load model</LoadingTitle>
+				<LoadingSubtitle>{loadModelError}</LoadingSubtitle>
+				<LoadErrorActions>
+					<RetryLoadBtn onClick={() => { setLoadModelError(null); ensureModelLoaded(); }}>
+						<Icon name="refresh" size={16} color={tokens.colors.onPrimary} />
+						Retry
+					</RetryLoadBtn>
+					<DismissLoadBtn onClick={() => { setLoadModelError(null); navigate("/models"); }}>
+						Choose another model
+					</DismissLoadBtn>
+				</LoadErrorActions>
+			</LoadingOverlay>
+		)}
 		<AppLayout
 			title="Chat"
 			rightActions={
@@ -1168,8 +1258,14 @@ export function ChatPage() {
 						onKeyDown={handleKeyDown}
 						placeholder="Message Neurix..."
 						rows={1}
+						maxLength={MAX_PROMPT_LENGTH}
 						disabled={isGenerating || isLoadingModel}
 					/>
+					{input.length > MAX_PROMPT_LENGTH * 0.9 && (
+						<CharCounter $over={input.length >= MAX_PROMPT_LENGTH}>
+							{input.length.toLocaleString()} / {MAX_PROMPT_LENGTH.toLocaleString()}
+						</CharCounter>
+					)}
 					{isGenerating ? (
 						<StopBtn onClick={handleStop} aria-label="Stop generating">
 							<Icon name="stop_circle" size={22} fill color={tokens.colors.error} />

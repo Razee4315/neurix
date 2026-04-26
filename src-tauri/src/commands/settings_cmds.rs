@@ -18,7 +18,18 @@ pub async fn get_settings(app: AppHandle) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-pub async fn update_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
+pub async fn update_settings(app: AppHandle, mut settings: Settings) -> Result<(), String> {
+    // Clamp inference parameters to safe ranges. The frontend sliders already
+    // enforce these, but the Tauri command is part of the public IPC surface
+    // so we re-validate here as defense in depth.
+    settings.temperature = settings.temperature.clamp(0.0, 2.0);
+    settings.top_p = settings.top_p.clamp(0.05, 1.0);
+    settings.max_tokens = settings.max_tokens.clamp(1, 8192);
+    // Cap system prompt length so a runaway paste can't bloat the store.
+    if settings.system_prompt.len() > 8192 {
+        settings.system_prompt.truncate(8192);
+    }
+
     let store = app.store(SETTINGS_STORE).map_err(|e| e.to_string())?;
     let val = serde_json::to_value(&settings).map_err(|e| e.to_string())?;
     store.set(SETTINGS_KEY, val);

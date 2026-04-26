@@ -2,9 +2,19 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { modelService, settingsService, notificationService } from "@/services";
 import type { DownloadEvent, ModelInfo, Settings } from "@/services/types";
 
-// Network detection result: true = on WiFi, false = on mobile data, null = can't determine
+// Network detection. We are deliberately fail-closed: if we can't prove the
+// user is on WiFi (or ethernet), we treat it as "not WiFi" and block the
+// download. The previous implementation was fail-open and let downloads
+// proceed any time conn.type was 'unknown' — common on Android WebViews —
+// which silently consumed user mobile data.
+//
+// Returns:
+//   isWifi: true  -> confirmed WiFi/ethernet, allow download
+//   isWifi: false -> confirmed cellular OR offline, block
+//   isWifi: null  -> unknown — caller must treat this as a block when
+//                    wifi_only is enabled
 function detectNetwork(): { isWifi: boolean | null; apiAvailable: boolean } {
-	// If the browser says we're offline, we're definitely not on WiFi
+	// Offline = definitely not on WiFi.
 	if (!navigator.onLine) return { isWifi: false, apiAvailable: true };
 
 	const nav = navigator as Navigator & {
@@ -12,15 +22,25 @@ function detectNetwork(): { isWifi: boolean | null; apiAvailable: boolean } {
 	};
 	const conn = nav.connection;
 
-	// If connection API unavailable, we can't determine network type
+	// API unavailable: cannot determine. Fail-closed.
 	if (!conn || !conn.type) return { isWifi: null, apiAvailable: false };
 
-	// Only block on explicitly mobile connections
-	// "cellular" is mobile data - block this
-	// "wifi", "ethernet", "wimax" - allow
-	// "unknown", "other", "none", "bluetooth" - can't be sure, allow to avoid false blocks
-	const isMobileData = conn.type === "cellular";
-	return { isWifi: !isMobileData, apiAvailable: true };
+	// Allow-list: only confirmed wired/wireless LAN counts as "WiFi".
+	if (conn.type === "wifi" || conn.type === "ethernet" || conn.type === "wimax") {
+		return { isWifi: true, apiAvailable: true };
+	}
+	// Confirmed cellular -> block.
+	if (conn.type === "cellular") {
+		return { isWifi: false, apiAvailable: true };
+	}
+	// Anything else ("unknown", "other", "none", "bluetooth"): fail-closed.
+	return { isWifi: null, apiAvailable: true };
+}
+
+// Returns true if we are confidently on a non-metered network. Used to gate
+// downloads when wifi_only is enabled. Treats unknown as not-WiFi.
+function isOnWifi(): boolean {
+	return detectNetwork().isWifi === true;
 }
 
 export interface DownloadState {
@@ -58,6 +78,10 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 	const activeRef = useRef<Set<string>>(new Set());
 	// Tracks model IDs that are in the process of starting (async pre-checks)
 	const startingRef = useRef<Set<string>>(new Set());
+	// Stores the ModelInfo for any download we auto-paused due to WiFi loss,
+	// so we can auto-resume when WiFi returns. Cleared on user-initiated
+	// pause/cancel so we don't fight the user.
+	const autoPausedRef = useRef<Map<string, ModelInfo>>(new Map());
 
 	const updateDownload = useCallback((modelId: string, patch: Partial<DownloadState>) => {
 		setDownloads((prev) => {
@@ -71,6 +95,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		// Guard: don't start if already downloading or already starting
 		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
 		startingRef.current.add(model.id);
+		// User (or auto-resume) explicitly chose to start, so this is no longer
+		// an auto-paused download.
+		autoPausedRef.current.delete(model.id);
 
 		// Set UI state immediately (synchronous)
 		setDownloads((prev) => ({
@@ -88,19 +115,18 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 		// Run async pre-checks then start the actual download
 		(async () => {
-			// Enforce WiFi-only setting - always check, even on resume
+			// Enforce WiFi-only setting. Fail-closed: only proceed when we can
+			// CONFIRM WiFi. If detection is uncertain we block and tell the user.
 			try {
 				const currentSettings: Settings = await settingsService.getSettings();
 				if (currentSettings.wifi_only) {
 					const network = detectNetwork();
-					// Only block if we can confirm user is on mobile data (cellular)
-					// Allow download on WiFi, ethernet, or when we can't determine
-					if (network.apiAvailable && network.isWifi === false) {
+					if (network.isWifi !== true) {
 						startingRef.current.delete(model.id);
-						updateDownload(model.id, {
-							status: "paused",
-							error: "Mobile data detected. Connect to WiFi to download.",
-						});
+						const reason = network.isWifi === false
+							? "Mobile data detected. Connect to WiFi to download."
+							: "Could not confirm WiFi connection. Connect to a known WiFi network, or turn off WiFi-only in Settings.";
+						updateDownload(model.id, { status: "paused", error: reason });
 						return;
 					}
 				}
@@ -191,7 +217,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 				}
 			};
 
-			modelService.downloadModel(model.id, handleEvent).catch((err) => {
+			// Pass our local network reading to the backend so it can refuse
+			// the download if WiFi-only is on but we couldn't confirm WiFi.
+			modelService.downloadModel(model.id, isOnWifi(), handleEvent).catch((err) => {
 				updateDownload(model.id, { status: "failed", error: String(err) });
 				activeRef.current.delete(model.id);
 				notificationService.notifyDownloadFailed(model.name, String(err));
@@ -201,6 +229,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 	const pauseDownload = useCallback((modelId: string) => {
 		if (!activeRef.current.has(modelId)) return; // Nothing to pause
+		// User-initiated pause: remove from auto-resume tracker so we don't
+		// surprise them by silently resuming when WiFi comes back.
+		autoPausedRef.current.delete(modelId);
 		modelService.cancelDownload(modelId);
 		// Status will be set to "paused" when Cancelled event arrives
 	}, []);
@@ -215,6 +246,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		modelService.cancelDownload(modelId);
 		activeRef.current.delete(modelId);
 		startingRef.current.delete(modelId);
+		autoPausedRef.current.delete(modelId);
 		notificationService.clearDownloadNotification();
 		setDownloads((prev) => {
 			const next = { ...prev };
@@ -231,63 +263,91 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, []);
 
-	// Monitor network changes and pause downloads when WiFi is lost (if wifi_only is enabled)
+	// Monitor network changes and pause downloads when WiFi is lost.
+	//
+	// Android WebViews don't reliably fire navigator.connection 'change'
+	// events, so we also poll every 8s while a download is active. The poll
+	// is short-circuited when there are no active downloads.
 	useEffect(() => {
 		const nav = navigator as Navigator & {
 			connection?: EventTarget & { type?: string };
 		};
 		const conn = nav.connection;
 
-		const handleNetworkChange = async () => {
-			// Check if we have active downloads
+		const pauseAllActive = async (reason: string) => {
 			if (activeRef.current.size === 0) return;
+			// Resolve ModelInfo for each active download so we can auto-resume
+			// when WiFi returns. We only catalog-lookup once per pause event.
+			let catalog: ModelInfo[] = [];
+			try { catalog = await modelService.getCatalog(); } catch { /* best-effort */ }
+			for (const modelId of activeRef.current) {
+				const info = catalog.find((m) => m.id === modelId);
+				if (info) autoPausedRef.current.set(modelId, info);
+				modelService.cancelDownload(modelId);
+				setDownloads((prev) => {
+					const existing = prev[modelId];
+					if (!existing) return prev;
+					return {
+						...prev,
+						[modelId]: {
+							...existing,
+							status: "paused",
+							speedBps: 0,
+							error: reason,
+						},
+					};
+				});
+			}
+			activeRef.current.clear();
+		};
 
-			// Check if wifi_only is enabled
+		const handleNetworkChange = async () => {
+			let wifiOnly = false;
 			try {
 				const settings = await settingsService.getSettings();
-				if (!settings.wifi_only) return;
+				wifiOnly = settings.wifi_only;
 			} catch {
-				return; // Can't verify settings, don't interrupt
+				return;
 			}
 
-			// Pause downloads if switched to mobile data
-			const network = detectNetwork();
-			// Only pause if we can confirm user is now on cellular/mobile data
-			if (network.apiAvailable && network.isWifi === false) {
-				for (const modelId of activeRef.current) {
-					modelService.cancelDownload(modelId);
-					setDownloads((prev) => {
-						const existing = prev[modelId];
-						if (!existing) return prev;
-						return {
-							...prev,
-							[modelId]: {
-								...existing,
-								status: "paused",
-								speedBps: 0,
-								error: "Download paused: switched to mobile data",
-							},
-						};
-					});
+			if (!wifiOnly) return;
+
+			const onWifi = isOnWifi();
+
+			// On wifi loss: pause active downloads.
+			if (!onWifi && activeRef.current.size > 0) {
+				await pauseAllActive("Download paused: WiFi connection lost");
+				return;
+			}
+
+			// On wifi return: resume any auto-paused downloads. User-initiated
+			// pauses are NOT in this map, so this never overrides user intent.
+			if (onWifi && autoPausedRef.current.size > 0) {
+				const toResume = Array.from(autoPausedRef.current.values());
+				autoPausedRef.current.clear();
+				for (const model of toResume) {
+					startDownload(model);
 				}
-				activeRef.current.clear();
 			}
 		};
 
-		// Listen for connection changes
-		if (conn) {
-			conn.addEventListener("change", handleNetworkChange);
-		}
-		// Also listen for online/offline events as fallback
+		if (conn) conn.addEventListener("change", handleNetworkChange);
 		window.addEventListener("offline", handleNetworkChange);
 
+		// Polling fallback for Android WebViews where 'change' doesn't fire.
+		const pollId = window.setInterval(handleNetworkChange, 8000);
+
+		// Also re-check when the tab becomes visible again — Android often
+		// suspends timers in the background, so we may have missed a switch.
+		window.addEventListener("online", handleNetworkChange);
+
 		return () => {
-			if (conn) {
-				conn.removeEventListener("change", handleNetworkChange);
-			}
+			if (conn) conn.removeEventListener("change", handleNetworkChange);
 			window.removeEventListener("offline", handleNetworkChange);
+			window.removeEventListener("online", handleNetworkChange);
+			window.clearInterval(pollId);
 		};
-	}, []);
+	}, [startDownload]);
 
 	return (
 		<DownloadContext.Provider

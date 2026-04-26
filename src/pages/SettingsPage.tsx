@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import type { Settings } from "@/services/types";
 import { historyService, settingsService } from "@/services";
@@ -194,6 +195,7 @@ export function SettingsPage() {
 	const navigate = useNavigate();
 	const { settings, refreshSettings } = useAppContext();
 	const { showConfirm } = useConfirm();
+	const { showToast } = useToast();
 	const [showInference, setShowInference] = useState(false);
 	const [wifiOnly, setWifiOnly] = useState(false);
 	const [saveHistory, setSaveHistory] = useState(true);
@@ -248,9 +250,15 @@ export function SettingsPage() {
 		(patch: Partial<Settings>) => {
 			if (!settings) return;
 			const updated: Settings = { ...settings, ...patch };
-			settingsService.updateSettings(updated).then(() => refreshSettings());
+			settingsService.updateSettings(updated)
+				.then(() => refreshSettings())
+				.catch(() => {
+					// Fire-and-forget save failed — surface it so the user knows
+					// the toggle they just flipped didn't actually persist.
+					showToast("Couldn't save setting. Please try again.", "error");
+				});
 		},
-		[settings, refreshSettings],
+		[settings, refreshSettings, showToast],
 	);
 
 	const toggleWifi = () => {

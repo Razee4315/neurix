@@ -7,11 +7,12 @@ export async function getCatalog(): Promise<ModelInfo[]> {
 
 export async function downloadModel(
 	modelId: string,
+	confirmedWifi: boolean,
 	onEvent: (event: DownloadEvent) => void,
 ): Promise<void> {
 	const channel = new Channel<DownloadEvent>();
 	channel.onmessage = onEvent;
-	return invoke("download_model", { modelId, onEvent: channel });
+	return invoke("download_model", { modelId, confirmedWifi, onEvent: channel });
 }
 
 export async function cancelDownload(modelId: string): Promise<void> {

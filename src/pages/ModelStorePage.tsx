@@ -6,7 +6,7 @@ import { useDownloads } from "@/context/DownloadContext";
 import { modelService, settingsService } from "@/services";
 import type { ModelInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -114,6 +114,46 @@ const SkeletonLine = styled.div<{ $w?: string; $h?: string }>`
   );
   background-size: 200% 100%;
   animation: ${shimmer} 1.5s ease-in-out infinite;
+`;
+
+const CatalogError = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 2rem 1rem;
+  text-align: center;
+`;
+
+const CatalogErrorTitle = styled.div`
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize.md};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  color: ${tokens.colors.onSurface};
+`;
+
+const CatalogErrorMessage = styled.div`
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.onSurfaceVariant};
+  max-width: 280px;
+  line-height: ${tokens.typography.lineHeight.relaxed};
+`;
+
+const RetryButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.primary};
+  color: ${tokens.colors.onPrimary};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  border: none;
+  cursor: pointer;
+
+  &:active { transform: scale(0.96); }
 `;
 
 const Cards = styled.div`
@@ -239,15 +279,31 @@ export function ModelStorePage() {
 	const [filter, setFilter] = useState(0);
 	const [search, setSearch] = useState("");
 	const [catalog, setCatalog] = useState<ModelInfo[]>([]);
+	const [catalogStatus, setCatalogStatus] = useState<"loading" | "ready" | "error">("loading");
+	const [catalogError, setCatalogError] = useState<string>("");
 	const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
 	const [freeSpace, setFreeSpace] = useState<string | null>(null);
 
+	const loadCatalog = useCallback(() => {
+		setCatalogStatus("loading");
+		setCatalogError("");
+		modelService.getCatalog()
+			.then((c) => {
+				setCatalog(c);
+				setCatalogStatus("ready");
+			})
+			.catch((e) => {
+				setCatalogError(typeof e === "string" ? e : (e?.message ?? "Could not load model catalog"));
+				setCatalogStatus("error");
+			});
+	}, []);
+
 	useEffect(() => {
-		modelService.getCatalog().then(setCatalog);
+		loadCatalog();
 		settingsService.getAvailableSpace().then((bytes) => {
 			setFreeSpace((bytes / (1024 * 1024 * 1024)).toFixed(1));
 		}).catch(() => {});
-	}, []);
+	}, [loadCatalog]);
 
 	// Refresh downloaded IDs whenever downloads change (catches completed downloads)
 	useEffect(() => {
@@ -267,9 +323,11 @@ export function ModelStorePage() {
 
 	const handleModelClick = (model: ModelInfo) => {
 		if (downloads[model.id]?.status === "downloading" || downloads[model.id]?.status === "paused") {
-			navigate("/downloading", { state: { model } });
+			navigate(`/downloading?id=${encodeURIComponent(model.id)}`, { state: { model } });
 		} else {
-			navigate("/store/model", { state: { model } });
+			// Pass model via state for fast first-paint; the ?id query lets the
+			// detail page recover after a reload.
+			navigate(`/store/model?id=${encodeURIComponent(model.id)}`, { state: { model } });
 		}
 	};
 
@@ -304,7 +362,17 @@ export function ModelStorePage() {
 					</StorageHint>
 				)}
 
-				{catalog.length === 0 ? (
+				{catalogStatus === "error" ? (
+					<CatalogError>
+						<Icon name="error_outline" size={32} color={tokens.colors.error} />
+						<CatalogErrorTitle>Couldn't load models</CatalogErrorTitle>
+						<CatalogErrorMessage>{catalogError}</CatalogErrorMessage>
+						<RetryButton type="button" onClick={loadCatalog}>
+							<Icon name="refresh" size={16} color={tokens.colors.onPrimary} />
+							Try again
+						</RetryButton>
+					</CatalogError>
+				) : catalogStatus === "loading" ? (
 					<Cards>
 						{[1, 2, 3, 4].map((i) => (
 							<SkeletonCard key={i} style={{ animationDelay: `${i * 80}ms` }}>
