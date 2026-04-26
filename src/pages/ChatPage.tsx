@@ -15,6 +15,10 @@ interface Message {
 	text: string;
 }
 
+// Soft cap on user prompt length. Models choke before this, but it also
+// guards against accidental paste of huge files.
+const MAX_PROMPT_LENGTH = 16_000;
+
 /* ── Markdown Parser ── */
 
 function renderMarkdown(text: string) {
@@ -509,7 +513,11 @@ const LoadingOverlay = styled.div`
   justify-content: center;
   gap: 1.5rem;
   background: ${tokens.colors.background}f2;
-  padding: 2rem;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 2rem)
+    calc(env(safe-area-inset-right, 0px) + 2rem)
+    calc(env(safe-area-inset-bottom, 0px) + 2rem)
+    calc(env(safe-area-inset-left, 0px) + 2rem);
 `;
 
 const Spinner = styled.div`
@@ -899,6 +907,16 @@ export function ChatPage() {
 	const handleSend = async () => {
 		const text = input.trim();
 		if (!text || isGenerating || isLoadingModel || sendingRef.current) return;
+		if (text.length > MAX_PROMPT_LENGTH) {
+			setMessages((prev) => [
+				...prev,
+				{
+					role: "ai",
+					text: `**Error:** Prompt is too long (${text.length.toLocaleString()} chars). Maximum is ${MAX_PROMPT_LENGTH.toLocaleString()}.`,
+				},
+			]);
+			return;
+		}
 		sendingRef.current = true;
 
 		// Haptic feedback
