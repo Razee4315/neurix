@@ -2761,7 +2761,7 @@ dependencies = [
 
 [[package]]
 name = "neurix-tauri"
-version = "0.3.0"
+version = "0.3.8"
 dependencies = [
  "android_logger",
  "anyhow",
@@ -5293,9 +5293,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
- "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
