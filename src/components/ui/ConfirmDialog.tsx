@@ -61,13 +61,16 @@ const Actions = styled.div`
 `;
 
 const Btn = styled.button<{ $danger?: boolean; $primary?: boolean }>`
-  padding: 0.5rem 1rem;
+  padding: 0.625rem 1.125rem;
+  min-height: 40px;
   border-radius: ${tokens.borderRadius.md};
   border: none;
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
   cursor: pointer;
-  transition: all ${tokens.transitions.fast};
+  transition: background ${tokens.transitions.fast}, transform ${tokens.transitions.fast}, filter 80ms ease-out;
+  /* Disable browser default tap highlight; we provide our own feedback */
+  -webkit-tap-highlight-color: transparent;
 
   background: ${({ $danger, $primary }) =>
 		$danger
@@ -82,7 +85,19 @@ const Btn = styled.button<{ $danger?: boolean; $primary?: boolean }>`
 				? tokens.colors.onPrimary
 				: tokens.colors.onSurface};
 
-  &:active { transform: scale(0.96); }
+  &:hover { filter: brightness(1.05); }
+
+  /* Stronger press feedback than scale alone — darken + slight scale.
+     Easy to feel on a finger tap, where transform: scale(0.96) was subtle. */
+  &:active {
+    transform: scale(0.94);
+    filter: brightness(0.85);
+  }
+
+  &:focus-visible {
+    outline: 2px solid ${tokens.colors.primary};
+    outline-offset: 2px;
+  }
 `;
 
 /* ── Context ── */

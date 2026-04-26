@@ -401,6 +401,20 @@ const InputBar = styled.div`
   gap: 0.5rem;
   background: ${tokens.colors.surfaceContainer};
   border-top: 1px solid ${tokens.colors.outlineVariant}30;
+  position: relative;
+`;
+
+const CharCounter = styled.span<{ $over: boolean }>`
+  position: absolute;
+  top: -1.25rem;
+  right: 0.75rem;
+  font-size: 11px;
+  font-family: ${tokens.typography.fontFamily.mono};
+  color: ${({ $over }) => ($over ? tokens.colors.error : tokens.colors.onSurfaceVariant)};
+  background: ${tokens.colors.surfaceContainer};
+  padding: 0.125rem 0.375rem;
+  border-radius: ${tokens.borderRadius.sm};
+  pointer-events: none;
 `;
 
 const TextInput = styled.textarea`
@@ -1244,8 +1258,14 @@ export function ChatPage() {
 						onKeyDown={handleKeyDown}
 						placeholder="Message Neurix..."
 						rows={1}
+						maxLength={MAX_PROMPT_LENGTH}
 						disabled={isGenerating || isLoadingModel}
 					/>
+					{input.length > MAX_PROMPT_LENGTH * 0.9 && (
+						<CharCounter $over={input.length >= MAX_PROMPT_LENGTH}>
+							{input.length.toLocaleString()} / {MAX_PROMPT_LENGTH.toLocaleString()}
+						</CharCounter>
+					)}
 					{isGenerating ? (
 						<StopBtn onClick={handleStop} aria-label="Stop generating">
 							<Icon name="stop_circle" size={22} fill color={tokens.colors.error} />
