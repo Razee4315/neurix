@@ -6,7 +6,8 @@ import { chatService, historyService, modelService, settingsService } from "@/se
 import type { ChatHistoryEntry } from "@/services/chatService";
 import type { Conversation, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { cleanResponse } from "@/utils/cleanResponse";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -14,6 +15,10 @@ interface Message {
 	role: "ai" | "user";
 	text: string;
 }
+
+// Soft cap on user prompt length. Models choke before this, but it also
+// guards against accidental paste of huge files.
+const MAX_PROMPT_LENGTH = 16_000;
 
 /* ── Markdown Parser ── */
 
@@ -141,7 +146,11 @@ function CopyButton({ code }: { code: string }) {
 	};
 
 	return (
-		<CopyBtn onClick={handleCopy} $copied={copied}>
+		<CopyBtn
+			onClick={handleCopy}
+			$copied={copied}
+			aria-label={copied ? "Copied" : "Copy code"}
+		>
 			<Icon
 				name={copied ? "check" : "content_copy"}
 				size={14}
@@ -505,7 +514,11 @@ const LoadingOverlay = styled.div`
   justify-content: center;
   gap: 1.5rem;
   background: ${tokens.colors.background}f2;
-  padding: 2rem;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 2rem)
+    calc(env(safe-area-inset-right, 0px) + 2rem)
+    calc(env(safe-area-inset-bottom, 0px) + 2rem)
+    calc(env(safe-area-inset-left, 0px) + 2rem);
 `;
 
 const Spinner = styled.div`
@@ -583,6 +596,12 @@ function MessageCopyBtn({ text }: { text: string }) {
 		</MsgActionBtn>
 	);
 }
+
+/* ── Memoized AI body so we don't re-parse markdown on every keystroke/token ── */
+
+const AiMessageBody = memo(function AiMessageBody({ text }: { text: string }) {
+	return <>{renderMarkdown(text)}</>;
+});
 
 /* ── Component ── */
 
@@ -774,9 +793,16 @@ export function ChatPage() {
 		el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
 	}, []);
 
+	// Smooth scroll only when a new message is added or generation toggles.
+	// During streaming, individual tokens use `auto` to avoid 60Hz scroll jank.
 	useEffect(() => {
 		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages, isGenerating, streamedText]);
+	}, [messages.length, isGenerating]);
+
+	useEffect(() => {
+		if (!streamedText) return;
+		messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+	}, [streamedText]);
 
 	// Scroll to bottom when keyboard opens (viewport resizes).
 	// Without this, messages stay at their stale scroll position and the latest
@@ -792,28 +818,6 @@ export function ChatPage() {
 		vv.addEventListener("resize", onResize);
 		return () => vv.removeEventListener("resize", onResize);
 	}, []);
-
-	// Trim any stop sequence artifacts from the end of generated text
-	const cleanResponse = (text: string): string => {
-		const stopPatterns = [
-			/\n?Human:[\s\S]*$/i,
-			/\n?User:[\s\S]*$/i,
-			/<\|im_start\|>[\s\S]*$/,
-			/<\|im_end\|>[\s\S]*$/,
-			/<start_of_turn>[\s\S]*$/,
-			/<end_of_turn>[\s\S]*$/,
-			/<\|eot_id\|>[\s\S]*$/,
-			/<\|start_header_id\|>[\s\S]*$/,
-			/<\|end\|>[\s\S]*$/,
-			/<\|user\|>[\s\S]*$/,
-			/<\|endoftext\|>[\s\S]*$/,
-		];
-		let cleaned = text;
-		for (const pattern of stopPatterns) {
-			cleaned = cleaned.replace(pattern, "");
-		}
-		return cleaned.trim();
-	};
 
 	const handleEvent = useCallback((event: InferenceEvent) => {
 		const data = event.data;
@@ -882,6 +886,16 @@ export function ChatPage() {
 	const handleSend = async () => {
 		const text = input.trim();
 		if (!text || isGenerating || isLoadingModel || sendingRef.current) return;
+		if (text.length > MAX_PROMPT_LENGTH) {
+			setMessages((prev) => [
+				...prev,
+				{
+					role: "ai",
+					text: `**Error:** Prompt is too long (${text.length.toLocaleString()} chars). Maximum is ${MAX_PROMPT_LENGTH.toLocaleString()}.`,
+				},
+			]);
+			return;
+		}
 		sendingRef.current = true;
 
 		// Haptic feedback
@@ -1105,7 +1119,7 @@ export function ChatPage() {
 									{msg.role === "ai" ? "Neurix" : "You"}
 								</BubbleLabel>
 								<BubbleBody>
-									{msg.role === "ai" ? renderMarkdown(msg.text) : msg.text}
+									{msg.role === "ai" ? <AiMessageBody text={msg.text} /> : msg.text}
 								</BubbleBody>
 							</Bubble>
 							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
@@ -1127,8 +1141,8 @@ export function ChatPage() {
 						<Bubble $role="ai">
 							<BubbleLabel $role="ai">Neurix</BubbleLabel>
 							<BubbleBody>
-								{streamedText ? renderMarkdown(streamedText) : (
-									<TypingDots>
+								{streamedText ? <AiMessageBody text={streamedText} /> : (
+									<TypingDots role="status" aria-live="polite" aria-label="Generating response">
 										<span />
 										<span />
 										<span />

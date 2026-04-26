@@ -44,6 +44,14 @@ export default defineConfig((): UserConfig => {
       target: process.env.TAURI_PLATFORM === "windows" ? "chrome105" : "safari13",
       minify: !process.env.TAURI_DEBUG ? "esbuild" : false,
       sourcemap: !!process.env.TAURI_DEBUG,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            "react-vendor": ["react", "react-dom", "react-router-dom"],
+            "styled-vendor": ["styled-components"],
+          },
+        },
+      },
     },
   };
 });

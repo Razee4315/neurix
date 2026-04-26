@@ -8,7 +8,9 @@ rust-version = "1.77"
 tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
+# Slim feature set: only what we actually use (Mutex, spawn_blocking, fs, AsyncWrite, time).
+# Saves binary size vs `full`. Tauri brings its own tokio features as needed.
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "fs", "io-util", "time", "macros"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

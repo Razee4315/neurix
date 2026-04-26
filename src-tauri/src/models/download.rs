@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 
 use super::catalog::ModelInfo;
@@ -147,6 +147,20 @@ pub async fn download_model_files(
 
     file.flush().await.map_err(|e| e.to_string())?;
     drop(file);
+
+    // Verify the .part file before renaming. Two checks catch the common
+    // failure modes:
+    //   1. Size mismatch — partial download or content-length lied to us.
+    //   2. Magic-byte check — the response was actually HTML (404 page,
+    //      Cloudflare error, gated-repo redirect) and not a GGUF file.
+    if let Err(e) = verify_gguf(&part_path, total_bytes).await {
+        // Delete the bad .part so the user gets a fresh download next time
+        // rather than resuming a corrupt file.
+        let _ = fs::remove_file(&part_path).await;
+        let _ = channel.send(DownloadEvent::Failed { error: e.clone() });
+        return Err(e);
+    }
+
     fs::rename(&part_path, &final_path)
         .await
         .map_err(|e| format!("Failed to finalize file: {}", e))?;
@@ -183,5 +197,44 @@ pub async fn download_model_files(
     }
 
     let _ = channel.send(DownloadEvent::Finished);
+    Ok(())
+}
+
+/// Verify a downloaded model file is valid by checking size + GGUF magic bytes.
+/// Returns Err with a user-facing message if the file is not a usable GGUF.
+async fn verify_gguf(path: &Path, expected_bytes: u64) -> Result<(), String> {
+    let actual_bytes = fs::metadata(path)
+        .await
+        .map_err(|e| format!("Cannot stat downloaded file: {}", e))?
+        .len();
+
+    // Allow a small fudge factor — some servers report Content-Length slightly
+    // off from the actual body. But anything more than ~1% off is suspicious.
+    let tolerance = (expected_bytes / 100).max(1024);
+    if actual_bytes + tolerance < expected_bytes {
+        return Err(format!(
+            "Download incomplete: got {} bytes, expected ~{}",
+            actual_bytes, expected_bytes
+        ));
+    }
+
+    let mut f = fs::File::open(path)
+        .await
+        .map_err(|e| format!("Cannot read downloaded file: {}", e))?;
+    let mut magic = [0u8; 4];
+    f.read_exact(&mut magic)
+        .await
+        .map_err(|e| format!("Cannot read file header: {}", e))?;
+
+    // GGUF magic: "GGUF" (0x47 0x47 0x55 0x46). Older GGML files start with
+    // "ggml"/"ggjt"/"ggla" — none of those work in this app, so reject them.
+    if &magic != b"GGUF" {
+        return Err(
+            "Downloaded file is not a valid GGUF model (likely an HTML error page from \
+             HuggingFace). Try again or check that the model is publicly available."
+                .to_string(),
+        );
+    }
+
     Ok(())
 }

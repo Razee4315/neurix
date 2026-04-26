@@ -1,5 +1,5 @@
 import { tokens } from "@/theme/tokens";
-import { Component, type ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 import styled from "styled-components";
 
 const Container = styled.div`
@@ -59,6 +59,33 @@ export class ErrorBoundary extends Component<Props, State> {
 	static getDerivedStateFromError(): State {
 		return { hasError: true };
 	}
+
+	componentDidCatch(error: Error, info: ErrorInfo) {
+		// Log render-time errors with the React component stack so we can debug
+		// from device logs (Android logcat picks these up).
+		console.error("[Neurix] React render error:", error, info.componentStack);
+	}
+
+	componentDidMount() {
+		window.addEventListener("error", this.handleGlobalError);
+		window.addEventListener("unhandledrejection", this.handleUnhandledRejection);
+	}
+
+	componentWillUnmount() {
+		window.removeEventListener("error", this.handleGlobalError);
+		window.removeEventListener("unhandledrejection", this.handleUnhandledRejection);
+	}
+
+	// We don't crash the UI for async errors (too aggressive — a single failed
+	// fetch shouldn't blank the screen). Just surface them to the console so
+	// they're visible in logcat / devtools rather than swallowed.
+	handleGlobalError = (e: ErrorEvent) => {
+		console.error("[Neurix] uncaught error:", e.error ?? e.message, e.filename, e.lineno);
+	};
+
+	handleUnhandledRejection = (e: PromiseRejectionEvent) => {
+		console.error("[Neurix] unhandled promise rejection:", e.reason);
+	};
 
 	handleRestart = () => {
 		this.setState({ hasError: false });

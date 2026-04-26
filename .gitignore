@@ -30,6 +30,11 @@ src-tauri/gen/android/.externalNativeBuild/
 src-tauri/gen/android/.cxx/
 *.iml
 
+# Tauri-regenerated Android assets (regenerated on every build)
+src-tauri/gen/android/app/src/main/jniLibs/armeabi-v7a/
+src-tauri/gen/android/app/src/main/jniLibs/x86/
+src-tauri/gen/android/app/src/main/jniLibs/x86_64/
+
 # Android signing — NEVER commit these
 *.keystore
 *.jks
