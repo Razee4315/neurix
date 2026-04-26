@@ -2,6 +2,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { useAppContext } from "@/context/AppContext";
+import { useCharacters } from "@/context/CharacterContext";
 import { chatService, historyService, modelService, settingsService } from "@/services";
 import type { ChatHistoryEntry } from "@/services/chatService";
 import type { Conversation, InferenceEvent } from "@/services/types";
@@ -662,6 +663,7 @@ export function ChatPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const { activeModel, settings, refreshActiveModel } = useAppContext();
+	const { activeCharacter } = useCharacters();
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
 	const [isGenerating, setIsGenerating] = useState(false);
@@ -997,11 +999,11 @@ export function ChatPage() {
 		try {
 			await chatService.runInference(
 				text,
-				settings?.system_prompt ?? "",
+				activeCharacter?.system_prompt ?? settings?.system_prompt ?? "",
 				history,
-				settings?.temperature ?? 0.4,
-				settings?.top_p ?? 0.9,
-				settings?.max_tokens ?? 512,
+				activeCharacter?.temperature ?? settings?.temperature ?? 0.4,
+				activeCharacter?.top_p ?? settings?.top_p ?? 0.9,
+				activeCharacter?.max_tokens ?? settings?.max_tokens ?? 512,
 				handleEvent,
 			);
 		} catch (err) {
@@ -1047,11 +1049,11 @@ export function ChatPage() {
 		try {
 			await chatService.runInference(
 				userText,
-				settings?.system_prompt ?? "",
+				activeCharacter?.system_prompt ?? settings?.system_prompt ?? "",
 				history,
-				settings?.temperature ?? 0.4,
-				settings?.top_p ?? 0.9,
-				settings?.max_tokens ?? 512,
+				activeCharacter?.temperature ?? settings?.temperature ?? 0.4,
+				activeCharacter?.top_p ?? settings?.top_p ?? 0.9,
+				activeCharacter?.max_tokens ?? settings?.max_tokens ?? 512,
 				handleEvent,
 			);
 		} catch (err) {
