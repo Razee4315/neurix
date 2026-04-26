@@ -78,6 +78,10 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 	const activeRef = useRef<Set<string>>(new Set());
 	// Tracks model IDs that are in the process of starting (async pre-checks)
 	const startingRef = useRef<Set<string>>(new Set());
+	// Stores the ModelInfo for any download we auto-paused due to WiFi loss,
+	// so we can auto-resume when WiFi returns. Cleared on user-initiated
+	// pause/cancel so we don't fight the user.
+	const autoPausedRef = useRef<Map<string, ModelInfo>>(new Map());
 
 	const updateDownload = useCallback((modelId: string, patch: Partial<DownloadState>) => {
 		setDownloads((prev) => {
@@ -91,6 +95,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		// Guard: don't start if already downloading or already starting
 		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
 		startingRef.current.add(model.id);
+		// User (or auto-resume) explicitly chose to start, so this is no longer
+		// an auto-paused download.
+		autoPausedRef.current.delete(model.id);
 
 		// Set UI state immediately (synchronous)
 		setDownloads((prev) => ({
@@ -222,6 +229,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 	const pauseDownload = useCallback((modelId: string) => {
 		if (!activeRef.current.has(modelId)) return; // Nothing to pause
+		// User-initiated pause: remove from auto-resume tracker so we don't
+		// surprise them by silently resuming when WiFi comes back.
+		autoPausedRef.current.delete(modelId);
 		modelService.cancelDownload(modelId);
 		// Status will be set to "paused" when Cancelled event arrives
 	}, []);
@@ -236,6 +246,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		modelService.cancelDownload(modelId);
 		activeRef.current.delete(modelId);
 		startingRef.current.delete(modelId);
+		autoPausedRef.current.delete(modelId);
 		notificationService.clearDownloadNotification();
 		setDownloads((prev) => {
 			const next = { ...prev };
@@ -263,9 +274,15 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		};
 		const conn = nav.connection;
 
-		const pauseAllActive = (reason: string) => {
+		const pauseAllActive = async (reason: string) => {
 			if (activeRef.current.size === 0) return;
+			// Resolve ModelInfo for each active download so we can auto-resume
+			// when WiFi returns. We only catalog-lookup once per pause event.
+			let catalog: ModelInfo[] = [];
+			try { catalog = await modelService.getCatalog(); } catch { /* best-effort */ }
 			for (const modelId of activeRef.current) {
+				const info = catalog.find((m) => m.id === modelId);
+				if (info) autoPausedRef.current.set(modelId, info);
 				modelService.cancelDownload(modelId);
 				setDownloads((prev) => {
 					const existing = prev[modelId];
@@ -285,17 +302,32 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		};
 
 		const handleNetworkChange = async () => {
-			if (activeRef.current.size === 0) return;
+			let wifiOnly = false;
 			try {
 				const settings = await settingsService.getSettings();
-				if (!settings.wifi_only) return;
+				wifiOnly = settings.wifi_only;
 			} catch {
 				return;
 			}
-			// Fail-closed: pause if we are NOT confirmed on WiFi. This catches
-			// both 'cellular' and 'unknown'/'none', which the old code missed.
-			if (!isOnWifi()) {
-				pauseAllActive("Download paused: WiFi connection lost");
+
+			if (!wifiOnly) return;
+
+			const onWifi = isOnWifi();
+
+			// On wifi loss: pause active downloads.
+			if (!onWifi && activeRef.current.size > 0) {
+				await pauseAllActive("Download paused: WiFi connection lost");
+				return;
+			}
+
+			// On wifi return: resume any auto-paused downloads. User-initiated
+			// pauses are NOT in this map, so this never overrides user intent.
+			if (onWifi && autoPausedRef.current.size > 0) {
+				const toResume = Array.from(autoPausedRef.current.values());
+				autoPausedRef.current.clear();
+				for (const model of toResume) {
+					startDownload(model);
+				}
 			}
 		};
 
@@ -305,12 +337,17 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		// Polling fallback for Android WebViews where 'change' doesn't fire.
 		const pollId = window.setInterval(handleNetworkChange, 8000);
 
+		// Also re-check when the tab becomes visible again — Android often
+		// suspends timers in the background, so we may have missed a switch.
+		window.addEventListener("online", handleNetworkChange);
+
 		return () => {
 			if (conn) conn.removeEventListener("change", handleNetworkChange);
 			window.removeEventListener("offline", handleNetworkChange);
+			window.removeEventListener("online", handleNetworkChange);
 			window.clearInterval(pollId);
 		};
-	}, []);
+	}, [startDownload]);
 
 	return (
 		<DownloadContext.Provider
