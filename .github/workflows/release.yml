@@ -109,7 +109,88 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Build and publish Windows release
+      # Pre-cache NSIS so a flaky GitHub CDN 502 during bundling doesn't fail
+      # the whole release. This is the exact failure mode that broke v0.3.10's
+      # release: tauri build downloads nsis-3.11.zip from
+      # github.com/tauri-apps/binary-releases mid-bundle, and a transient 502
+      # there aborts the entire build after Rust has already compiled.
+      # Pre-fetching with retries means tauri's bundler finds the cached
+      # archive and skips the download step.
+      - name: Pre-cache NSIS bundler (resilience)
+        shell: pwsh
+        run: |
+          $cacheRoot = "$env:LOCALAPPDATA\tauri"
+          New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+          $url = "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip"
+          $zip = "$cacheRoot\nsis-3.11.zip"
+          $maxAttempts = 5
+          for ($i = 1; $i -le $maxAttempts; $i++) {
+            try {
+              Write-Host "NSIS pre-cache attempt $i of $maxAttempts"
+              Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing -TimeoutSec 120
+              if ((Get-Item $zip).Length -gt 1MB) {
+                Write-Host "NSIS archive cached at $zip"
+                break
+              }
+              throw "Downloaded archive too small, likely an error page"
+            } catch {
+              Write-Host "Attempt $i failed: $($_.Exception.Message)"
+              if (Test-Path $zip) { Remove-Item $zip -Force }
+              if ($i -eq $maxAttempts) {
+                Write-Host "Pre-cache exhausted, will rely on tauri's own download"
+              } else {
+                Start-Sleep -Seconds (10 * $i)
+              }
+            }
+          }
+
+      - name: Build and publish Windows release (attempt 1)
+        id: build_windows
+        uses: tauri-apps/tauri-action@v0
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tauriScript: npx tauri
+          tagName: v__VERSION__
+          releaseName: Neurix v__VERSION__
+          releaseBody: |
+            ## Neurix v__VERSION__
+
+            Your AI. Your phone. No cloud. No subscription. No limits.
+
+            Run powerful 1B language models directly on your device — fully offline, completely private.
+
+            ### Downloads
+
+            | Platform | File | Notes |
+            |----------|------|-------|
+            | Windows | `.msi` | Recommended installer |
+            | Windows | `.exe` | NSIS installer |
+            | Android | `.apk` | Sideload (enable unknown sources) |
+            | Android | `.aab` | Play Store upload |
+
+            ### Android Sideload
+            1. Enable **Install unknown apps** in Android settings
+            2. Download `.apk` and tap to install
+            3. Download a model inside the app — works fully offline after that
+          releaseDraft: false
+          prerelease: false
+
+      # Retry once after a brief pause if the first attempt failed. Most
+      # tauri-build failures in CI are transient CDN issues (502/504 on
+      # github.com release downloads of NSIS or WiX). Retrying after 30s is
+      # almost always enough — and saves us from re-running the whole job
+      # which would also re-do the 5+ minute Rust compile.
+      - name: Pause before retry
+        if: steps.build_windows.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "First attempt failed. Pausing 30s for transient CDN issues to clear."
+          sleep 30
+
+      - name: Build and publish Windows release (attempt 2)
+        if: steps.build_windows.outcome == 'failure'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
