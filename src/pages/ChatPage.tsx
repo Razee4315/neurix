@@ -141,7 +141,11 @@ function CopyButton({ code }: { code: string }) {
 	};
 
 	return (
-		<CopyBtn onClick={handleCopy} $copied={copied}>
+		<CopyBtn
+			onClick={handleCopy}
+			$copied={copied}
+			aria-label={copied ? "Copied" : "Copy code"}
+		>
 			<Icon
 				name={copied ? "check" : "content_copy"}
 				size={14}
