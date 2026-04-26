@@ -158,10 +158,27 @@ const SizeNote = styled.p`
 export function ModelDetailPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const model = (location.state as { model?: ModelInfo })?.model;
+	const stateModel = (location.state as { model?: ModelInfo })?.model;
+	// Allow deep-linking via ?id=... so reload doesn't kick back to /store.
+	const idFromQuery = new URLSearchParams(location.search).get("id");
+	const [model, setModel] = useState<ModelInfo | null>(stateModel ?? null);
+	const [lookupFailed, setLookupFailed] = useState(false);
 	const { downloads, startDownload } = useDownloads();
 	const { showConfirm } = useConfirm();
 	const [isDownloaded, setIsDownloaded] = useState(false);
+
+	// If we don't have a model from router state, try to look it up by id.
+	useEffect(() => {
+		if (model || !idFromQuery) return;
+		let cancelled = false;
+		modelService.getCatalog().then((c) => {
+			if (cancelled) return;
+			const found = c.find((m) => m.id === idFromQuery);
+			if (found) setModel(found);
+			else setLookupFailed(true);
+		}).catch(() => { if (!cancelled) setLookupFailed(true); });
+		return () => { cancelled = true; };
+	}, [model, idFromQuery]);
 
 	useEffect(() => {
 		if (!model) return;
@@ -170,9 +187,24 @@ export function ModelDetailPage() {
 		});
 	}, [model]);
 
+	// No model and nothing to look up -> bounce to store. We avoid redirecting
+	// while a lookup is in flight so reload-on-deep-link doesn't flicker.
 	if (!model) {
-		navigate("/store");
-		return null;
+		if (!idFromQuery || lookupFailed) {
+			navigate("/store", { replace: true });
+			return null;
+		}
+		// Lookup in progress: show a thin spinner instead of jumping back.
+		return (
+			<AppLayout title="Loading">
+				<OfflineBanner />
+				<Page>
+					<div style={{ padding: "2rem", textAlign: "center", color: tokens.colors.onSurfaceVariant }}>
+						Loading model details…
+					</div>
+				</Page>
+			</AppLayout>
+		);
 	}
 
 	const dl = downloads[model.id];

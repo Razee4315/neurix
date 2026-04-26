@@ -323,9 +323,11 @@ export function ModelStorePage() {
 
 	const handleModelClick = (model: ModelInfo) => {
 		if (downloads[model.id]?.status === "downloading" || downloads[model.id]?.status === "paused") {
-			navigate("/downloading", { state: { model } });
+			navigate(`/downloading?id=${encodeURIComponent(model.id)}`, { state: { model } });
 		} else {
-			navigate("/store/model", { state: { model } });
+			// Pass model via state for fast first-paint; the ?id query lets the
+			// detail page recover after a reload.
+			navigate(`/store/model?id=${encodeURIComponent(model.id)}`, { state: { model } });
 		}
 	};
 

@@ -2,9 +2,10 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { useDownloads } from "@/context/DownloadContext";
+import { modelService } from "@/services";
 import type { ModelInfo } from "@/services/types";
 import { tokens } from "@/theme/tokens";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -206,26 +207,48 @@ export function DownloadingPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const { showConfirm } = useConfirm();
-	const model = (location.state as { model?: ModelInfo })?.model;
+	const stateModel = (location.state as { model?: ModelInfo })?.model;
+	const idFromQuery = new URLSearchParams(location.search).get("id");
+	const [model, setModel] = useState<ModelInfo | null>(stateModel ?? null);
+	const [lookupFailed, setLookupFailed] = useState(false);
 	const { downloads, pauseDownload, resumeDownload, cancelDownload, removeDownload } = useDownloads();
 
+	useEffect(() => {
+		if (model || !idFromQuery) return;
+		let cancelled = false;
+		modelService.getCatalog().then((c) => {
+			if (cancelled) return;
+			const found = c.find((m) => m.id === idFromQuery);
+			if (found) setModel(found);
+			else setLookupFailed(true);
+		}).catch(() => { if (!cancelled) setLookupFailed(true); });
+		return () => { cancelled = true; };
+	}, [model, idFromQuery]);
+
 	const dl = model ? downloads[model.id] : undefined;
+	// Guard against running the redirect effect twice if React re-runs in
+	// strict mode or if rapid navigation re-triggers it.
+	const finishedRedirectFired = useRef(false);
 
 	// Auto-redirect on finish
 	useEffect(() => {
-		if (dl?.status === "finished") {
-			if (navigator.vibrate) navigator.vibrate([10, 50, 10]);
-			const timer = setTimeout(() => {
-				removeDownload(dl.modelId);
-				navigate("/models");
-			}, 1500);
-			return () => clearTimeout(timer);
-		}
+		if (dl?.status !== "finished") return;
+		if (finishedRedirectFired.current) return;
+		finishedRedirectFired.current = true;
+		if (navigator.vibrate) navigator.vibrate([10, 50, 10]);
+		const timer = setTimeout(() => {
+			removeDownload(dl.modelId);
+			navigate("/models");
+		}, 1500);
+		return () => clearTimeout(timer);
 	}, [dl, navigate, removeDownload]);
 
 	if (!model) {
-		navigate("/store");
-		return null;
+		if (!idFromQuery || lookupFailed) {
+			navigate("/store", { replace: true });
+			return null;
+		}
+		return null; // brief loading state while catalog lookup is in flight
 	}
 
 	const totalBytes = dl?.totalBytes || model.size_bytes;
