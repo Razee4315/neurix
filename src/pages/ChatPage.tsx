@@ -6,6 +6,7 @@ import { chatService, historyService, modelService, settingsService } from "@/se
 import type { ChatHistoryEntry } from "@/services/chatService";
 import type { Conversation, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
+import { cleanResponse } from "@/utils/cleanResponse";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -817,28 +818,6 @@ export function ChatPage() {
 		vv.addEventListener("resize", onResize);
 		return () => vv.removeEventListener("resize", onResize);
 	}, []);
-
-	// Trim any stop sequence artifacts from the end of generated text
-	const cleanResponse = (text: string): string => {
-		const stopPatterns = [
-			/\n?Human:[\s\S]*$/i,
-			/\n?User:[\s\S]*$/i,
-			/<\|im_start\|>[\s\S]*$/,
-			/<\|im_end\|>[\s\S]*$/,
-			/<start_of_turn>[\s\S]*$/,
-			/<end_of_turn>[\s\S]*$/,
-			/<\|eot_id\|>[\s\S]*$/,
-			/<\|start_header_id\|>[\s\S]*$/,
-			/<\|end\|>[\s\S]*$/,
-			/<\|user\|>[\s\S]*$/,
-			/<\|endoftext\|>[\s\S]*$/,
-		];
-		let cleaned = text;
-		for (const pattern of stopPatterns) {
-			cleaned = cleaned.replace(pattern, "");
-		}
-		return cleaned.trim();
-	};
 
 	const handleEvent = useCallback((event: InferenceEvent) => {
 		const data = event.data;
