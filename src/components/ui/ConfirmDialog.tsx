@@ -1,5 +1,5 @@
 import { tokens } from "@/theme/tokens";
-import { createContext, useCallback, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styled, { keyframes } from "styled-components";
 
 /* ── Styles ── */
@@ -105,15 +105,19 @@ const ConfirmContext = createContext<{ showConfirm: ShowConfirm; showAlert: Show
 
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 	const [dialog, setDialog] = useState<(DialogOptions & { resolve: (v: boolean) => void }) | null>(null);
+	const previouslyFocused = useRef<HTMLElement | null>(null);
+	const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
 
 	const showConfirm = useCallback((options: DialogOptions): Promise<boolean> => {
 		return new Promise((resolve) => {
+			previouslyFocused.current = (document.activeElement as HTMLElement) ?? null;
 			setDialog({ ...options, resolve });
 		});
 	}, []);
 
 	const showAlert = useCallback((title: string, message: string): Promise<void> => {
 		return new Promise((resolve) => {
+			previouslyFocused.current = (document.activeElement as HTMLElement) ?? null;
 			setDialog({
 				title,
 				message,
@@ -125,36 +129,77 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, []);
 
-	const handleConfirm = () => {
-		dialog?.resolve(true);
+	const closeDialog = useCallback(() => {
 		setDialog(null);
-	};
+		// Restore focus to the trigger element so keyboard users don't get stranded.
+		queueMicrotask(() => {
+			previouslyFocused.current?.focus();
+			previouslyFocused.current = null;
+		});
+	}, []);
 
-	const handleCancel = () => {
+	const handleConfirm = useCallback(() => {
+		dialog?.resolve(true);
+		closeDialog();
+	}, [dialog, closeDialog]);
+
+	const handleCancel = useCallback(() => {
 		dialog?.resolve(false);
-		setDialog(null);
-	};
+		closeDialog();
+	}, [dialog, closeDialog]);
+
+	// Move focus to primary action when dialog opens.
+	useEffect(() => {
+		if (dialog) confirmBtnRef.current?.focus();
+	}, [dialog]);
+
+	// Escape closes (= cancel for confirm, = OK for alert).
+	useEffect(() => {
+		if (!dialog) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				e.preventDefault();
+				if (dialog.cancelLabel !== undefined) handleCancel();
+				else handleConfirm();
+			}
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, [dialog, handleCancel, handleConfirm]);
 
 	return (
 		<ConfirmContext.Provider value={{ showConfirm, showAlert }}>
 			{children}
 			{dialog && (
 				<Overlay onClick={handleCancel}>
-					<Dialog onClick={(e) => e.stopPropagation()}>
+					<Dialog
+						role="alertdialog"
+						aria-modal="true"
+						aria-labelledby="confirm-title"
+						aria-describedby="confirm-message"
+						onClick={(e) => e.stopPropagation()}
+					>
 						<Body>
-							<DialogTitle>{dialog.title}</DialogTitle>
-							<DialogMessage>{dialog.message}</DialogMessage>
+							<DialogTitle id="confirm-title">{dialog.title}</DialogTitle>
+							<DialogMessage id="confirm-message">{dialog.message}</DialogMessage>
 						</Body>
 						<Actions>
 							{dialog.cancelLabel !== undefined ? (
 								<>
 									<Btn onClick={handleCancel}>{dialog.cancelLabel || "Cancel"}</Btn>
-									<Btn $danger={dialog.danger} $primary={!dialog.danger} onClick={handleConfirm}>
+									<Btn
+										ref={confirmBtnRef}
+										$danger={dialog.danger}
+										$primary={!dialog.danger}
+										onClick={handleConfirm}
+									>
 										{dialog.confirmLabel || "Confirm"}
 									</Btn>
 								</>
 							) : (
-								<Btn $primary onClick={handleConfirm}>{dialog.confirmLabel || "OK"}</Btn>
+								<Btn ref={confirmBtnRef} $primary onClick={handleConfirm}>
+									{dialog.confirmLabel || "OK"}
+								</Btn>
 							)}
 						</Actions>
 					</Dialog>
