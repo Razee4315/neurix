@@ -37,6 +37,9 @@ const SettingsPage = lazy(() =>
 const AboutPage = lazy(() =>
 	import("@/pages/AboutPage").then((m) => ({ default: m.AboutPage })),
 );
+const CharacterEditPage = lazy(() =>
+	import("@/pages/CharacterEditPage").then((m) => ({ default: m.CharacterEditPage })),
+);
 
 function App() {
 	return (
@@ -62,6 +65,8 @@ function App() {
 								<Route path="/chat/history" element={<ChatHistoryPage />} />
 								<Route path="/settings" element={<SettingsPage />} />
 								<Route path="/about" element={<AboutPage />} />
+								<Route path="/character/new" element={<CharacterEditPage />} />
+								<Route path="/character/edit" element={<CharacterEditPage />} />
 								<Route path="*" element={<Navigate to="/" replace />} />
 							</Routes>
 						</Suspense>
