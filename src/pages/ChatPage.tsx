@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { CharacterPicker } from "@/components/character/CharacterPicker";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { chatService, historyService, modelService, settingsService } from "@/services";
@@ -507,6 +508,28 @@ const ModelTag = styled.span`
   border-radius: ${tokens.borderRadius.md};
 `;
 
+const CharacterChip = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem 0.25rem 0.375rem;
+  background: ${tokens.colors.surfaceContainerHigh};
+  border: 1px solid ${tokens.colors.outlineVariant}40;
+  border-radius: ${tokens.borderRadius.md};
+  color: ${tokens.colors.onSurface};
+  font-size: 11px;
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background ${tokens.transitions.fast}, transform ${tokens.transitions.fast};
+  max-width: 110px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  &:active { transform: scale(0.94); background: ${tokens.colors.surfaceContainerHighest}; }
+`;
+
 /* ── Loading Overlay ── */
 
 const loadingSpin = keyframes`
@@ -669,6 +692,7 @@ export function ChatPage() {
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isLoadingModel, setIsLoadingModel] = useState(false);
 	const [loadModelError, setLoadModelError] = useState<string | null>(null);
+	const [pickerOpen, setPickerOpen] = useState(false);
 	const [streamedText, setStreamedText] = useState("");
 	const [tokensPerSecond, setTokensPerSecond] = useState(0);
 	const [conversationId, setConversationId] = useState<string | null>(null);
@@ -1148,6 +1172,17 @@ export function ChatPage() {
 			title="Chat"
 			rightActions={
 				<TopBarRight>
+					{activeCharacter && (
+						<CharacterChip
+							type="button"
+							onClick={() => setPickerOpen(true)}
+							aria-label={`Character: ${activeCharacter.name}. Tap to change.`}
+							title={activeCharacter.description || activeCharacter.name}
+						>
+							<Icon name={activeCharacter.icon || "auto_awesome"} size={14} color={tokens.colors.primary} />
+							{activeCharacter.name}
+						</CharacterChip>
+					)}
 					{activeModel ? (
 						<ModelTag>{activeModel}</ModelTag>
 					) : (
@@ -1288,6 +1323,7 @@ export function ChatPage() {
 				</InputBar>
 			</ChatContainer>
 		</AppLayout>
+		<CharacterPicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
 		</>
 	);
 }
