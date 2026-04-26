@@ -2,6 +2,7 @@ import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { AppProvider } from "@/context/AppContext";
+import { CharacterProvider } from "@/context/CharacterContext";
 import { DownloadProvider } from "@/context/DownloadContext";
 import { SplashScreen } from "@/pages/SplashScreen";
 import { GlobalStyles, theme } from "@/theme";
@@ -43,6 +44,7 @@ function App() {
 		<ThemeProvider theme={theme}>
 			<GlobalStyles />
 			<AppProvider>
+				<CharacterProvider>
 				<ToastProvider>
 				<DownloadProvider>
 				<ConfirmProvider>
@@ -68,6 +70,7 @@ function App() {
 				</ConfirmProvider>
 				</DownloadProvider>
 				</ToastProvider>
+				</CharacterProvider>
 			</AppProvider>
 		</ThemeProvider>
 		</ErrorBoundary>
