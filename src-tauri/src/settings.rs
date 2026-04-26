@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::characters::Character;
+
 fn default_font_size() -> String {
     "medium".to_string()
 }
@@ -9,6 +11,8 @@ pub struct Settings {
     pub wifi_only: bool,
     pub save_history: bool,
     pub show_speed: bool,
+    /// Legacy free-form system prompt. Read-only after the character feature
+    /// lands; migrated into a custom character on first run.
     pub system_prompt: String,
     pub temperature: f64,
     pub top_p: f64,
@@ -17,6 +21,10 @@ pub struct Settings {
     pub font_size: String,
     #[serde(default)]
     pub last_model_id: Option<String>,
+    #[serde(default)]
+    pub active_character_id: Option<String>,
+    #[serde(default)]
+    pub custom_characters: Vec<Character>,
 }
 
 impl Default for Settings {
@@ -31,6 +39,8 @@ impl Default for Settings {
             max_tokens: 256,
             font_size: "medium".to_string(),
             last_model_id: None,
+            active_character_id: Some("preset:default".to_string()),
+            custom_characters: Vec::new(),
         }
     }
 }
