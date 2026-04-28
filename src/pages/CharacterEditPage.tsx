@@ -2,11 +2,14 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
+import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
-import type { Character } from "@/services/types";
+import { chatService } from "@/services";
+import type { Character, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { ACCENT_PALETTE, DEFAULT_ACCENT, withAlpha } from "@/utils/characterAccent";
-import { useEffect, useMemo, useState } from "react";
+import { cleanResponse } from "@/utils/cleanResponse";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -18,6 +21,13 @@ const PROMPT_HARD_CAP = 2000;
 const STARTER_MAX = 80;
 const STARTER_COUNT = 4;
 const GREETING_MAX = 140;
+
+/**
+ * Fixed prompt used by the "Try it" button. Deliberately neutral so it
+ * exercises the persona without bias toward any character type — short
+ * enough that it works inside max_tokens budgets as low as 64.
+ */
+const TEST_PROMPT = "Say hi and tell me what you're best at, in two short sentences.";
 
 /* ── Prompt example phrases ── Tappable suggestions inserted into the
    personality textarea. Each is a single behaviour rule a small model can
@@ -334,6 +344,74 @@ const DangerBtn = styled.button`
   &:active { transform: scale(0.97); background: ${tokens.colors.error}10; }
 `;
 
+/* ── Try it ── */
+
+const TestRow = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+`;
+
+const TestBtn = styled.button<{ $accent: string }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: transparent;
+  border: 1px solid ${({ $accent }) => $accent}60;
+  color: ${({ $accent }) => $accent};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background ${tokens.transitions.fast}, transform ${tokens.transitions.fast};
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &:not(:disabled):hover { background: ${({ $accent }) => withAlpha($accent, "14")}; }
+  &:not(:disabled):active { transform: scale(0.96); }
+`;
+
+const TestStop = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: transparent;
+  border: 1px solid ${tokens.colors.error}80;
+  color: ${tokens.colors.error};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+`;
+
+const TestPanel = styled.div<{ $accent: string }>`
+  padding: 0.875rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.surfaceContainerHigh};
+  border-left: 3px solid ${({ $accent }) => $accent};
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.onSurface};
+  line-height: ${tokens.typography.lineHeight.relaxed};
+  white-space: pre-wrap;
+  word-break: break-word;
+`;
+
+const TestEmpty = styled.span`
+  color: ${tokens.colors.onSurfaceVariant};
+  font-style: italic;
+`;
+
+const TestErrorBox = styled.div`
+  padding: 0.5rem 0.625rem;
+  border-radius: ${tokens.borderRadius.md};
+  background: ${tokens.colors.error}10;
+  color: ${tokens.colors.error};
+  font-size: ${tokens.typography.fontSize.xs};
+`;
+
 /* ── Slider helpers ──
  * Plain-language labels so non-technical users can pick values without
  * understanding sampling theory. Bands are conservative — Anthropic Console,
@@ -374,6 +452,7 @@ export function CharacterEditPage() {
 	const isEditing = !!idFromQuery;
 
 	const { allCharacters, customs, saveCustom, deleteCustom } = useCharacters();
+	const { activeModel } = useAppContext();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
 
@@ -430,6 +509,87 @@ export function CharacterEditPage() {
 
 	const updateStarter = (idx: number, value: string) => {
 		setStarters((prev) => prev.map((s, i) => (i === idx ? value.slice(0, STARTER_MAX) : s)));
+	};
+
+	/* ── Try it (live test) ── */
+
+	const [testing, setTesting] = useState(false);
+	const [testOutput, setTestOutput] = useState("");
+	const [testError, setTestError] = useState<string | null>(null);
+	const testOutputRef = useRef("");
+
+	useEffect(() => {
+		testOutputRef.current = testOutput;
+	}, [testOutput]);
+
+	// Stop any in-flight test if the user navigates away mid-stream.
+	useEffect(() => {
+		return () => {
+			// Best-effort: if we're still streaming on unmount, tell the
+			// engine to stop. The component won't see the events, but the
+			// model frees its slot.
+			chatService.stopInference().catch(() => {});
+		};
+	}, []);
+
+	const onTestEvent = useCallback((event: InferenceEvent) => {
+		const data = event.data;
+		switch (event.event) {
+			case "TokenGenerated": {
+				const d = data as { token: string };
+				setTestOutput((prev) => prev + d.token);
+				break;
+			}
+			case "GenerationComplete": {
+				setTesting(false);
+				setTestOutput((prev) => cleanResponse(prev) || prev);
+				break;
+			}
+			case "Error": {
+				const d = data as { message: string };
+				setTesting(false);
+				setTestError(d.message);
+				setTestOutput("");
+				break;
+			}
+			// ContextTrimmed cannot fire here — we send no history.
+		}
+	}, []);
+
+	const handleTry = async () => {
+		if (testing) return;
+		if (!activeModel) {
+			showToast("Load a model from the Models tab first.", "info");
+			return;
+		}
+		const trimmedPromptDraft = prompt.trim();
+		if (!trimmedPromptDraft) {
+			showToast("Add some instructions first.", "info");
+			return;
+		}
+		if (navigator.vibrate) navigator.vibrate(8);
+		setTestError(null);
+		setTestOutput("");
+		setTesting(true);
+		try {
+			await chatService.runInference(
+				TEST_PROMPT,
+				trimmedPromptDraft,
+				[],
+				temperature,
+				topP,
+				maxTokens,
+				onTestEvent,
+			);
+		} catch (err) {
+			setTesting(false);
+			setTestError(err instanceof Error ? err.message : String(err));
+		}
+	};
+
+	const handleStopTest = () => {
+		chatService.stopInference().catch(() => {});
+		setTesting(false);
 	};
 
 	const appendToPrompt = (sentence: string) => {
@@ -618,6 +778,44 @@ export function CharacterEditPage() {
 						less accurate.
 					</span>
 				</Tip>
+
+				<Field>
+					<Label>Try it</Label>
+					<TestRow>
+						{testing ? (
+							<TestStop type="button" onClick={handleStopTest}>
+								<Icon name="stop_circle" size={16} color={tokens.colors.error} />
+								Stop
+							</TestStop>
+						) : (
+							<TestBtn
+								type="button"
+								onClick={handleTry}
+								disabled={!prompt.trim()}
+								$accent={accentColor}
+								aria-label="Test this character with a sample prompt"
+							>
+								<Icon name="play_arrow" size={16} color={accentColor} />
+								Test sample reply
+							</TestBtn>
+						)}
+					</TestRow>
+					{(testing || testOutput || testError) && (
+						<>
+							{testError ? (
+								<TestErrorBox>{testError}</TestErrorBox>
+							) : (
+								<TestPanel $accent={accentColor}>
+									{testOutput ? (
+										testOutput
+									) : (
+										<TestEmpty>Generating…</TestEmpty>
+									)}
+								</TestPanel>
+							)}
+						</>
+					)}
+				</Field>
 
 				<Field>
 					<Label>Add a rule</Label>
