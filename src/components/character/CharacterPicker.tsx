@@ -5,6 +5,7 @@ import { useCharacters } from "@/context/CharacterContext";
 import type { Character } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf, withAlpha } from "@/utils/characterAccent";
+import { parseShared, shareCharacter } from "@/utils/characterShare";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -284,12 +285,114 @@ const CreateCard = styled.button`
   &:active { transform: scale(0.97); background: ${tokens.colors.primary}10; }
 `;
 
+const ImportCard = styled(CreateCard)`
+  color: ${tokens.colors.tertiary};
+`;
+
+/* ── Import modal — paste-JSON UX is faster than a file picker on mobile,
+   works on every platform, and avoids any file-system permission story. */
+
+const ImportSheet = styled.div`
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 950;
+  background: ${tokens.colors.surfaceContainerHigh};
+  border-radius: ${tokens.borderRadius.xl};
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 80dvh;
+  box-shadow: ${tokens.shadows.elevated};
+`;
+
+const ImportTitle = styled.h3`
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize.lg};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  color: ${tokens.colors.onSurface};
+  margin: 0;
+`;
+
+const ImportHint = styled.p`
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+  margin: 0;
+  line-height: ${tokens.typography.lineHeight.relaxed};
+`;
+
+const ImportTextArea = styled.textarea`
+  width: 100%;
+  min-height: 140px;
+  padding: 0.75rem;
+  background: ${tokens.colors.surfaceContainer};
+  border: 1px solid ${tokens.colors.outlineVariant}40;
+  border-radius: ${tokens.borderRadius.md};
+  color: ${tokens.colors.onSurface};
+  font-family: ${tokens.typography.fontFamily.mono};
+  font-size: ${tokens.typography.fontSize.xs};
+  resize: vertical;
+  outline: none;
+
+  &:focus { border-color: ${tokens.colors.primary}80; }
+`;
+
+const ImportError = styled.div`
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.error};
+  padding: 0.375rem 0.5rem;
+  background: ${tokens.colors.error}12;
+  border-radius: ${tokens.borderRadius.md};
+`;
+
+const ImportActions = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+`;
+
+const SecondaryBtn = styled.button`
+  padding: 0.625rem 1rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: transparent;
+  color: ${tokens.colors.onSurface};
+  border: 1px solid ${tokens.colors.outlineVariant};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  &:active { transform: scale(0.96); }
+`;
+
+const PrimaryBtn = styled.button`
+  padding: 0.625rem 1rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.primary};
+  color: ${tokens.colors.onPrimary};
+  border: none;
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+  &:not(:disabled):active { transform: scale(0.96); }
+`;
+
 export function CharacterPicker({ open, onClose, onSelect }: Props) {
 	const navigate = useNavigate();
-	const { presets, customs, activeCharacter, setActiveCharacter, deleteCustom } = useCharacters();
+	const { presets, customs, activeCharacter, setActiveCharacter, saveCustom, deleteCustom } = useCharacters();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
 	const [menuFor, setMenuFor] = useState<Character | null>(null);
+	const [importOpen, setImportOpen] = useState(false);
+	const [importText, setImportText] = useState("");
+	const [importError, setImportError] = useState<string | null>(null);
+	const [importing, setImporting] = useState(false);
 
 	// Drag-to-dismiss state. Tracking these in refs (not state) avoids a
 	// re-render on every touchmove tick.
@@ -399,6 +502,52 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 		navigate(`/character/new?from=${encodeURIComponent(c.id)}`);
 	};
 
+	const handleShare = async (c: Character) => {
+		setMenuFor(null);
+		try {
+			const result = await shareCharacter(c);
+			showToast(
+				result === "shared"
+					? "Character shared"
+					: "Character JSON copied — paste anywhere to share",
+				"success",
+			);
+		} catch (err) {
+			// AbortError = user cancelled the share sheet; stay quiet.
+			if (err instanceof Error && err.name !== "AbortError") {
+				showToast("Couldn't share character", "error");
+			}
+		}
+	};
+
+	const handleImport = async () => {
+		if (importing) return;
+		const result = parseShared(importText);
+		if (!result.ok) {
+			setImportError(result.error);
+			return;
+		}
+		setImporting(true);
+		setImportError(null);
+		try {
+			const newId = `custom:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+			const character: Character = {
+				...result.draft,
+				id: newId,
+				is_preset: false,
+				created_at: new Date().toISOString(),
+			};
+			await saveCustom(character);
+			showToast(`Imported "${character.name}"`, "success");
+			setImportOpen(false);
+			setImportText("");
+		} catch {
+			setImportError("Couldn't save the character. Please try again.");
+		} finally {
+			setImporting(false);
+		}
+	};
+
 	const handleDelete = async (c: Character) => {
 		setMenuFor(null);
 		const ok = await showConfirm({
@@ -498,9 +647,69 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 							<Icon name="add" size={20} />
 							Create custom
 						</CreateCard>
+						<ImportCard
+							onClick={() => {
+								setImportText("");
+								setImportError(null);
+								setImportOpen(true);
+							}}
+							aria-label="Import character from JSON"
+						>
+							<Icon name="download" size={20} />
+							Import
+						</ImportCard>
 					</Grid>
 				</Scroll>
 			</Sheet>
+
+			{importOpen && (
+				<>
+					<Backdrop
+						onClick={() => !importing && setImportOpen(false)}
+						style={{ zIndex: 940 }}
+					/>
+					<ImportSheet
+						role="dialog"
+						aria-modal="true"
+						aria-label="Import character"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<ImportTitle>Import character</ImportTitle>
+						<ImportHint>
+							Paste the JSON a friend shared. We'll validate it and add it
+							to your characters.
+						</ImportHint>
+						<ImportTextArea
+							value={importText}
+							onChange={(e) => {
+								setImportText(e.target.value);
+								if (importError) setImportError(null);
+							}}
+							placeholder='{"kind":"neurix.character", …}'
+							autoFocus
+							spellCheck={false}
+							aria-label="Character JSON"
+						/>
+						{importError && <ImportError>{importError}</ImportError>}
+						<ImportActions>
+							<SecondaryBtn
+								type="button"
+								onClick={() => setImportOpen(false)}
+								disabled={importing}
+							>
+								Cancel
+							</SecondaryBtn>
+							<PrimaryBtn
+								type="button"
+								onClick={handleImport}
+								disabled={importing || importText.trim().length === 0}
+							>
+								{importing ? "Importing…" : "Import"}
+							</PrimaryBtn>
+						</ImportActions>
+					</ImportSheet>
+				</>
+			)}
 
 			{menuFor && (
 				<>
@@ -513,13 +722,22 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 					>
 						<MenuHeader>{menuFor.name}</MenuHeader>
 						{menuFor.is_preset ? (
-							<MenuItem
-								type="button"
-								onClick={() => handleDuplicate(menuFor)}
-							>
-								<Icon name="content_copy" size={20} color={tokens.colors.onSurfaceVariant} />
-								Use as template
-							</MenuItem>
+							<>
+								<MenuItem
+									type="button"
+									onClick={() => handleDuplicate(menuFor)}
+								>
+									<Icon name="content_copy" size={20} color={tokens.colors.onSurfaceVariant} />
+									Use as template
+								</MenuItem>
+								<MenuItem
+									type="button"
+									onClick={() => handleShare(menuFor)}
+								>
+									<Icon name="ios_share" size={20} color={tokens.colors.onSurfaceVariant} />
+									Share
+								</MenuItem>
+							</>
 						) : (
 							<>
 								<MenuItem
@@ -535,6 +753,13 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 								>
 									<Icon name="content_copy" size={20} color={tokens.colors.onSurfaceVariant} />
 									Duplicate
+								</MenuItem>
+								<MenuItem
+									type="button"
+									onClick={() => handleShare(menuFor)}
+								>
+									<Icon name="ios_share" size={20} color={tokens.colors.onSurfaceVariant} />
+									Share
 								</MenuItem>
 								<MenuItem
 									type="button"
