@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/Toast";
 import { CharacterPicker } from "@/components/character/CharacterPicker";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
@@ -763,6 +764,7 @@ export function ChatPage() {
 	const location = useLocation();
 	const { activeModel, settings, refreshActiveModel } = useAppContext();
 	const { activeCharacter } = useCharacters();
+	const { showToast } = useToast();
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
 	const [isGenerating, setIsGenerating] = useState(false);
@@ -788,6 +790,19 @@ export function ChatPage() {
 	useEffect(() => { isGeneratingRef.current = isGenerating; }, [isGenerating]);
 	useEffect(() => { messagesRef.current = messages; }, [messages]);
 	useEffect(() => { activeModelRef.current = activeModel; }, [activeModel]);
+
+	// Toast when the user swaps character mid-chat. Without this, switching
+	// happens silently and the new persona only becomes visible on the next
+	// reply — easy to miss in a 12-turn coding session.
+	const lastCharIdRef = useRef<string | null>(activeCharacter?.id ?? null);
+	useEffect(() => {
+		const prev = lastCharIdRef.current;
+		const next = activeCharacter?.id ?? null;
+		if (prev && next && prev !== next && messagesRef.current.length > 0) {
+			showToast(`Now using ${activeCharacter?.name}. The next reply will use this style.`, "info");
+		}
+		lastCharIdRef.current = next;
+	}, [activeCharacter?.id, activeCharacter?.name, showToast]);
 
 	// Stop inference and save partial AI response when navigating away mid-generation
 	useEffect(() => {
