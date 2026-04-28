@@ -480,54 +480,74 @@ const StopBtn = styled.button`
 const TopBarRight = styled.div`
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.25rem;
 `;
 
 const TopBarBtn = styled.button`
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: ${tokens.borderRadius.lg};
   border: none;
-  background: ${tokens.colors.surfaceContainerHigh};
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: background ${tokens.transitions.fast};
+  -webkit-tap-highlight-color: transparent;
 
-  &:hover { background: ${tokens.colors.surfaceBright}; }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
   &:active { transform: scale(0.9); }
 `;
 
-const ModelTag = styled.span`
-  font-size: 11px;
-  font-weight: ${tokens.typography.fontWeight.semibold};
-  color: ${tokens.colors.primary};
-  padding: 0.25rem 0.5rem;
-  background: ${tokens.colors.primary}12;
-  border-radius: ${tokens.borderRadius.md};
-`;
+/* ── Subtitle (character + model) ── */
 
-const CharacterChip = styled.button`
+const SubtitleBtn = styled.button`
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem 0.25rem 0.375rem;
-  background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${tokens.colors.outlineVariant}40;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem 0.125rem 0.25rem;
+  margin: -0.125rem 0;
+  background: transparent;
+  border: none;
   border-radius: ${tokens.borderRadius.md};
-  color: ${tokens.colors.onSurface};
-  font-size: 11px;
-  font-weight: ${tokens.typography.fontWeight.semibold};
+  color: ${tokens.colors.onSurfaceVariant};
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.medium};
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background ${tokens.transitions.fast}, transform ${tokens.transitions.fast};
-  max-width: 110px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  transition: background ${tokens.transitions.fast};
+  max-width: 100%;
+  min-width: 0;
 
-  &:active { transform: scale(0.94); background: ${tokens.colors.surfaceContainerHighest}; }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:active { background: ${tokens.colors.surfaceContainerHighest}; }
+`;
+
+const SubtitleCharName = styled.span`
+  color: ${tokens.colors.onSurface};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 8rem;
+`;
+
+const SubtitleSep = styled.span`
+  color: ${tokens.colors.outline};
+`;
+
+const SubtitleModel = styled.span`
+  color: ${tokens.colors.primary};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 10rem;
+`;
+
+const SubtitleEmpty = styled.span`
+  color: ${tokens.colors.onSurfaceVariant};
 `;
 
 /* ── Loading Overlay ── */
@@ -1170,29 +1190,42 @@ export function ChatPage() {
 		)}
 		<AppLayout
 			title="Chat"
+			subtitle={
+				<SubtitleBtn
+					type="button"
+					onClick={() => {
+						if (!activeModel && !isLoadingModel) {
+							navigate("/models");
+						} else {
+							setPickerOpen(true);
+						}
+					}}
+					aria-label={
+						activeCharacter
+							? `Character: ${activeCharacter.name}. Model: ${activeModel ?? "none"}. Tap to change character.`
+							: "Choose character"
+					}
+					title={activeCharacter?.description || activeCharacter?.name}
+				>
+					{activeCharacter ? (
+						<>
+							<Icon name={activeCharacter.icon || "auto_awesome"} size={12} color={tokens.colors.primary} />
+							<SubtitleCharName>{activeCharacter.name}</SubtitleCharName>
+						</>
+					) : (
+						<SubtitleEmpty>Choose character</SubtitleEmpty>
+					)}
+					<SubtitleSep>·</SubtitleSep>
+					{activeModel ? (
+						<SubtitleModel>{activeModel}</SubtitleModel>
+					) : (
+						<SubtitleEmpty>{isLoadingModel ? "Loading…" : "No model"}</SubtitleEmpty>
+					)}
+					<Icon name="expand_more" size={14} color={tokens.colors.onSurfaceVariant} />
+				</SubtitleBtn>
+			}
 			rightActions={
 				<TopBarRight>
-					{activeCharacter && (
-						<CharacterChip
-							type="button"
-							onClick={() => setPickerOpen(true)}
-							aria-label={`Character: ${activeCharacter.name}. Tap to change.`}
-							title={activeCharacter.description || activeCharacter.name}
-						>
-							<Icon name={activeCharacter.icon || "auto_awesome"} size={14} color={tokens.colors.primary} />
-							{activeCharacter.name}
-						</CharacterChip>
-					)}
-					{activeModel ? (
-						<ModelTag>{activeModel}</ModelTag>
-					) : (
-						<ModelTag
-							style={{ cursor: "pointer" }}
-							onClick={() => navigate("/models")}
-						>
-							{isLoadingModel ? "Loading..." : "No model"}
-						</ModelTag>
-					)}
 					{messages.length > 0 && (
 						<TopBarBtn onClick={handleShareChat} aria-label="Share chat">
 							<Icon
