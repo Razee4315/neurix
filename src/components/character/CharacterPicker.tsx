@@ -469,10 +469,25 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 		return [active, ...presets.filter((p) => p.id !== activeCharacter.id)];
 	}, [presets, activeCharacter]);
 
+	/**
+	 * Sort customs by:
+	 *   1. active first (always pinned to top, so the user can spot the
+	 *      current persona without scrolling)
+	 *   2. then by `last_used_at` desc (recently-used pattern)
+	 *   3. characters never used fall to the bottom in created order
+	 */
 	const sortedCustoms = useMemo(() => {
-		if (!activeCharacter || !customs.some((p) => p.id === activeCharacter.id)) return customs;
-		const active = customs.find((p) => p.id === activeCharacter.id)!;
-		return [active, ...customs.filter((p) => p.id !== activeCharacter.id)];
+		const others = customs.filter((c) => c.id !== activeCharacter?.id);
+		const active = customs.find((c) => c.id === activeCharacter?.id);
+		const sorted = [...others].sort((a, b) => {
+			const aT = a.last_used_at ?? "";
+			const bT = b.last_used_at ?? "";
+			if (aT && bT) return bT.localeCompare(aT);
+			if (aT) return -1;
+			if (bT) return 1;
+			return 0;
+		});
+		return active ? [active, ...sorted] : sorted;
 	}, [customs, activeCharacter]);
 
 	if (!open) return null;

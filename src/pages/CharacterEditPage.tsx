@@ -412,6 +412,19 @@ const TestErrorBox = styled.div`
   font-size: ${tokens.typography.fontSize.xs};
 `;
 
+const SoftCapWarning = styled.div`
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: ${tokens.borderRadius.md};
+  background: ${tokens.colors.tertiary}14;
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.xs};
+  line-height: ${tokens.typography.lineHeight.relaxed};
+  border-left: 3px solid ${tokens.colors.tertiary};
+`;
+
 /* ── Slider helpers ──
  * Plain-language labels so non-technical users can pick values without
  * understanding sampling theory. Bands are conservative — Anthropic Console,
@@ -768,6 +781,15 @@ export function CharacterEditPage() {
 							{prompt.length}/{PROMPT_HARD_CAP}
 						</Counter>
 					</HelperRow>
+					{prompt.length > PROMPT_SOFT_CAP && (
+						<SoftCapWarning role="status">
+							<Icon name="info" size={14} color={tokens.colors.tertiary} />
+							<span>
+								Long prompts can confuse small models. Try splitting this into
+								shorter rules, or remove parts you don't need.
+							</span>
+						</SoftCapWarning>
+					)}
 				</Field>
 
 				<Tip>

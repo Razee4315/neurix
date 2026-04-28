@@ -95,6 +95,12 @@ export interface Character {
 	greeting?: string;
 	is_preset: boolean;
 	created_at?: string;
+	/**
+	 * ISO timestamp of the most recent time the user selected this character
+	 * as active. Used by the picker to surface recently-used customs near the
+	 * top. Optional — missing values sort to the bottom.
+	 */
+	last_used_at?: string;
 }
 
 export interface Settings {
