@@ -5,6 +5,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useCharacters } from "@/context/CharacterContext";
 import type { Character } from "@/services/types";
 import { tokens } from "@/theme/tokens";
+import { ACCENT_PALETTE, DEFAULT_ACCENT, withAlpha } from "@/utils/characterAccent";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
@@ -113,21 +114,55 @@ const IconGrid = styled.div`
   gap: 0.5rem;
 `;
 
-const IconCell = styled.button<{ $active?: boolean }>`
+const IconCell = styled.button<{ $active?: boolean; $accent: string }>`
   aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: ${tokens.borderRadius.md};
-  border: 1.5px solid ${({ $active }) => ($active ? tokens.colors.primary : "transparent")};
-  background: ${({ $active }) =>
-		$active ? `${tokens.colors.primary}14` : tokens.colors.surfaceContainerHigh};
-  color: ${tokens.colors.primary};
+  border: 1.5px solid ${({ $active, $accent }) => ($active ? $accent : "transparent")};
+  background: ${({ $active, $accent }) =>
+		$active ? withAlpha($accent, "14") : tokens.colors.surfaceContainerHigh};
+  color: ${({ $accent }) => $accent};
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: transform ${tokens.transitions.fast}, background ${tokens.transitions.fast};
 
   &:active { transform: scale(0.93); }
+`;
+
+const ColorRow = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+`;
+
+const ColorSwatch = styled.button<{ $color: string; $active: boolean }>`
+  width: 36px;
+  height: 36px;
+  border-radius: ${tokens.borderRadius.circle};
+  background: ${({ $color }) => $color};
+  border: 2px solid ${({ $active, $color }) =>
+		$active ? $color : "transparent"};
+  outline: 2px solid ${({ $active }) =>
+		$active ? tokens.colors.surface : "transparent"};
+  outline-offset: -4px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform ${tokens.transitions.fast};
+  position: relative;
+
+  &:active { transform: scale(0.9); }
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: ${tokens.borderRadius.circle};
+    border: 2px solid ${({ $active, $color }) =>
+		$active ? $color : "transparent"};
+    pointer-events: none;
+  }
 `;
 
 const SectionDivider = styled.div`
@@ -242,6 +277,7 @@ export function CharacterEditPage() {
 	const [name, setName] = useState(existing?.name ?? "");
 	const [description, setDescription] = useState(existing?.description ?? "");
 	const [icon, setIcon] = useState(existing?.icon ?? ICON_CHOICES[0]);
+	const [accentColor, setAccentColor] = useState(existing?.accent_color ?? DEFAULT_ACCENT);
 	const [prompt, setPrompt] = useState(existing?.system_prompt ?? "");
 	const [temperature, setTemperature] = useState(existing?.temperature ?? 0.7);
 	const [topP, setTopP] = useState(existing?.top_p ?? 0.9);
@@ -252,6 +288,7 @@ export function CharacterEditPage() {
 			setName(existing.name);
 			setDescription(existing.description);
 			setIcon(existing.icon);
+			setAccentColor(existing.accent_color ?? DEFAULT_ACCENT);
 			setPrompt(existing.system_prompt);
 			setTemperature(existing.temperature);
 			setTopP(existing.top_p);
@@ -270,6 +307,7 @@ export function CharacterEditPage() {
 			name: trimmedName.slice(0, NAME_MAX),
 			description: description.trim().slice(0, DESC_MAX),
 			icon,
+			accent_color: accentColor,
 			system_prompt: trimmedPrompt.slice(0, PROMPT_HARD_CAP),
 			temperature,
 			top_p: topP,
@@ -317,6 +355,7 @@ export function CharacterEditPage() {
 								key={name}
 								type="button"
 								$active={icon === name}
+								$accent={accentColor}
 								onClick={() => setIcon(name)}
 								aria-label={`Use ${name} icon`}
 								aria-pressed={icon === name}
@@ -325,6 +364,24 @@ export function CharacterEditPage() {
 							</IconCell>
 						))}
 					</IconGrid>
+				</Field>
+
+				<Field>
+					<Label>Color</Label>
+					<ColorRow role="radiogroup" aria-label="Accent color">
+						{ACCENT_PALETTE.map((c) => (
+							<ColorSwatch
+								key={c.value}
+								type="button"
+								$color={c.value}
+								$active={accentColor === c.value}
+								onClick={() => setAccentColor(c.value)}
+								role="radio"
+								aria-checked={accentColor === c.value}
+								aria-label={c.label}
+							/>
+						))}
+					</ColorRow>
 				</Field>
 
 				<Field>

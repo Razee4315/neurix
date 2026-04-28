@@ -2761,7 +2761,7 @@ dependencies = [
 
 [[package]]
 name = "neurix-tauri"
-version = "0.3.8"
+version = "0.3.10"
 dependencies = [
  "android_logger",
  "anyhow",

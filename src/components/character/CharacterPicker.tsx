@@ -2,6 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useCharacters } from "@/context/CharacterContext";
 import type { Character } from "@/services/types";
 import { tokens } from "@/theme/tokens";
+import { accentOf, withAlpha } from "@/utils/characterAccent";
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -108,7 +109,7 @@ const Grid = styled.div`
   gap: 0.625rem;
 `;
 
-const CardBase = styled.button<{ $active?: boolean }>`
+const CardBase = styled.button<{ $active?: boolean; $accent: string }>`
   position: relative;
   display: flex;
   flex-direction: column;
@@ -117,9 +118,9 @@ const CardBase = styled.button<{ $active?: boolean }>`
   padding: 0.875rem 0.875rem 1rem;
   border-radius: ${tokens.borderRadius.lg};
   border: 1.5px solid
-    ${({ $active }) => ($active ? tokens.colors.primary : "transparent")};
-  background: ${({ $active }) =>
-		$active ? `${tokens.colors.primary}14` : tokens.colors.surfaceContainerHigh};
+    ${({ $active, $accent }) => ($active ? $accent : "transparent")};
+  background: ${({ $active, $accent }) =>
+		$active ? withAlpha($accent, "14") : tokens.colors.surfaceContainerHigh};
   text-align: left;
   cursor: pointer;
   transition: transform ${tokens.transitions.fast}, background ${tokens.transitions.fast};
@@ -129,16 +130,17 @@ const CardBase = styled.button<{ $active?: boolean }>`
   &:active { transform: scale(0.97); }
 `;
 
-const IconBubble = styled.div<{ $active?: boolean }>`
+const IconBubble = styled.div<{ $active?: boolean; $accent: string }>`
   width: 36px;
   height: 36px;
   border-radius: ${tokens.borderRadius.md};
-  background: ${({ $active }) =>
-		$active ? tokens.colors.primary : tokens.colors.surfaceContainerHighest};
+  background: ${({ $active, $accent }) =>
+		$active ? $accent : withAlpha($accent, "20")};
   display: flex;
   align-items: center;
   justify-content: center;
-  color: ${({ $active }) => ($active ? tokens.colors.onPrimary : tokens.colors.primary)};
+  color: ${({ $active, $accent }) =>
+		$active ? tokens.colors.surface : $accent};
 `;
 
 const CardName = styled.div`
@@ -154,14 +156,14 @@ const CardDesc = styled.div`
   line-height: ${tokens.typography.lineHeight.snug};
 `;
 
-const ActiveDot = styled.div`
+const ActiveDot = styled.div<{ $accent: string }>`
   position: absolute;
   top: 0.625rem;
   right: 0.625rem;
   width: 8px;
   height: 8px;
   border-radius: ${tokens.borderRadius.circle};
-  background: ${tokens.colors.primary};
+  background: ${({ $accent }) => $accent};
 `;
 
 const CreateCard = styled.button`
@@ -242,15 +244,17 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 					<Grid>
 						{presets.map((c) => {
 							const isActive = activeCharacter?.id === c.id;
+							const accent = accentOf(c);
 							return (
 								<CardBase
 									key={c.id}
 									$active={isActive}
+									$accent={accent}
 									onClick={() => handleSelect(c)}
 									aria-pressed={isActive}
 								>
-									{isActive && <ActiveDot />}
-									<IconBubble $active={isActive}>
+									{isActive && <ActiveDot $accent={accent} />}
+									<IconBubble $active={isActive} $accent={accent}>
 										<Icon name={c.icon} size={20} />
 									</IconBubble>
 									<div>
@@ -266,16 +270,18 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 					<Grid>
 						{customs.map((c) => {
 							const isActive = activeCharacter?.id === c.id;
+							const accent = accentOf(c);
 							return (
 								<CardBase
 									key={c.id}
 									$active={isActive}
+									$accent={accent}
 									onClick={() => handleSelect(c)}
 									onContextMenu={(e) => { e.preventDefault(); handleEditCustom(c); }}
 									aria-pressed={isActive}
 								>
-									{isActive && <ActiveDot />}
-									<IconBubble $active={isActive}>
+									{isActive && <ActiveDot $accent={accent} />}
+									<IconBubble $active={isActive} $accent={accent}>
 										<Icon name={c.icon || "person"} size={20} />
 									</IconBubble>
 									<div>

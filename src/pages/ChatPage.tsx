@@ -8,6 +8,7 @@ import { chatService, historyService, modelService, settingsService } from "@/se
 import type { ChatHistoryEntry } from "@/services/chatService";
 import type { Conversation, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
+import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -1209,7 +1210,7 @@ export function ChatPage() {
 				>
 					{activeCharacter ? (
 						<>
-							<Icon name={activeCharacter.icon || "auto_awesome"} size={12} color={tokens.colors.primary} />
+							<Icon name={activeCharacter.icon || "auto_awesome"} size={12} color={accentOf(activeCharacter)} />
 							<SubtitleCharName>{activeCharacter.name}</SubtitleCharName>
 						</>
 					) : (

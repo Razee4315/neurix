@@ -10,6 +10,10 @@ pub struct Character {
     pub description: String,
     /// Material Symbols icon name (e.g. "auto_awesome").
     pub icon: String,
+    /// Hex color used to tint the character's icon bubble. Optional — the
+    /// frontend falls back to the primary accent when missing.
+    #[serde(default)]
+    pub accent_color: Option<String>,
     pub system_prompt: String,
     pub temperature: f64,
     pub top_p: f64,
@@ -32,6 +36,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             name: "Default".into(),
             description: "Helpful and balanced".into(),
             icon: "auto_awesome".into(),
+            accent_color: Some("#8ff5ff".into()),
             system_prompt: "You are a helpful assistant. Give clear, concise answers. Do not repeat yourself.".into(),
             temperature: 0.7,
             top_p: 0.9,
@@ -44,6 +49,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             name: "Friendly".into(),
             description: "Warm and casual".into(),
             icon: "sentiment_satisfied".into(),
+            accent_color: Some("#ffb86c".into()),
             system_prompt: "Reply in a warm, casual tone. Use plain language and contractions. Be encouraging.".into(),
             temperature: 0.7,
             top_p: 0.9,
@@ -56,6 +62,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             name: "Professional".into(),
             description: "Formal and precise".into(),
             icon: "business_center".into(),
+            accent_color: Some("#65afff".into()),
             system_prompt: "Reply in a professional, precise tone. Use formal language and complete sentences. Be accurate and avoid filler.".into(),
             temperature: 0.4,
             top_p: 0.85,
@@ -68,6 +75,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             name: "Concise".into(),
             description: "Short and direct".into(),
             icon: "bolt".into(),
+            accent_color: Some("#2ff801".into()),
             system_prompt: "Reply as briefly as possible. One or two sentences. No filler, no preamble.".into(),
             temperature: 0.3,
             top_p: 0.85,
@@ -80,6 +88,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             name: "Tutor".into(),
             description: "Explains step by step".into(),
             icon: "school".into(),
+            accent_color: Some("#c792ea".into()),
             system_prompt: "Explain step by step. Use simple words. Give one short example when useful. Check understanding at the end.".into(),
             temperature: 0.5,
             top_p: 0.9,
@@ -92,6 +101,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             name: "Creative".into(),
             description: "Playful and imaginative".into(),
             icon: "palette".into(),
+            accent_color: Some("#ff79c6".into()),
             system_prompt: "Be playful and imaginative. Use varied phrasing and the occasional metaphor. Have fun with the response.".into(),
             temperature: 0.9,
             top_p: 0.95,
