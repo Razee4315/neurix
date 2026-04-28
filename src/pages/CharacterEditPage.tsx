@@ -15,6 +15,8 @@ const NAME_MAX = 32;
 const DESC_MAX = 60;
 const PROMPT_SOFT_CAP = 500; // research: small models choke on long personas
 const PROMPT_HARD_CAP = 2000;
+const STARTER_MAX = 80;
+const STARTER_COUNT = 4;
 
 /* ── Available icons ── A curated grid of Material Symbols. We don't expose
    the full icon font because the picker becomes overwhelming and most icons
@@ -165,6 +167,36 @@ const ColorSwatch = styled.button<{ $color: string; $active: boolean }>`
   }
 `;
 
+const StarterRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+`;
+
+const StarterInput = styled(Input)`
+  flex: 1;
+`;
+
+const StarterClearBtn = styled.button`
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: ${tokens.borderRadius.md};
+  border: none;
+  background: transparent;
+  color: ${tokens.colors.onSurfaceVariant};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background ${tokens.transitions.fast};
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:active { transform: scale(0.92); }
+  &:disabled { opacity: 0.3; cursor: not-allowed; }
+`;
+
 const SectionDivider = styled.div`
   display: flex;
   align-items: center;
@@ -282,6 +314,12 @@ export function CharacterEditPage() {
 	const [temperature, setTemperature] = useState(existing?.temperature ?? 0.7);
 	const [topP, setTopP] = useState(existing?.top_p ?? 0.9);
 	const [maxTokens, setMaxTokens] = useState(existing?.max_tokens ?? 512);
+	const [starters, setStarters] = useState<string[]>(() => {
+		const seed = existing?.conversation_starters ?? [];
+		const padded = [...seed];
+		while (padded.length < STARTER_COUNT) padded.push("");
+		return padded.slice(0, STARTER_COUNT);
+	});
 
 	useEffect(() => {
 		if (existing) {
@@ -293,8 +331,16 @@ export function CharacterEditPage() {
 			setTemperature(existing.temperature);
 			setTopP(existing.top_p);
 			setMaxTokens(existing.max_tokens);
+			const seed = existing.conversation_starters ?? [];
+			const padded = [...seed];
+			while (padded.length < STARTER_COUNT) padded.push("");
+			setStarters(padded.slice(0, STARTER_COUNT));
 		}
 	}, [existing]);
+
+	const updateStarter = (idx: number, value: string) => {
+		setStarters((prev) => prev.map((s, i) => (i === idx ? value.slice(0, STARTER_MAX) : s)));
+	};
 
 	const trimmedName = name.trim();
 	const trimmedPrompt = prompt.trim();
@@ -302,6 +348,10 @@ export function CharacterEditPage() {
 
 	const handleSave = async () => {
 		if (!canSave) return;
+		const cleanedStarters = starters
+			.map((s) => s.trim())
+			.filter((s) => s.length > 0)
+			.slice(0, STARTER_COUNT);
 		const character: Character = {
 			id: existing?.id ?? generateId(),
 			name: trimmedName.slice(0, NAME_MAX),
@@ -312,6 +362,7 @@ export function CharacterEditPage() {
 			temperature,
 			top_p: topP,
 			max_tokens: maxTokens,
+			conversation_starters: cleanedStarters,
 			is_preset: false,
 			created_at: existing?.created_at ?? new Date().toISOString(),
 		};
@@ -446,6 +497,38 @@ export function CharacterEditPage() {
 						less accurate.
 					</span>
 				</Tip>
+
+				<Field>
+					<Label>Conversation starters (optional)</Label>
+					{starters.map((value, idx) => (
+						<StarterRow key={`starter-${idx}`}>
+							<StarterInput
+								value={value}
+								maxLength={STARTER_MAX}
+								placeholder={
+									idx === 0
+										? "e.g. Help me draft a polite email"
+										: idx === 1
+											? "e.g. Quiz me on what I just learned"
+											: "Optional"
+								}
+								onChange={(e) => updateStarter(idx, e.target.value)}
+								aria-label={`Starter ${idx + 1}`}
+							/>
+							<StarterClearBtn
+								type="button"
+								disabled={value.length === 0}
+								aria-label={`Clear starter ${idx + 1}`}
+								onClick={() => updateStarter(idx, "")}
+							>
+								<Icon name="close" size={16} />
+							</StarterClearBtn>
+						</StarterRow>
+					))}
+					<HelperRow>
+						<span>Shown as tappable chips on a fresh chat.</span>
+					</HelperRow>
+				</Field>
 
 				<SectionDivider><SectionLabel>Advanced</SectionLabel></SectionDivider>
 

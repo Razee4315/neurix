@@ -83,6 +83,11 @@ export interface Character {
 	temperature: number;
 	top_p: number;
 	max_tokens: number;
+	/**
+	 * Tappable example prompts shown on the empty-chat state. Each entry is a
+	 * single-line string, kept short (≤80 chars). Up to 4 are surfaced.
+	 */
+	conversation_starters?: string[];
 	is_preset: boolean;
 	created_at?: string;
 }

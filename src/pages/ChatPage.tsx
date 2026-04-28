@@ -656,6 +656,61 @@ const SpeedBadge = styled.span`
   display: inline-block;
 `;
 
+/* ── Conversation Starters ── */
+
+const StartersWrap = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0 0.5rem;
+`;
+
+const StartersLabel = styled.span`
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: ${tokens.typography.fontWeight.semibold};
+`;
+
+const StartersGrid = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 22rem;
+`;
+
+const StarterChip = styled.button<{ $accent: string }>`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  background: ${tokens.colors.surfaceContainerHigh};
+  border: 1px solid ${tokens.colors.outlineVariant}40;
+  border-radius: ${tokens.borderRadius.lg};
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-family: ${tokens.typography.fontFamily.body};
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform ${tokens.transitions.fast}, background ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
+  animation: ${fadeInUp} 0.3s ease-out both;
+
+  &:hover { border-color: ${({ $accent }) => $accent}60; }
+  &:active { transform: scale(0.98); background: ${tokens.colors.surfaceContainerHighest}; }
+`;
+
+const StarterArrow = styled.span<{ $accent: string }>`
+  margin-left: auto;
+  color: ${({ $accent }) => $accent};
+  display: inline-flex;
+  flex-shrink: 0;
+`;
+
 /* ── Context Notice ── */
 
 const ContextNotice = styled.div`
@@ -1256,11 +1311,50 @@ export function ChatPage() {
 			<ChatContainer>
 				<MessagesArea>
 					{messages.length === 0 && !isGenerating && !streamedText && (
-						<EmptyState
-						icon="chat_bubble"
-						message="What's on your mind?"
-						subtitle="Type a message to start chatting with your AI."
-					/>
+						<>
+							<EmptyState
+								icon={activeCharacter?.icon ?? "chat_bubble"}
+								message={
+									activeCharacter
+										? `Chat with ${activeCharacter.name}`
+										: "What's on your mind?"
+								}
+								subtitle={
+									activeCharacter?.description ||
+									"Type a message to start chatting with your AI."
+								}
+							/>
+							{activeCharacter?.conversation_starters &&
+								activeCharacter.conversation_starters.length > 0 && (
+									<StartersWrap>
+										<StartersLabel>Try asking</StartersLabel>
+										<StartersGrid>
+											{activeCharacter.conversation_starters
+												.slice(0, 4)
+												.map((starter, idx) => (
+													<StarterChip
+														key={`${starter}-${idx}`}
+														type="button"
+														$accent={accentOf(activeCharacter)}
+														onClick={() => {
+															setInput(starter);
+															// Focus + autosize once the value has been applied.
+															requestAnimationFrame(() => {
+																textareaRef.current?.focus();
+																autoResize();
+															});
+														}}
+													>
+														<span>{starter}</span>
+														<StarterArrow $accent={accentOf(activeCharacter)}>
+															<Icon name="arrow_outward" size={14} />
+														</StarterArrow>
+													</StarterChip>
+												))}
+										</StartersGrid>
+									</StartersWrap>
+								)}
+						</>
 					)}
 					{contextNotice && (
 						<ContextNotice>

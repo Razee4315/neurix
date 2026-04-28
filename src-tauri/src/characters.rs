@@ -18,6 +18,10 @@ pub struct Character {
     pub temperature: f64,
     pub top_p: f64,
     pub max_tokens: u32,
+    /// Tappable example prompts shown on the empty-chat state. Up to 4 are
+    /// surfaced; each entry is a single-line string.
+    #[serde(default)]
+    pub conversation_starters: Vec<String>,
     pub is_preset: bool,
     #[serde(default)]
     pub created_at: Option<String>,
@@ -41,6 +45,12 @@ pub fn get_preset_characters() -> Vec<Character> {
             temperature: 0.7,
             top_p: 0.9,
             max_tokens: 512,
+            conversation_starters: vec![
+                "Summarize a topic I'm trying to learn".into(),
+                "Help me draft a short message".into(),
+                "Explain something simply".into(),
+                "Brainstorm ideas with me".into(),
+            ],
             is_preset: true,
             created_at: None,
         },
@@ -54,6 +64,11 @@ pub fn get_preset_characters() -> Vec<Character> {
             temperature: 0.7,
             top_p: 0.9,
             max_tokens: 512,
+            conversation_starters: vec![
+                "Cheer me up — I had a rough day".into(),
+                "Help me reply to a tricky text".into(),
+                "Give me a small win to try today".into(),
+            ],
             is_preset: true,
             created_at: None,
         },
@@ -67,6 +82,12 @@ pub fn get_preset_characters() -> Vec<Character> {
             temperature: 0.4,
             top_p: 0.85,
             max_tokens: 768,
+            conversation_starters: vec![
+                "Draft a polite follow-up email".into(),
+                "Summarize meeting notes I'll paste".into(),
+                "Rewrite this to sound more formal".into(),
+                "Outline a one-page proposal".into(),
+            ],
             is_preset: true,
             created_at: None,
         },
@@ -80,6 +101,11 @@ pub fn get_preset_characters() -> Vec<Character> {
             temperature: 0.3,
             top_p: 0.85,
             max_tokens: 256,
+            conversation_starters: vec![
+                "Define a term in one line".into(),
+                "Yes-or-no: should I…".into(),
+                "TL;DR this for me".into(),
+            ],
             is_preset: true,
             created_at: None,
         },
@@ -93,6 +119,12 @@ pub fn get_preset_characters() -> Vec<Character> {
             temperature: 0.5,
             top_p: 0.9,
             max_tokens: 768,
+            conversation_starters: vec![
+                "Teach me something I'm curious about".into(),
+                "Walk me through a concept slowly".into(),
+                "Quiz me on what I just learned".into(),
+                "Explain it like I'm a beginner".into(),
+            ],
             is_preset: true,
             created_at: None,
         },
@@ -106,6 +138,12 @@ pub fn get_preset_characters() -> Vec<Character> {
             temperature: 0.9,
             top_p: 0.95,
             max_tokens: 768,
+            conversation_starters: vec![
+                "Write a tiny story from one prompt".into(),
+                "Give me a wild metaphor for…".into(),
+                "Help me name something".into(),
+                "Spin a 'what if' scenario".into(),
+            ],
             is_preset: true,
             created_at: None,
         },
