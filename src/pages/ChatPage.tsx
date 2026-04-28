@@ -435,6 +435,12 @@ const TextInput = styled.textarea`
   resize: none;
   outline: none;
   line-height: 1.4;
+  /* Android WebView reserves a scrollbar gutter on textarea even when
+     content fits, drawing a thin vertical track on the right edge. Match
+     the rest of the app's scrollable surfaces and hide it. The textarea
+     stays scrollable past max-height — only the visual is suppressed. */
+  &::-webkit-scrollbar { width: 0; height: 0; }
+  scrollbar-width: none;
 
   &::placeholder { color: ${tokens.colors.outline}; }
   &:focus { border-color: ${tokens.colors.primary}40; }
