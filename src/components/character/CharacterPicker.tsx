@@ -5,7 +5,7 @@ import { useCharacters } from "@/context/CharacterContext";
 import type { Character } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf, withAlpha } from "@/utils/characterAccent";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -34,7 +34,7 @@ const Backdrop = styled.div`
   animation: ${fadeIn} 0.2s ease-out;
 `;
 
-const Sheet = styled.div`
+const Sheet = styled.div<{ $dragY: number; $dragging: boolean }>`
   position: fixed;
   left: 0;
   right: 0;
@@ -49,6 +49,20 @@ const Sheet = styled.div`
   display: flex;
   flex-direction: column;
   animation: ${slideUp} 0.25s ease-out;
+  transform: translateY(${({ $dragY }) => $dragY}px);
+  transition: ${({ $dragging }) =>
+		$dragging ? "none" : `transform ${tokens.transitions.fast}`};
+  touch-action: pan-y;
+`;
+
+/* The grabber zone is the entire top strip — bigger touch target than the
+   tiny pill that ships in most apps, so users actually hit it. */
+const GrabberZone = styled.div`
+  padding: 0.25rem 0 0.5rem;
+  cursor: grab;
+  -webkit-tap-highlight-color: transparent;
+
+  &:active { cursor: grabbing; }
 `;
 
 const Grabber = styled.div`
@@ -56,7 +70,20 @@ const Grabber = styled.div`
   height: 4px;
   border-radius: 2px;
   background: ${tokens.colors.outlineVariant};
-  margin: 0 auto 0.5rem;
+  margin: 0 auto;
+`;
+
+/* ── Empty state for "My characters" ── */
+
+const EmptyHint = styled.div`
+  grid-column: 1 / -1;
+  padding: 0.875rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.surfaceContainerHigh}80;
+  color: ${tokens.colors.onSurfaceVariant};
+  font-size: ${tokens.typography.fontSize.xs};
+  line-height: ${tokens.typography.lineHeight.relaxed};
+  text-align: center;
 `;
 
 const Header = styled.div`
@@ -264,6 +291,59 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 	const { showToast } = useToast();
 	const [menuFor, setMenuFor] = useState<Character | null>(null);
 
+	// Drag-to-dismiss state. Tracking these in refs (not state) avoids a
+	// re-render on every touchmove tick.
+	const dragStartY = useRef<number | null>(null);
+	const [dragY, setDragY] = useState(0);
+	const [dragging, setDragging] = useState(false);
+
+	const onDragStart = (e: React.TouchEvent | React.MouseEvent) => {
+		const y = "touches" in e ? e.touches[0].clientY : e.clientY;
+		dragStartY.current = y;
+		setDragging(true);
+	};
+
+	const onDragMove = (e: TouchEvent | MouseEvent) => {
+		if (dragStartY.current == null) return;
+		const y = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+		const delta = Math.max(0, y - dragStartY.current);
+		setDragY(delta);
+	};
+
+	const onDragEnd = () => {
+		const start = dragStartY.current;
+		dragStartY.current = null;
+		setDragging(false);
+		// Dismiss if dragged more than ~120px or past 1/4 of the viewport.
+		const threshold = Math.min(120, window.innerHeight * 0.25);
+		if (start != null && dragY > threshold) {
+			onClose();
+		}
+		setDragY(0);
+	};
+
+	useEffect(() => {
+		if (!dragging) return;
+		const onMove = (e: TouchEvent | MouseEvent) => onDragMove(e);
+		const onEnd = () => onDragEnd();
+		document.addEventListener("touchmove", onMove, { passive: true });
+		document.addEventListener("touchend", onEnd);
+		document.addEventListener("touchcancel", onEnd);
+		document.addEventListener("mousemove", onMove);
+		document.addEventListener("mouseup", onEnd);
+		return () => {
+			document.removeEventListener("touchmove", onMove);
+			document.removeEventListener("touchend", onEnd);
+			document.removeEventListener("touchcancel", onEnd);
+			document.removeEventListener("mousemove", onMove);
+			document.removeEventListener("mouseup", onEnd);
+		};
+		// onDragMove/onDragEnd close over dragY via state, but we always need
+		// the live values; the closure is created fresh each render so this
+		// is fine.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [dragging, dragY]);
+
 	// Close on Escape.
 	useEffect(() => {
 		if (!open) return;
@@ -276,6 +356,21 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 		document.addEventListener("keydown", onKey);
 		return () => document.removeEventListener("keydown", onKey);
 	}, [open, onClose, menuFor]);
+
+	// Pin the active character to the top of its section so it's always
+	// visible without scrolling — most-used pattern in iOS settings, ChatGPT
+	// model picker, etc.
+	const sortedPresets = useMemo(() => {
+		if (!activeCharacter || !presets.some((p) => p.id === activeCharacter.id)) return presets;
+		const active = presets.find((p) => p.id === activeCharacter.id)!;
+		return [active, ...presets.filter((p) => p.id !== activeCharacter.id)];
+	}, [presets, activeCharacter]);
+
+	const sortedCustoms = useMemo(() => {
+		if (!activeCharacter || !customs.some((p) => p.id === activeCharacter.id)) return customs;
+		const active = customs.find((p) => p.id === activeCharacter.id)!;
+		return [active, ...customs.filter((p) => p.id !== activeCharacter.id)];
+	}, [customs, activeCharacter]);
 
 	if (!open) return null;
 
@@ -370,8 +465,16 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 				aria-modal="true"
 				aria-label="Choose character"
 				onClick={(e) => e.stopPropagation()}
+				$dragY={dragY}
+				$dragging={dragging}
 			>
-				<Grabber />
+				<GrabberZone
+					onTouchStart={onDragStart}
+					onMouseDown={onDragStart}
+					aria-label="Drag down to close"
+				>
+					<Grabber />
+				</GrabberZone>
 				<Header>
 					<Title>Choose character</Title>
 					<CloseBtn onClick={onClose} aria-label="Close">
@@ -380,11 +483,17 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 				</Header>
 				<Scroll>
 					<SectionLabel>Presets</SectionLabel>
-					<Grid>{presets.map(renderCard)}</Grid>
+					<Grid>{sortedPresets.map(renderCard)}</Grid>
 
 					<SectionLabel>My characters</SectionLabel>
 					<Grid>
-						{customs.map(renderCard)}
+						{customs.length === 0 && (
+							<EmptyHint>
+								Create characters with your own tone, instructions, or
+								expertise. They'll show up here.
+							</EmptyHint>
+						)}
+						{sortedCustoms.map(renderCard)}
 						<CreateCard onClick={handleCreate} aria-label="Create custom character">
 							<Icon name="add" size={20} />
 							Create custom
