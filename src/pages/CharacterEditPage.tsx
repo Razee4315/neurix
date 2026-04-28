@@ -294,10 +294,12 @@ function generateId() {
 export function CharacterEditPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const idFromQuery = new URLSearchParams(location.search).get("id");
+	const params = new URLSearchParams(location.search);
+	const idFromQuery = params.get("id");
+	const fromTemplateId = params.get("from");
 	const isEditing = !!idFromQuery;
 
-	const { customs, saveCustom, deleteCustom } = useCharacters();
+	const { allCharacters, customs, saveCustom, deleteCustom } = useCharacters();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
 
@@ -306,17 +308,29 @@ export function CharacterEditPage() {
 		[idFromQuery, customs],
 	);
 
-	const [name, setName] = useState(existing?.name ?? "");
-	const [description, setDescription] = useState(existing?.description ?? "");
-	const [icon, setIcon] = useState(existing?.icon ?? ICON_CHOICES[0]);
-	const [accentColor, setAccentColor] = useState(existing?.accent_color ?? DEFAULT_ACCENT);
-	const [prompt, setPrompt] = useState(existing?.system_prompt ?? "");
-	const [temperature, setTemperature] = useState(existing?.temperature ?? 0.7);
-	const [topP, setTopP] = useState(existing?.top_p ?? 0.9);
-	const [maxTokens, setMaxTokens] = useState(existing?.max_tokens ?? 512);
+	/**
+	 * When the editor is opened with `?from=<id>`, seed every field from that
+	 * character but treat it as a brand-new draft (no `existing`, no edit
+	 * mode). Skipped when also editing — `?id=` always wins.
+	 */
+	const template = useMemo(() => {
+		if (idFromQuery || !fromTemplateId) return undefined;
+		return allCharacters.find((c) => c.id === fromTemplateId);
+	}, [idFromQuery, fromTemplateId, allCharacters]);
+
+	const seed = existing ?? template;
+	const seedName = existing?.name ?? (template ? `${template.name} (copy)` : "");
+	const [name, setName] = useState(seedName);
+	const [description, setDescription] = useState(seed?.description ?? "");
+	const [icon, setIcon] = useState(seed?.icon ?? ICON_CHOICES[0]);
+	const [accentColor, setAccentColor] = useState(seed?.accent_color ?? DEFAULT_ACCENT);
+	const [prompt, setPrompt] = useState(seed?.system_prompt ?? "");
+	const [temperature, setTemperature] = useState(seed?.temperature ?? 0.7);
+	const [topP, setTopP] = useState(seed?.top_p ?? 0.9);
+	const [maxTokens, setMaxTokens] = useState(seed?.max_tokens ?? 512);
 	const [starters, setStarters] = useState<string[]>(() => {
-		const seed = existing?.conversation_starters ?? [];
-		const padded = [...seed];
+		const initial = seed?.conversation_starters ?? [];
+		const padded = [...initial];
 		while (padded.length < STARTER_COUNT) padded.push("");
 		return padded.slice(0, STARTER_COUNT);
 	});
@@ -331,8 +345,8 @@ export function CharacterEditPage() {
 			setTemperature(existing.temperature);
 			setTopP(existing.top_p);
 			setMaxTokens(existing.max_tokens);
-			const seed = existing.conversation_starters ?? [];
-			const padded = [...seed];
+			const initial = existing.conversation_starters ?? [];
+			const padded = [...initial];
 			while (padded.length < STARTER_COUNT) padded.push("");
 			setStarters(padded.slice(0, STARTER_COUNT));
 		}

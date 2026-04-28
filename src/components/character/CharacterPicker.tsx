@@ -1,9 +1,11 @@
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/Toast";
 import { useCharacters } from "@/context/CharacterContext";
 import type { Character } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf, withAlpha } from "@/utils/characterAccent";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -156,14 +158,82 @@ const CardDesc = styled.div`
   line-height: ${tokens.typography.lineHeight.snug};
 `;
 
-const ActiveDot = styled.div<{ $accent: string }>`
+const MoreBtn = styled.button`
   position: absolute;
-  top: 0.625rem;
-  right: 0.625rem;
-  width: 8px;
-  height: 8px;
+  top: 0.375rem;
+  right: 0.375rem;
+  width: 28px;
+  height: 28px;
   border-radius: ${tokens.borderRadius.circle};
-  background: ${({ $accent }) => $accent};
+  border: none;
+  background: transparent;
+  color: ${tokens.colors.onSurfaceVariant};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background ${tokens.transitions.fast};
+
+  &:hover { background: ${tokens.colors.surfaceContainerHighest}; }
+  &:active { transform: scale(0.9); }
+`;
+
+const ActiveBadge = styled.span<{ $accent: string }>`
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.625rem;
+  font-size: 10px;
+  font-weight: ${tokens.typography.fontWeight.bold};
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: ${({ $accent }) => $accent};
+`;
+
+/* ── Action menu (secondary sheet) ── */
+
+const MenuSheet = styled.div`
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  z-index: 950;
+  background: ${tokens.colors.surfaceContainerHigh};
+  border-radius: ${tokens.borderRadius.xl};
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  animation: ${slideUp} 0.2s ease-out;
+  box-shadow: ${tokens.shadows.elevated};
+`;
+
+const MenuItem = styled.button<{ $danger?: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-radius: ${tokens.borderRadius.md};
+  color: ${({ $danger }) => ($danger ? tokens.colors.error : tokens.colors.onSurface)};
+  font-size: ${tokens.typography.fontSize.base};
+  font-family: ${tokens.typography.fontFamily.body};
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  &:hover { background: ${tokens.colors.surfaceContainerHighest}; }
+  &:active { transform: scale(0.98); }
+`;
+
+const MenuHeader = styled.div`
+  padding: 0.5rem 0.75rem 0.25rem;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: ${tokens.typography.fontWeight.bold};
 `;
 
 const CreateCard = styled.button`
@@ -189,17 +259,23 @@ const CreateCard = styled.button`
 
 export function CharacterPicker({ open, onClose, onSelect }: Props) {
 	const navigate = useNavigate();
-	const { presets, customs, activeCharacter, setActiveCharacter } = useCharacters();
+	const { presets, customs, activeCharacter, setActiveCharacter, deleteCustom } = useCharacters();
+	const { showConfirm } = useConfirm();
+	const { showToast } = useToast();
+	const [menuFor, setMenuFor] = useState<Character | null>(null);
 
 	// Close on Escape.
 	useEffect(() => {
 		if (!open) return;
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") onClose();
+			if (e.key === "Escape") {
+				if (menuFor) setMenuFor(null);
+				else onClose();
+			}
 		};
 		document.addEventListener("keydown", onKey);
 		return () => document.removeEventListener("keydown", onKey);
-	}, [open, onClose]);
+	}, [open, onClose, menuFor]);
 
 	if (!open) return null;
 
@@ -223,6 +299,69 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 		navigate(`/character/edit?id=${encodeURIComponent(c.id)}`);
 	};
 
+	const handleDuplicate = (c: Character) => {
+		onClose();
+		navigate(`/character/new?from=${encodeURIComponent(c.id)}`);
+	};
+
+	const handleDelete = async (c: Character) => {
+		setMenuFor(null);
+		const ok = await showConfirm({
+			title: "Delete character",
+			message: `Delete "${c.name}"? This can't be undone.`,
+			confirmLabel: "Delete",
+			cancelLabel: "Cancel",
+			danger: true,
+		});
+		if (!ok) return;
+		try {
+			await deleteCustom(c.id);
+			showToast("Character deleted", "info");
+		} catch {
+			showToast("Couldn't delete character", "error");
+		}
+	};
+
+	const openMenu = (e: React.MouseEvent, c: Character) => {
+		e.stopPropagation();
+		if (navigator.vibrate) navigator.vibrate(5);
+		setMenuFor(c);
+	};
+
+	const renderCard = (c: Character) => {
+		const isActive = activeCharacter?.id === c.id;
+		const accent = accentOf(c);
+		return (
+			<CardBase
+				key={c.id}
+				$active={isActive}
+				$accent={accent}
+				onClick={() => handleSelect(c)}
+				onContextMenu={(e) => {
+					e.preventDefault();
+					setMenuFor(c);
+				}}
+				aria-pressed={isActive}
+			>
+				<MoreBtn
+					type="button"
+					aria-label={`More actions for ${c.name}`}
+					onClick={(e) => openMenu(e, c)}
+				>
+					<Icon name="more_vert" size={18} />
+				</MoreBtn>
+				<IconBubble $active={isActive} $accent={accent}>
+					<Icon name={c.icon || "person"} size={20} />
+				</IconBubble>
+				<div>
+					<CardName>{c.name}</CardName>
+					<CardDesc>{c.description || (c.is_preset ? "" : "Custom")}</CardDesc>
+				</div>
+				{isActive && <ActiveBadge $accent={accent}>Active</ActiveBadge>}
+			</CardBase>
+		);
+	};
+
 	return (
 		<>
 			<Backdrop onClick={onClose} />
@@ -241,56 +380,11 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 				</Header>
 				<Scroll>
 					<SectionLabel>Presets</SectionLabel>
-					<Grid>
-						{presets.map((c) => {
-							const isActive = activeCharacter?.id === c.id;
-							const accent = accentOf(c);
-							return (
-								<CardBase
-									key={c.id}
-									$active={isActive}
-									$accent={accent}
-									onClick={() => handleSelect(c)}
-									aria-pressed={isActive}
-								>
-									{isActive && <ActiveDot $accent={accent} />}
-									<IconBubble $active={isActive} $accent={accent}>
-										<Icon name={c.icon} size={20} />
-									</IconBubble>
-									<div>
-										<CardName>{c.name}</CardName>
-										<CardDesc>{c.description}</CardDesc>
-									</div>
-								</CardBase>
-							);
-						})}
-					</Grid>
+					<Grid>{presets.map(renderCard)}</Grid>
 
 					<SectionLabel>My characters</SectionLabel>
 					<Grid>
-						{customs.map((c) => {
-							const isActive = activeCharacter?.id === c.id;
-							const accent = accentOf(c);
-							return (
-								<CardBase
-									key={c.id}
-									$active={isActive}
-									$accent={accent}
-									onClick={() => handleSelect(c)}
-									onContextMenu={(e) => { e.preventDefault(); handleEditCustom(c); }}
-									aria-pressed={isActive}
-								>
-									{isActive && <ActiveDot $accent={accent} />}
-									<IconBubble $active={isActive} $accent={accent}>
-										<Icon name={c.icon || "person"} size={20} />
-									</IconBubble>
-									<div>
-										<CardName>{c.name}</CardName>
-										<CardDesc>{c.description || "Custom"}</CardDesc>
-									</div>
-								</CardBase>
-							);
-						})}
+						{customs.map(renderCard)}
 						<CreateCard onClick={handleCreate} aria-label="Create custom character">
 							<Icon name="add" size={20} />
 							Create custom
@@ -298,6 +392,54 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 					</Grid>
 				</Scroll>
 			</Sheet>
+
+			{menuFor && (
+				<>
+					<Backdrop onClick={() => setMenuFor(null)} style={{ zIndex: 940 }} />
+					<MenuSheet
+						role="dialog"
+						aria-modal="true"
+						aria-label={`Actions for ${menuFor.name}`}
+						onClick={(e) => e.stopPropagation()}
+					>
+						<MenuHeader>{menuFor.name}</MenuHeader>
+						{menuFor.is_preset ? (
+							<MenuItem
+								type="button"
+								onClick={() => handleDuplicate(menuFor)}
+							>
+								<Icon name="content_copy" size={20} color={tokens.colors.onSurfaceVariant} />
+								Use as template
+							</MenuItem>
+						) : (
+							<>
+								<MenuItem
+									type="button"
+									onClick={() => handleEditCustom(menuFor)}
+								>
+									<Icon name="edit" size={20} color={tokens.colors.onSurfaceVariant} />
+									Edit
+								</MenuItem>
+								<MenuItem
+									type="button"
+									onClick={() => handleDuplicate(menuFor)}
+								>
+									<Icon name="content_copy" size={20} color={tokens.colors.onSurfaceVariant} />
+									Duplicate
+								</MenuItem>
+								<MenuItem
+									type="button"
+									$danger
+									onClick={() => handleDelete(menuFor)}
+								>
+									<Icon name="delete" size={20} color={tokens.colors.error} />
+									Delete
+								</MenuItem>
+							</>
+						)}
+					</MenuSheet>
+				</>
+			)}
 		</>
 	);
 }
