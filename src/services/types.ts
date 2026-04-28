@@ -127,6 +127,13 @@ export interface Conversation {
 	title: string;
 	model_id: string;
 	model_name: string;
+	/**
+	 * The character active when this conversation was last saved. Used by the
+	 * history page to filter "show only chats with X". Optional for back-compat
+	 * with conversations saved before the field existed.
+	 */
+	character_id?: string;
+	character_name?: string;
 	created_at: string;
 	updated_at: string;
 	messages: ChatMessage[];
@@ -142,5 +149,7 @@ export interface ConversationMeta {
 	id: string;
 	title: string;
 	model_name: string;
+	character_id?: string;
+	character_name?: string;
 	updated_at: string;
 }

@@ -1,12 +1,14 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { useCharacters } from "@/context/CharacterContext";
 import { historyService } from "@/services";
 import type { ConversationMeta } from "@/services/types";
 import { tokens } from "@/theme/tokens";
+import { accentOf } from "@/utils/characterAccent";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -61,6 +63,45 @@ const SearchIconWrap = styled.div`
   pointer-events: none;
   color: ${tokens.colors.onSurfaceVariant};
   display: flex;
+`;
+
+/* ── Character filter chips ──
+ * Horizontal-scroll chip rail above the chat list. "All" is always
+ * shown; each character that owns at least one saved conversation gets
+ * a chip. The list collapses entirely when the user has no characters
+ * with chats yet. */
+
+const FilterRail = styled.div`
+  display: flex;
+  gap: 0.375rem;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+  padding-bottom: 0.25rem;
+  -webkit-overflow-scrolling: touch;
+
+  &::-webkit-scrollbar { height: 0; }
+  scrollbar-width: none;
+`;
+
+const FilterChip = styled.button<{ $active: boolean; $accent: string }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  flex-shrink: 0;
+  border-radius: ${tokens.borderRadius.circle};
+  border: 1px solid ${({ $active, $accent }) => ($active ? $accent : tokens.colors.outlineVariant + "60")};
+  background: ${({ $active, $accent }) =>
+		$active ? `${$accent}14` : tokens.colors.surfaceContainerLow};
+  color: ${({ $active, $accent }) => ($active ? $accent : tokens.colors.onSurfaceVariant)};
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+  transition: background ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
+
+  &:active { transform: scale(0.96); }
 `;
 
 /* ── Groups ── */
@@ -221,10 +262,41 @@ export function ChatHistoryPage() {
 	const navigate = useNavigate();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
+	const { allCharacters } = useCharacters();
 	const [search, setSearch] = useState("");
 	const [conversations, setConversations] = useState<ConversationMeta[]>([]);
 	const [renamingId, setRenamingId] = useState<string | null>(null);
 	const [renameValue, setRenameValue] = useState("");
+	/**
+	 * Character filter. `null` = show all. Stored as id-string so it survives
+	 * a refresh of the character list (deleted characters keep their tag in
+	 * old conversations and the filter just shows nothing for that bucket).
+	 */
+	const [characterFilter, setCharacterFilter] = useState<string | null>(null);
+
+	/**
+	 * Build the filter rail from the current conversation set rather than from
+	 * `allCharacters` — that way only characters with at least one saved chat
+	 * appear. Falls back to the conversation's stored `character_name` if the
+	 * character has been deleted since.
+	 */
+	const filterChips = useMemo(() => {
+		const counts = new Map<string, { id: string; name: string; count: number }>();
+		for (const c of conversations) {
+			if (!c.character_id) continue;
+			const known = allCharacters.find((ch) => ch.id === c.character_id);
+			const name = known?.name ?? c.character_name ?? "Unknown";
+			const entry = counts.get(c.character_id);
+			if (entry) entry.count += 1;
+			else counts.set(c.character_id, { id: c.character_id, name, count: 1 });
+		}
+		return [...counts.values()].sort((a, b) => b.count - a.count);
+	}, [conversations, allCharacters]);
+
+	const characterById = useMemo(
+		() => new Map(allCharacters.map((c) => [c.id, c])),
+		[allCharacters],
+	);
 
 	const refresh = useCallback(async () => {
 		const list = await historyService.getConversations();
@@ -288,9 +360,11 @@ export function ChatHistoryPage() {
 		setConversations([]);
 	};
 
-	const filtered = conversations.filter(
-		(c) => !search || c.title.toLowerCase().includes(search.toLowerCase()),
-	);
+	const filtered = conversations.filter((c) => {
+		if (search && !c.title.toLowerCase().includes(search.toLowerCase())) return false;
+		if (characterFilter && c.character_id !== characterFilter) return false;
+		return true;
+	});
 
 	const groups = groupByDate(filtered);
 
@@ -312,6 +386,44 @@ export function ChatHistoryPage() {
 						aria-label="Search conversations"
 					/>
 				</SearchBox>
+
+				{filterChips.length > 0 && (
+					<FilterRail role="tablist" aria-label="Filter by character">
+						<FilterChip
+							type="button"
+							role="tab"
+							$active={characterFilter === null}
+							$accent={tokens.colors.primary}
+							aria-selected={characterFilter === null}
+							onClick={() => setCharacterFilter(null)}
+						>
+							All
+						</FilterChip>
+						{filterChips.map((chip) => {
+							const c = characterById.get(chip.id);
+							const accent = c ? accentOf(c) : tokens.colors.onSurfaceVariant;
+							const isActive = characterFilter === chip.id;
+							return (
+								<FilterChip
+									key={chip.id}
+									type="button"
+									role="tab"
+									$active={isActive}
+									$accent={accent}
+									aria-selected={isActive}
+									onClick={() =>
+										setCharacterFilter(isActive ? null : chip.id)
+									}
+								>
+									{c && (
+										<Icon name={c.icon || "person"} size={12} color={accent} />
+									)}
+									{chip.name} · {chip.count}
+								</FilterChip>
+							);
+						})}
+					</FilterRail>
+				)}
 
 				{Object.keys(groups).length === 0 ? (
 					<EmptyState

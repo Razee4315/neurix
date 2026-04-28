@@ -791,6 +791,9 @@ export function ChatPage() {
 	useEffect(() => { messagesRef.current = messages; }, [messages]);
 	useEffect(() => { activeModelRef.current = activeModel; }, [activeModel]);
 
+	const activeCharacterRef = useRef(activeCharacter);
+	useEffect(() => { activeCharacterRef.current = activeCharacter; }, [activeCharacter]);
+
 	// Toast when the user swaps character mid-chat. Without this, switching
 	// happens silently and the new persona only becomes visible on the next
 	// reply — easy to miss in a 12-turn coding session.
@@ -820,6 +823,8 @@ export function ChatPage() {
 						title,
 						model_id: activeModelRef.current || "",
 						model_name: activeModelRef.current || "",
+						character_id: activeCharacterRef.current?.id,
+						character_name: activeCharacterRef.current?.name,
 						created_at: new Date().toISOString(),
 						updated_at: new Date().toISOString(),
 						messages: updated.map((m) => ({
@@ -964,6 +969,8 @@ export function ChatPage() {
 				title,
 				model_id: "",
 				model_name: activeModel,
+				character_id: activeCharacter?.id,
+				character_name: activeCharacter?.name,
 				created_at: new Date().toISOString(),
 				updated_at: new Date().toISOString(),
 				messages: msgs.map((m) => ({
@@ -974,7 +981,7 @@ export function ChatPage() {
 			};
 			await historyService.saveConversation(conv).catch(() => {});
 		},
-		[conversationId, activeModel, settings?.save_history],
+		[conversationId, activeModel, settings?.save_history, activeCharacter?.id, activeCharacter?.name],
 	);
 
 	const autoResize = useCallback(() => {
