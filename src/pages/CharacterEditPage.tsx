@@ -248,6 +248,19 @@ const Slider = styled.input`
   accent-color: ${tokens.colors.primary};
 `;
 
+const BandLabel = styled.div`
+  display: flex;
+  justify-content: space-between;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+  margin-top: -0.25rem;
+
+  & > span:last-child {
+    color: ${tokens.colors.tertiary};
+    font-weight: ${tokens.typography.fontWeight.semibold};
+  }
+`;
+
 const Actions = styled.div`
   display: flex;
   gap: 0.625rem;
@@ -284,6 +297,31 @@ const DangerBtn = styled.button`
 
   &:active { transform: scale(0.97); background: ${tokens.colors.error}10; }
 `;
+
+/* ── Slider helpers ──
+ * Plain-language labels so non-technical users can pick values without
+ * understanding sampling theory. Bands are conservative — Anthropic Console,
+ * OpenAI Playground, and llama.cpp's UI all chunk temperature similarly.
+ */
+
+function temperatureBand(t: number): string {
+	if (t < 0.3) return "Focused";
+	if (t < 0.8) return "Balanced";
+	if (t < 1.3) return "Creative";
+	return "Wild";
+}
+
+function topPBand(p: number): string {
+	if (p < 0.5) return "Tight";
+	if (p < 0.85) return "Standard";
+	return "Diverse";
+}
+
+function maxTokensBand(n: number): string {
+	if (n <= 256) return `≈ ${Math.round(n * 0.75)} words`;
+	if (n <= 768) return `≈ ${Math.round(n * 0.75)} words`;
+	return `≈ ${Math.round(n * 0.75)} words (long)`;
+}
 
 /* ── Component ── */
 
@@ -548,38 +586,56 @@ export function CharacterEditPage() {
 
 				<SliderRow>
 					<SliderHeader>
-						<SliderTitle>Temperature</SliderTitle>
+						<SliderTitle>Creativity</SliderTitle>
 						<SliderValue>{temperature.toFixed(2)}</SliderValue>
 					</SliderHeader>
 					<Slider
 						type="range" min="0" max="2" step="0.05"
 						value={temperature}
 						onChange={(e) => setTemperature(Number.parseFloat(e.target.value))}
+						aria-label="Creativity (temperature)"
+						aria-valuetext={`${temperatureBand(temperature)} (${temperature.toFixed(2)})`}
 					/>
+					<BandLabel>
+						<span>How varied responses are</span>
+						<span>{temperatureBand(temperature)}</span>
+					</BandLabel>
 				</SliderRow>
 
 				<SliderRow>
 					<SliderHeader>
-						<SliderTitle>Top-P</SliderTitle>
+						<SliderTitle>Word variety</SliderTitle>
 						<SliderValue>{topP.toFixed(2)}</SliderValue>
 					</SliderHeader>
 					<Slider
 						type="range" min="0.05" max="1" step="0.05"
 						value={topP}
 						onChange={(e) => setTopP(Number.parseFloat(e.target.value))}
+						aria-label="Word variety (top-p)"
+						aria-valuetext={`${topPBand(topP)} (${topP.toFixed(2)})`}
 					/>
+					<BandLabel>
+						<span>Vocabulary range</span>
+						<span>{topPBand(topP)}</span>
+					</BandLabel>
 				</SliderRow>
 
 				<SliderRow>
 					<SliderHeader>
-						<SliderTitle>Max tokens</SliderTitle>
+						<SliderTitle>Reply length</SliderTitle>
 						<SliderValue>{maxTokens}</SliderValue>
 					</SliderHeader>
 					<Slider
 						type="range" min="64" max="2048" step="32"
 						value={maxTokens}
 						onChange={(e) => setMaxTokens(Number.parseInt(e.target.value, 10))}
+						aria-label="Reply length (max tokens)"
+						aria-valuetext={`${maxTokens} tokens, ${maxTokensBand(maxTokens)}`}
 					/>
+					<BandLabel>
+						<span>Maximum tokens</span>
+						<span>{maxTokensBand(maxTokens)}</span>
+					</BandLabel>
 				</SliderRow>
 
 				<Actions>
