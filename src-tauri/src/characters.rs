@@ -22,6 +22,10 @@ pub struct Character {
     /// surfaced; each entry is a single-line string.
     #[serde(default)]
     pub conversation_starters: Vec<String>,
+    /// Optional opening line rendered as the first AI bubble on a fresh
+    /// chat. Pure UI — never sent to inference.
+    #[serde(default)]
+    pub greeting: Option<String>,
     pub is_preset: bool,
     #[serde(default)]
     pub created_at: Option<String>,
@@ -51,6 +55,7 @@ pub fn get_preset_characters() -> Vec<Character> {
                 "Explain something simply".into(),
                 "Brainstorm ideas with me".into(),
             ],
+            greeting: Some("Hi! What can I help you with?".into()),
             is_preset: true,
             created_at: None,
         },
@@ -69,6 +74,7 @@ pub fn get_preset_characters() -> Vec<Character> {
                 "Help me reply to a tricky text".into(),
                 "Give me a small win to try today".into(),
             ],
+            greeting: Some("Hey, good to see you! How's it going?".into()),
             is_preset: true,
             created_at: None,
         },
@@ -88,6 +94,7 @@ pub fn get_preset_characters() -> Vec<Character> {
                 "Rewrite this to sound more formal".into(),
                 "Outline a one-page proposal".into(),
             ],
+            greeting: Some("How can I assist you today?".into()),
             is_preset: true,
             created_at: None,
         },
@@ -106,6 +113,7 @@ pub fn get_preset_characters() -> Vec<Character> {
                 "Yes-or-no: should I…".into(),
                 "TL;DR this for me".into(),
             ],
+            greeting: Some("Ask away.".into()),
             is_preset: true,
             created_at: None,
         },
@@ -125,6 +133,7 @@ pub fn get_preset_characters() -> Vec<Character> {
                 "Quiz me on what I just learned".into(),
                 "Explain it like I'm a beginner".into(),
             ],
+            greeting: Some("What would you like to learn today? I'll take it step by step.".into()),
             is_preset: true,
             created_at: None,
         },
@@ -144,6 +153,7 @@ pub fn get_preset_characters() -> Vec<Character> {
                 "Help me name something".into(),
                 "Spin a 'what if' scenario".into(),
             ],
+            greeting: Some("Let's make something interesting. What's the spark?".into()),
             is_preset: true,
             created_at: None,
         },

@@ -11,6 +11,12 @@ pub struct Conversation {
     pub title: String,
     pub model_id: String,
     pub model_name: String,
+    /// Character active when this conversation was last saved. Optional for
+    /// back-compat with conversations stored before the field existed.
+    #[serde(default)]
+    pub character_id: Option<String>,
+    #[serde(default)]
+    pub character_name: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub messages: Vec<ChatMessage>,
@@ -35,6 +41,10 @@ pub struct ConversationMeta {
     pub id: String,
     pub title: String,
     pub model_name: String,
+    #[serde(default)]
+    pub character_id: Option<String>,
+    #[serde(default)]
+    pub character_name: Option<String>,
     pub updated_at: String,
 }
 
@@ -61,6 +71,8 @@ pub async fn list_conversations(chats_dir: &Path) -> Result<Vec<ConversationMeta
                         id: conv.id,
                         title: conv.title,
                         model_name: conv.model_name,
+                        character_id: conv.character_id,
+                        character_name: conv.character_name,
                         updated_at: conv.updated_at.to_rfc3339(),
                     });
                 }

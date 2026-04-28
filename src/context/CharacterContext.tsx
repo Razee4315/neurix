@@ -1,6 +1,6 @@
 import { characterService, settingsService } from "@/services";
 import type { Character, Settings } from "@/services/types";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAppContext } from "./AppContext";
 
 interface CharacterContextValue {
@@ -32,7 +32,10 @@ export function CharacterProvider({ children }: { children: React.ReactNode }) {
 	const { settings, refreshSettings } = useAppContext();
 	const [presets, setPresets] = useState<Character[]>([]);
 	const [presetsLoaded, setPresetsLoaded] = useState(false);
-	const migrationDoneRef = useState(() => ({ done: false }))[0];
+	// One-time guard for the legacy-prompt migration. useRef so a flip from
+	// false → true doesn't trigger a re-render or a second migration attempt
+	// in StrictMode.
+	const migrationDoneRef = useRef(false);
 
 	useEffect(() => {
 		characterService.getPresetCharacters()
@@ -46,10 +49,10 @@ export function CharacterProvider({ children }: { children: React.ReactNode }) {
 	// prompt, convert it into a "My prompt" custom character so they don't
 	// silently lose it after the upgrade.
 	useEffect(() => {
-		if (migrationDoneRef.done) return;
+		if (migrationDoneRef.current) return;
 		if (!presetsLoaded || !settings) return;
 		if (settings.active_character_id) {
-			migrationDoneRef.done = true;
+			migrationDoneRef.current = true;
 			return; // Already on the new model.
 		}
 		const defaultPreset = presets.find((p) => p.id === "preset:default");
@@ -57,7 +60,7 @@ export function CharacterProvider({ children }: { children: React.ReactNode }) {
 		const defaultPrompt = defaultPreset?.system_prompt.trim() ?? "";
 
 		(async () => {
-			migrationDoneRef.done = true;
+			migrationDoneRef.current = true;
 			if (userPrompt && userPrompt !== defaultPrompt) {
 				// Convert legacy prompt into a custom character.
 				const migrated: Character = {
@@ -85,7 +88,7 @@ export function CharacterProvider({ children }: { children: React.ReactNode }) {
 			}
 			await refreshSettings();
 		})();
-	}, [presetsLoaded, settings, presets, refreshSettings, migrationDoneRef]);
+	}, [presetsLoaded, settings, presets, refreshSettings]);
 
 	const customs = useMemo<Character[]>(
 		() => settings?.custom_characters ?? [],
@@ -103,10 +106,21 @@ export function CharacterProvider({ children }: { children: React.ReactNode }) {
 			?? null;
 	}, [presetsLoaded, settings, allCharacters]);
 
-	// Persist the active character id back to settings.
+	// Persist the active character id back to settings, and stamp the
+	// custom's last_used_at so the picker can surface recently used items.
+	// Presets aren't stored in settings, so we only stamp customs.
 	const setActiveCharacter = useCallback(async (id: string) => {
 		if (!settings) return;
-		const next: Settings = { ...settings, active_character_id: id };
+		const now = new Date().toISOString();
+		const customs = settings.custom_characters ?? [];
+		const stampedCustoms = customs.some((c) => c.id === id)
+			? customs.map((c) => (c.id === id ? { ...c, last_used_at: now } : c))
+			: customs;
+		const next: Settings = {
+			...settings,
+			active_character_id: id,
+			custom_characters: stampedCustoms,
+		};
 		await settingsService.updateSettings(next);
 		await refreshSettings();
 	}, [settings, refreshSettings]);

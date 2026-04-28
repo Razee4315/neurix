@@ -435,6 +435,12 @@ const TextInput = styled.textarea`
   resize: none;
   outline: none;
   line-height: 1.4;
+  /* Android WebView reserves a scrollbar gutter on textarea even when
+     content fits, drawing a thin vertical track on the right edge. Match
+     the rest of the app's scrollable surfaces and hide it. The textarea
+     stays scrollable past max-height — only the visual is suppressed. */
+  &::-webkit-scrollbar { width: 0; height: 0; }
+  scrollbar-width: none;
 
   &::placeholder { color: ${tokens.colors.outline}; }
   &:focus { border-color: ${tokens.colors.primary}40; }
@@ -550,6 +556,58 @@ const SubtitleModel = styled.span`
 
 const SubtitleEmpty = styled.span`
   color: ${tokens.colors.onSurfaceVariant};
+`;
+
+/* ── First-run coachmark — points at the subtitle so the character switcher
+   doesn't go undiscovered on devices that don't show hover tooltips. ─ */
+
+const coachIn = keyframes`
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+`;
+
+const Coachmark = styled.div`
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: ${tokens.zIndex.toast};
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  background: ${tokens.colors.surfaceContainerHighest};
+  color: ${tokens.colors.onSurface};
+  border: 1px solid ${tokens.colors.primary}40;
+  border-radius: ${tokens.borderRadius.lg};
+  font-size: ${tokens.typography.fontSize.xs};
+  box-shadow: ${tokens.shadows.elevated};
+  animation: ${coachIn} 0.25s ease-out;
+  max-width: calc(100vw - 2rem);
+
+  &::before {
+    content: "";
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    width: 10px;
+    height: 10px;
+    background: ${tokens.colors.surfaceContainerHighest};
+    border-left: 1px solid ${tokens.colors.primary}40;
+    border-top: 1px solid ${tokens.colors.primary}40;
+  }
+`;
+
+const CoachClose = styled.button`
+  border: none;
+  background: transparent;
+  color: ${tokens.colors.onSurfaceVariant};
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  margin-left: 0.25rem;
 `;
 
 /* ── Loading Overlay ── */
@@ -771,6 +829,7 @@ export function ChatPage() {
 	const [isLoadingModel, setIsLoadingModel] = useState(false);
 	const [loadModelError, setLoadModelError] = useState<string | null>(null);
 	const [pickerOpen, setPickerOpen] = useState(false);
+	const [showCoach, setShowCoach] = useState(false);
 	const [streamedText, setStreamedText] = useState("");
 	const [tokensPerSecond, setTokensPerSecond] = useState(0);
 	const [conversationId, setConversationId] = useState<string | null>(null);
@@ -790,6 +849,40 @@ export function ChatPage() {
 	useEffect(() => { isGeneratingRef.current = isGenerating; }, [isGenerating]);
 	useEffect(() => { messagesRef.current = messages; }, [messages]);
 	useEffect(() => { activeModelRef.current = activeModel; }, [activeModel]);
+
+	const activeCharacterRef = useRef(activeCharacter);
+	useEffect(() => { activeCharacterRef.current = activeCharacter; }, [activeCharacter]);
+
+	// First-run coachmark for the character/model subtitle. Stored in
+	// localStorage with a versioned key so we can re-tutorial the bar if a
+	// future redesign shifts what tapping it does.
+	useEffect(() => {
+		const KEY = "neurix.coach.subtitle.v1";
+		try {
+			if (localStorage.getItem(KEY)) return;
+		} catch {
+			return; // Private mode / disabled storage — skip silently.
+		}
+		const t = setTimeout(() => setShowCoach(true), 800);
+		return () => clearTimeout(t);
+	}, []);
+
+	const dismissCoach = useCallback(() => {
+		setShowCoach(false);
+		try {
+			localStorage.setItem("neurix.coach.subtitle.v1", new Date().toISOString());
+		} catch {
+			// Ignore — failing to persist just means the user sees it again
+			// next launch, which is harmless.
+		}
+	}, []);
+
+	// Auto-dismiss after 6 seconds so it never overstays.
+	useEffect(() => {
+		if (!showCoach) return;
+		const t = setTimeout(dismissCoach, 6000);
+		return () => clearTimeout(t);
+	}, [showCoach, dismissCoach]);
 
 	// Toast when the user swaps character mid-chat. Without this, switching
 	// happens silently and the new persona only becomes visible on the next
@@ -820,6 +913,8 @@ export function ChatPage() {
 						title,
 						model_id: activeModelRef.current || "",
 						model_name: activeModelRef.current || "",
+						character_id: activeCharacterRef.current?.id,
+						character_name: activeCharacterRef.current?.name,
 						created_at: new Date().toISOString(),
 						updated_at: new Date().toISOString(),
 						messages: updated.map((m) => ({
@@ -964,6 +1059,8 @@ export function ChatPage() {
 				title,
 				model_id: "",
 				model_name: activeModel,
+				character_id: activeCharacter?.id,
+				character_name: activeCharacter?.name,
 				created_at: new Date().toISOString(),
 				updated_at: new Date().toISOString(),
 				messages: msgs.map((m) => ({
@@ -974,7 +1071,7 @@ export function ChatPage() {
 			};
 			await historyService.saveConversation(conv).catch(() => {});
 		},
-		[conversationId, activeModel, settings?.save_history],
+		[conversationId, activeModel, settings?.save_history, activeCharacter?.id, activeCharacter?.name],
 	);
 
 	const autoResize = useCallback(() => {
@@ -1265,6 +1362,7 @@ export function ChatPage() {
 				<SubtitleBtn
 					type="button"
 					onClick={() => {
+						dismissCoach();
 						if (!activeModel && !isLoadingModel) {
 							navigate("/models");
 						} else {
@@ -1327,18 +1425,28 @@ export function ChatPage() {
 				<MessagesArea>
 					{messages.length === 0 && !isGenerating && !streamedText && (
 						<>
-							<EmptyState
-								icon={activeCharacter?.icon ?? "chat_bubble"}
-								message={
-									activeCharacter
-										? `Chat with ${activeCharacter.name}`
-										: "What's on your mind?"
-								}
-								subtitle={
-									activeCharacter?.description ||
-									"Type a message to start chatting with your AI."
-								}
-							/>
+							{activeCharacter?.greeting ? (
+								// Pure-UI greeting bubble. Never sent to inference, so it
+								// never burns tokens or skews the context window — but it
+								// does set the tone the way Character.AI / Replika do.
+								<Bubble $role="ai" aria-label="Greeting">
+									<BubbleLabel $role="ai">{activeCharacter.name}</BubbleLabel>
+									<BubbleBody>{activeCharacter.greeting}</BubbleBody>
+								</Bubble>
+							) : (
+								<EmptyState
+									icon={activeCharacter?.icon ?? "chat_bubble"}
+									message={
+										activeCharacter
+											? `Chat with ${activeCharacter.name}`
+											: "What's on your mind?"
+									}
+									subtitle={
+										activeCharacter?.description ||
+										"Type a message to start chatting with your AI."
+									}
+								/>
+							)}
 							{activeCharacter?.conversation_starters &&
 								activeCharacter.conversation_starters.length > 0 && (
 									<StartersWrap>
@@ -1467,6 +1575,19 @@ export function ChatPage() {
 			</ChatContainer>
 		</AppLayout>
 		<CharacterPicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
+		{showCoach && !pickerOpen && (
+			<Coachmark role="status" onClick={dismissCoach}>
+				<Icon name="touch_app" size={14} color={tokens.colors.primary} />
+				<span>Tap here to switch character or model</span>
+				<CoachClose
+					type="button"
+					onClick={(e) => { e.stopPropagation(); dismissCoach(); }}
+					aria-label="Dismiss tip"
+				>
+					<Icon name="close" size={14} />
+				</CoachClose>
+			</Coachmark>
+		)}
 		</>
 	);
 }
