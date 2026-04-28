@@ -18,6 +18,19 @@ const PROMPT_HARD_CAP = 2000;
 const STARTER_MAX = 80;
 const STARTER_COUNT = 4;
 
+/* ── Prompt example phrases ── Tappable suggestions inserted into the
+   personality textarea. Each is a single behaviour rule a small model can
+   reliably follow — chosen specifically because they're additive (the user
+   keeps stacking phrases) rather than persona descriptions. */
+const PROMPT_EXAMPLES: ReadonlyArray<{ short: string; full: string }> = [
+	{ short: "Bullet points only", full: "Reply only in bullet points. No prose." },
+	{ short: "Plain language", full: "Use plain words. Avoid jargon and filler." },
+	{ short: "Ask a follow-up", full: "End every reply with one short follow-up question." },
+	{ short: "Short answers", full: "Keep replies under three sentences." },
+	{ short: "Step-by-step", full: "Answer in numbered steps when explaining how to do something." },
+	{ short: "Cite the source", full: "If you're unsure, say so. Don't invent facts." },
+];
+
 /* ── Available icons ── A curated grid of Material Symbols. We don't expose
    the full icon font because the picker becomes overwhelming and most icons
    look weird as a "character." ─ */
@@ -165,6 +178,28 @@ const ColorSwatch = styled.button<{ $color: string; $active: boolean }>`
 		$active ? $color : "transparent"};
     pointer-events: none;
   }
+`;
+
+const ExampleChips = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+`;
+
+const ExampleChip = styled.button`
+  padding: 0.375rem 0.625rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.surfaceContainerHigh};
+  border: 1px dashed ${tokens.colors.outlineVariant}80;
+  color: ${tokens.colors.onSurfaceVariant};
+  font-size: ${tokens.typography.fontSize.xs};
+  font-family: ${tokens.typography.fontFamily.body};
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
+
+  &:hover { border-color: ${tokens.colors.tertiary}; color: ${tokens.colors.onSurface}; }
+  &:active { transform: scale(0.96); }
 `;
 
 const StarterRow = styled.div`
@@ -394,6 +429,18 @@ export function CharacterEditPage() {
 		setStarters((prev) => prev.map((s, i) => (i === idx ? value.slice(0, STARTER_MAX) : s)));
 	};
 
+	const appendToPrompt = (sentence: string) => {
+		setPrompt((prev) => {
+			const trimmed = prev.trim();
+			if (!trimmed) return sentence;
+			// Avoid double-adding the same sentence.
+			if (trimmed.includes(sentence)) return prev;
+			const sep = /[.!?]$/.test(trimmed) ? " " : ". ";
+			const next = `${trimmed}${sep}${sentence}`;
+			return next.length > PROMPT_HARD_CAP ? prev : next;
+		});
+	};
+
 	const trimmedName = name.trim();
 	const trimmedPrompt = prompt.trim();
 	const canSave = trimmedName.length > 0 && trimmedPrompt.length > 0;
@@ -549,6 +596,23 @@ export function CharacterEditPage() {
 						less accurate.
 					</span>
 				</Tip>
+
+				<Field>
+					<Label>Add a rule</Label>
+					<ExampleChips role="list" aria-label="Example rules to add">
+						{PROMPT_EXAMPLES.map((ex) => (
+							<ExampleChip
+								key={ex.short}
+								type="button"
+								onClick={() => appendToPrompt(ex.full)}
+								title={ex.full}
+								aria-label={`Add rule: ${ex.full}`}
+							>
+								+ {ex.short}
+							</ExampleChip>
+						))}
+					</ExampleChips>
+				</Field>
 
 				<Field>
 					<Label>Conversation starters (optional)</Label>
