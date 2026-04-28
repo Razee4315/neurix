@@ -74,10 +74,20 @@ export interface Character {
 	description: string;
 	/** Material Symbols icon name (e.g. "auto_awesome"). */
 	icon: string;
+	/**
+	 * Hex color used to tint the character's icon bubble and chip.
+	 * Optional — falls back to `tokens.colors.primary` for legacy/missing data.
+	 */
+	accent_color?: string;
 	system_prompt: string;
 	temperature: number;
 	top_p: number;
 	max_tokens: number;
+	/**
+	 * Tappable example prompts shown on the empty-chat state. Each entry is a
+	 * single-line string, kept short (≤80 chars). Up to 4 are surfaced.
+	 */
+	conversation_starters?: string[];
 	is_preset: boolean;
 	created_at?: string;
 }

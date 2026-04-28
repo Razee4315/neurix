@@ -5,6 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
+import { accentOf } from "@/utils/characterAccent";
 import type { Settings } from "@/services/types";
 import { historyService, settingsService } from "@/services";
 import { tokens } from "@/theme/tokens";
@@ -282,7 +283,7 @@ export function SettingsPage() {
 								<Icon
 									name={activeCharacter?.icon ?? "auto_awesome"}
 									size={18}
-									color={tokens.colors.primary}
+									color={accentOf(activeCharacter)}
 								/>
 							</RowIcon>
 							<RowText>

@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/Toast";
 import { CharacterPicker } from "@/components/character/CharacterPicker";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
@@ -8,6 +9,7 @@ import { chatService, historyService, modelService, settingsService } from "@/se
 import type { ChatHistoryEntry } from "@/services/chatService";
 import type { Conversation, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
+import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -480,54 +482,74 @@ const StopBtn = styled.button`
 const TopBarRight = styled.div`
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.25rem;
 `;
 
 const TopBarBtn = styled.button`
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: ${tokens.borderRadius.lg};
   border: none;
-  background: ${tokens.colors.surfaceContainerHigh};
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: background ${tokens.transitions.fast};
+  -webkit-tap-highlight-color: transparent;
 
-  &:hover { background: ${tokens.colors.surfaceBright}; }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
   &:active { transform: scale(0.9); }
 `;
 
-const ModelTag = styled.span`
-  font-size: 11px;
-  font-weight: ${tokens.typography.fontWeight.semibold};
-  color: ${tokens.colors.primary};
-  padding: 0.25rem 0.5rem;
-  background: ${tokens.colors.primary}12;
-  border-radius: ${tokens.borderRadius.md};
-`;
+/* ── Subtitle (character + model) ── */
 
-const CharacterChip = styled.button`
+const SubtitleBtn = styled.button`
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem 0.25rem 0.375rem;
-  background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${tokens.colors.outlineVariant}40;
+  gap: 0.375rem;
+  padding: 0.125rem 0.5rem 0.125rem 0.25rem;
+  margin: -0.125rem 0;
+  background: transparent;
+  border: none;
   border-radius: ${tokens.borderRadius.md};
-  color: ${tokens.colors.onSurface};
-  font-size: 11px;
-  font-weight: ${tokens.typography.fontWeight.semibold};
+  color: ${tokens.colors.onSurfaceVariant};
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.medium};
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: background ${tokens.transitions.fast}, transform ${tokens.transitions.fast};
-  max-width: 110px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  transition: background ${tokens.transitions.fast};
+  max-width: 100%;
+  min-width: 0;
 
-  &:active { transform: scale(0.94); background: ${tokens.colors.surfaceContainerHighest}; }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:active { background: ${tokens.colors.surfaceContainerHighest}; }
+`;
+
+const SubtitleCharName = styled.span`
+  color: ${tokens.colors.onSurface};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 8rem;
+`;
+
+const SubtitleSep = styled.span`
+  color: ${tokens.colors.outline};
+`;
+
+const SubtitleModel = styled.span`
+  color: ${tokens.colors.primary};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 10rem;
+`;
+
+const SubtitleEmpty = styled.span`
+  color: ${tokens.colors.onSurfaceVariant};
 `;
 
 /* ── Loading Overlay ── */
@@ -635,6 +657,61 @@ const SpeedBadge = styled.span`
   display: inline-block;
 `;
 
+/* ── Conversation Starters ── */
+
+const StartersWrap = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0 0.5rem;
+`;
+
+const StartersLabel = styled.span`
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: ${tokens.typography.fontWeight.semibold};
+`;
+
+const StartersGrid = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 22rem;
+`;
+
+const StarterChip = styled.button<{ $accent: string }>`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  background: ${tokens.colors.surfaceContainerHigh};
+  border: 1px solid ${tokens.colors.outlineVariant}40;
+  border-radius: ${tokens.borderRadius.lg};
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-family: ${tokens.typography.fontFamily.body};
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform ${tokens.transitions.fast}, background ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
+  animation: ${fadeInUp} 0.3s ease-out both;
+
+  &:hover { border-color: ${({ $accent }) => $accent}60; }
+  &:active { transform: scale(0.98); background: ${tokens.colors.surfaceContainerHighest}; }
+`;
+
+const StarterArrow = styled.span<{ $accent: string }>`
+  margin-left: auto;
+  color: ${({ $accent }) => $accent};
+  display: inline-flex;
+  flex-shrink: 0;
+`;
+
 /* ── Context Notice ── */
 
 const ContextNotice = styled.div`
@@ -687,6 +764,7 @@ export function ChatPage() {
 	const location = useLocation();
 	const { activeModel, settings, refreshActiveModel } = useAppContext();
 	const { activeCharacter } = useCharacters();
+	const { showToast } = useToast();
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
 	const [isGenerating, setIsGenerating] = useState(false);
@@ -712,6 +790,19 @@ export function ChatPage() {
 	useEffect(() => { isGeneratingRef.current = isGenerating; }, [isGenerating]);
 	useEffect(() => { messagesRef.current = messages; }, [messages]);
 	useEffect(() => { activeModelRef.current = activeModel; }, [activeModel]);
+
+	// Toast when the user swaps character mid-chat. Without this, switching
+	// happens silently and the new persona only becomes visible on the next
+	// reply — easy to miss in a 12-turn coding session.
+	const lastCharIdRef = useRef<string | null>(activeCharacter?.id ?? null);
+	useEffect(() => {
+		const prev = lastCharIdRef.current;
+		const next = activeCharacter?.id ?? null;
+		if (prev && next && prev !== next && messagesRef.current.length > 0) {
+			showToast(`Now using ${activeCharacter?.name}. The next reply will use this style.`, "info");
+		}
+		lastCharIdRef.current = next;
+	}, [activeCharacter?.id, activeCharacter?.name, showToast]);
 
 	// Stop inference and save partial AI response when navigating away mid-generation
 	useEffect(() => {
@@ -1170,29 +1261,42 @@ export function ChatPage() {
 		)}
 		<AppLayout
 			title="Chat"
+			subtitle={
+				<SubtitleBtn
+					type="button"
+					onClick={() => {
+						if (!activeModel && !isLoadingModel) {
+							navigate("/models");
+						} else {
+							setPickerOpen(true);
+						}
+					}}
+					aria-label={
+						activeCharacter
+							? `Character: ${activeCharacter.name}. Model: ${activeModel ?? "none"}. Tap to change character.`
+							: "Choose character"
+					}
+					title={activeCharacter?.description || activeCharacter?.name}
+				>
+					{activeCharacter ? (
+						<>
+							<Icon name={activeCharacter.icon || "auto_awesome"} size={12} color={accentOf(activeCharacter)} />
+							<SubtitleCharName>{activeCharacter.name}</SubtitleCharName>
+						</>
+					) : (
+						<SubtitleEmpty>Choose character</SubtitleEmpty>
+					)}
+					<SubtitleSep>·</SubtitleSep>
+					{activeModel ? (
+						<SubtitleModel>{activeModel}</SubtitleModel>
+					) : (
+						<SubtitleEmpty>{isLoadingModel ? "Loading…" : "No model"}</SubtitleEmpty>
+					)}
+					<Icon name="expand_more" size={14} color={tokens.colors.onSurfaceVariant} />
+				</SubtitleBtn>
+			}
 			rightActions={
 				<TopBarRight>
-					{activeCharacter && (
-						<CharacterChip
-							type="button"
-							onClick={() => setPickerOpen(true)}
-							aria-label={`Character: ${activeCharacter.name}. Tap to change.`}
-							title={activeCharacter.description || activeCharacter.name}
-						>
-							<Icon name={activeCharacter.icon || "auto_awesome"} size={14} color={tokens.colors.primary} />
-							{activeCharacter.name}
-						</CharacterChip>
-					)}
-					{activeModel ? (
-						<ModelTag>{activeModel}</ModelTag>
-					) : (
-						<ModelTag
-							style={{ cursor: "pointer" }}
-							onClick={() => navigate("/models")}
-						>
-							{isLoadingModel ? "Loading..." : "No model"}
-						</ModelTag>
-					)}
 					{messages.length > 0 && (
 						<TopBarBtn onClick={handleShareChat} aria-label="Share chat">
 							<Icon
@@ -1222,11 +1326,50 @@ export function ChatPage() {
 			<ChatContainer>
 				<MessagesArea>
 					{messages.length === 0 && !isGenerating && !streamedText && (
-						<EmptyState
-						icon="chat_bubble"
-						message="What's on your mind?"
-						subtitle="Type a message to start chatting with your AI."
-					/>
+						<>
+							<EmptyState
+								icon={activeCharacter?.icon ?? "chat_bubble"}
+								message={
+									activeCharacter
+										? `Chat with ${activeCharacter.name}`
+										: "What's on your mind?"
+								}
+								subtitle={
+									activeCharacter?.description ||
+									"Type a message to start chatting with your AI."
+								}
+							/>
+							{activeCharacter?.conversation_starters &&
+								activeCharacter.conversation_starters.length > 0 && (
+									<StartersWrap>
+										<StartersLabel>Try asking</StartersLabel>
+										<StartersGrid>
+											{activeCharacter.conversation_starters
+												.slice(0, 4)
+												.map((starter, idx) => (
+													<StarterChip
+														key={`${starter}-${idx}`}
+														type="button"
+														$accent={accentOf(activeCharacter)}
+														onClick={() => {
+															setInput(starter);
+															// Focus + autosize once the value has been applied.
+															requestAnimationFrame(() => {
+																textareaRef.current?.focus();
+																autoResize();
+															});
+														}}
+													>
+														<span>{starter}</span>
+														<StarterArrow $accent={accentOf(activeCharacter)}>
+															<Icon name="arrow_outward" size={14} />
+														</StarterArrow>
+													</StarterChip>
+												))}
+										</StartersGrid>
+									</StartersWrap>
+								)}
+						</>
 					)}
 					{contextNotice && (
 						<ContextNotice>
