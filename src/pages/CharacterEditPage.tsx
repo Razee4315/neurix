@@ -17,6 +17,7 @@ const PROMPT_SOFT_CAP = 500; // research: small models choke on long personas
 const PROMPT_HARD_CAP = 2000;
 const STARTER_MAX = 80;
 const STARTER_COUNT = 4;
+const GREETING_MAX = 140;
 
 /* ── Prompt example phrases ── Tappable suggestions inserted into the
    personality textarea. Each is a single behaviour rule a small model can
@@ -401,6 +402,7 @@ export function CharacterEditPage() {
 	const [temperature, setTemperature] = useState(seed?.temperature ?? 0.7);
 	const [topP, setTopP] = useState(seed?.top_p ?? 0.9);
 	const [maxTokens, setMaxTokens] = useState(seed?.max_tokens ?? 512);
+	const [greeting, setGreeting] = useState(seed?.greeting ?? "");
 	const [starters, setStarters] = useState<string[]>(() => {
 		const initial = seed?.conversation_starters ?? [];
 		const padded = [...initial];
@@ -418,6 +420,7 @@ export function CharacterEditPage() {
 			setTemperature(existing.temperature);
 			setTopP(existing.top_p);
 			setMaxTokens(existing.max_tokens);
+			setGreeting(existing.greeting ?? "");
 			const initial = existing.conversation_starters ?? [];
 			const padded = [...initial];
 			while (padded.length < STARTER_COUNT) padded.push("");
@@ -451,6 +454,7 @@ export function CharacterEditPage() {
 			.map((s) => s.trim())
 			.filter((s) => s.length > 0)
 			.slice(0, STARTER_COUNT);
+		const trimmedGreeting = greeting.trim().slice(0, GREETING_MAX);
 		const character: Character = {
 			id: existing?.id ?? generateId(),
 			name: trimmedName.slice(0, NAME_MAX),
@@ -462,6 +466,7 @@ export function CharacterEditPage() {
 			top_p: topP,
 			max_tokens: maxTokens,
 			conversation_starters: cleanedStarters,
+			...(trimmedGreeting ? { greeting: trimmedGreeting } : {}),
 			is_preset: false,
 			created_at: existing?.created_at ?? new Date().toISOString(),
 		};
@@ -564,6 +569,23 @@ export function CharacterEditPage() {
 						<span>One short line under the name.</span>
 						<Counter $over={description.length >= DESC_MAX}>
 							{description.length}/{DESC_MAX}
+						</Counter>
+					</HelperRow>
+				</Field>
+
+				<Field>
+					<Label htmlFor="char-greeting">Greeting (optional)</Label>
+					<Input
+						id="char-greeting"
+						value={greeting}
+						maxLength={GREETING_MAX}
+						placeholder='e.g. "Hi! What can I help you with?"'
+						onChange={(e) => setGreeting(e.target.value)}
+					/>
+					<HelperRow>
+						<span>Shown as the first message on a fresh chat.</span>
+						<Counter $over={greeting.length >= GREETING_MAX}>
+							{greeting.length}/{GREETING_MAX}
 						</Counter>
 					</HelperRow>
 				</Field>

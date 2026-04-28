@@ -1327,18 +1327,28 @@ export function ChatPage() {
 				<MessagesArea>
 					{messages.length === 0 && !isGenerating && !streamedText && (
 						<>
-							<EmptyState
-								icon={activeCharacter?.icon ?? "chat_bubble"}
-								message={
-									activeCharacter
-										? `Chat with ${activeCharacter.name}`
-										: "What's on your mind?"
-								}
-								subtitle={
-									activeCharacter?.description ||
-									"Type a message to start chatting with your AI."
-								}
-							/>
+							{activeCharacter?.greeting ? (
+								// Pure-UI greeting bubble. Never sent to inference, so it
+								// never burns tokens or skews the context window — but it
+								// does set the tone the way Character.AI / Replika do.
+								<Bubble $role="ai" aria-label="Greeting">
+									<BubbleLabel $role="ai">{activeCharacter.name}</BubbleLabel>
+									<BubbleBody>{activeCharacter.greeting}</BubbleBody>
+								</Bubble>
+							) : (
+								<EmptyState
+									icon={activeCharacter?.icon ?? "chat_bubble"}
+									message={
+										activeCharacter
+											? `Chat with ${activeCharacter.name}`
+											: "What's on your mind?"
+									}
+									subtitle={
+										activeCharacter?.description ||
+										"Type a message to start chatting with your AI."
+									}
+								/>
+							)}
 							{activeCharacter?.conversation_starters &&
 								activeCharacter.conversation_starters.length > 0 && (
 									<StartersWrap>

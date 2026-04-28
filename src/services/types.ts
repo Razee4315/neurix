@@ -88,6 +88,11 @@ export interface Character {
 	 * single-line string, kept short (≤80 chars). Up to 4 are surfaced.
 	 */
 	conversation_starters?: string[];
+	/**
+	 * Optional opening line shown as the first AI bubble on a fresh chat.
+	 * Pure UI — never sent to inference, so it doesn't pollute context.
+	 */
+	greeting?: string;
 	is_preset: boolean;
 	created_at?: string;
 }
