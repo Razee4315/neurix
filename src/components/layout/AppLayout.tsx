@@ -13,6 +13,12 @@ interface AppLayoutProps {
 	 */
 	subtitle?: ReactNode;
 	rightActions?: ReactNode;
+	/**
+	 * When true, hides the global Neurix logo from the top bar. Use on pages
+	 * (like the chat page) where the page identity is conveyed by a richer
+	 * primary control and the small logo just adds noise.
+	 */
+	hideLogo?: boolean;
 }
 
 const Shell = styled.div`
@@ -30,7 +36,7 @@ const TopBar = styled.header<{ $hasSubtitle: boolean }>`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: ${({ $hasSubtitle }) => ($hasSubtitle ? "0.375rem 1.25rem" : "0 1.25rem")};
+  padding: ${({ $hasSubtitle }) => ($hasSubtitle ? "0.375rem 0.875rem" : "0 1rem")};
   min-height: 56px;
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLow};
@@ -81,6 +87,18 @@ const Actions = styled.div`
   flex-shrink: 0;
 `;
 
+/**
+ * Slot used when a page passes a subtitle but no title — e.g. the chat page,
+ * where the active character + model pill is the primary identifier and the
+ * word "Chat" was redundant against the bottom-nav label.
+ */
+const PrimarySlot = styled.div`
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+`;
+
 const contentSlideIn = keyframes`
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -99,18 +117,20 @@ const Content = styled.main`
   scrollbar-width: none;
 `;
 
-export function AppLayout({ children, title, subtitle, rightActions }: AppLayoutProps) {
+export function AppLayout({ children, title, subtitle, rightActions, hideLogo }: AppLayoutProps) {
 	const hasSubtitle = subtitle != null && subtitle !== false;
 	return (
 		<Shell>
-			<TopBar $hasSubtitle={hasSubtitle}>
+			<TopBar $hasSubtitle={hasSubtitle && !!title}>
 				<TitleGroup>
-					<NeurixLogo size={22} />
-					{title && (
+					{!hideLogo && <NeurixLogo size={22} />}
+					{title ? (
 						<TitleStack>
 							<PageTitle>{title}</PageTitle>
 							{hasSubtitle && <Subtitle>{subtitle}</Subtitle>}
 						</TitleStack>
+					) : (
+						hasSubtitle && <PrimarySlot>{subtitle}</PrimarySlot>
 					)}
 				</TitleGroup>
 				{rightActions && <Actions>{rightActions}</Actions>}
