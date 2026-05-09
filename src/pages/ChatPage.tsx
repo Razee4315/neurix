@@ -1337,8 +1337,40 @@ export function ChatPage() {
 	};
 
 	const handleDeleteMessage = (idx: number) => {
-		setMessages((prev) => prev.filter((_, i) => i !== idx));
+		setMessages((prev) => {
+			const next = prev.filter((_, i) => i !== idx);
+			// Persist the deletion. Without this, the trimmed message comes back
+			// the next time the conversation is reopened, since saveChat only
+			// fires on GenerationComplete.
+			if (next.length >= 2) {
+				saveChat(next);
+			}
+			return next;
+		});
 		setActiveMessageIdx(null);
+	};
+
+	/**
+	 * Edit-and-resend a user message. Drops the target message plus everything
+	 * after it from the visible history, reseeds the input box with that text,
+	 * and lets the user tap Send to regenerate. Mirrors the ChatGPT/Claude
+	 * pattern: editing a turn invalidates every reply that depended on it.
+	 */
+	const handleEditMessage = (idx: number) => {
+		if (isGenerating) return;
+		const target = messages[idx];
+		if (!target || target.role !== "user") return;
+		setActiveMessageIdx(null);
+		const trimmed = messages.slice(0, idx);
+		setMessages(trimmed);
+		setInput(target.text);
+		// Persist the truncation immediately so a navigation away doesn't lose it.
+		if (trimmed.length >= 2) saveChat(trimmed);
+		// Defer focus + autosize until the input value has applied.
+		requestAnimationFrame(() => {
+			textareaRef.current?.focus();
+			autoResize();
+		});
 	};
 
 	const handleShareChat = async () => {
@@ -1553,6 +1585,12 @@ export function ChatPage() {
 							</Bubble>
 							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
 								<MessageCopyBtn text={msg.text} />
+								{msg.role === "user" && (
+									<MsgActionBtn onClick={() => handleEditMessage(i)} aria-label="Edit and resend">
+										<Icon name="edit" size={14} />
+										Edit
+									</MsgActionBtn>
+								)}
 								<MsgActionBtn onClick={() => handleDeleteMessage(i)}>
 									<Icon name="delete" size={14} />
 									Delete
