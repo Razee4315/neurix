@@ -158,15 +158,83 @@ const ChatItem = styled.div`
   &:active { background: ${tokens.colors.surfaceContainerHighest}; }
 `;
 
-const ChatIcon = styled.div`
+const ChatIcon = styled.div<{ $accent?: string }>`
   width: 40px;
   height: 40px;
   border-radius: ${tokens.borderRadius.lg};
-  background: ${tokens.colors.surfaceContainerHighest};
+  background: ${({ $accent }) =>
+		$accent ? `${$accent}1f` : tokens.colors.surfaceContainerHighest};
+  border: 1px solid
+    ${({ $accent }) => ($accent ? `${$accent}3a` : "transparent")};
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+`;
+
+/* Skeleton row used while the conversations list is being fetched. Without
+   this the page flashes "No conversations yet" for a frame even when there
+   are dozens of entries on disk. */
+
+const skeletonShine = keyframes`
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+`;
+
+const SkeletonRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: ${tokens.colors.surfaceContainerLow};
+  border-radius: ${tokens.borderRadius.lg};
+`;
+
+const SkeletonBlock = styled.div<{ $w: string; $h: string }>`
+  width: ${({ $w }) => $w};
+  height: ${({ $h }) => $h};
+  border-radius: ${tokens.borderRadius.md};
+  background: linear-gradient(
+    90deg,
+    ${tokens.colors.surfaceContainerHigh} 0%,
+    ${tokens.colors.surfaceContainerHighest} 50%,
+    ${tokens.colors.surfaceContainerHigh} 100%
+  );
+  background-size: 200px 100%;
+  background-repeat: no-repeat;
+  animation: ${skeletonShine} 1.4s ease-in-out infinite;
+`;
+
+const SkeletonStack = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  flex: 1;
+`;
+
+const StartChatBtn = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.primary};
+  color: ${tokens.colors.onPrimaryFixed};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  border: none;
+  cursor: pointer;
+  margin-top: 0.75rem;
+  -webkit-tap-highlight-color: transparent;
+
+  &:active { transform: scale(0.96); }
+`;
+
+const EmptyWrap = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 1rem;
 `;
 
 const ChatInfo = styled.div`
@@ -265,6 +333,7 @@ export function ChatHistoryPage() {
 	const { allCharacters } = useCharacters();
 	const [search, setSearch] = useState("");
 	const [conversations, setConversations] = useState<ConversationMeta[]>([]);
+	const [isLoading, setIsLoading] = useState(true);
 	const [renamingId, setRenamingId] = useState<string | null>(null);
 	const [renameValue, setRenameValue] = useState("");
 	/**
@@ -299,8 +368,12 @@ export function ChatHistoryPage() {
 	);
 
 	const refresh = useCallback(async () => {
-		const list = await historyService.getConversations();
-		setConversations(list);
+		try {
+			const list = await historyService.getConversations();
+			setConversations(list);
+		} finally {
+			setIsLoading(false);
+		}
 	}, []);
 
 	useEffect(() => {
@@ -425,11 +498,40 @@ export function ChatHistoryPage() {
 					</FilterRail>
 				)}
 
-				{Object.keys(groups).length === 0 ? (
-					<EmptyState
-						icon="chat_bubble"
-						message={conversations.length === 0 ? "No conversations yet" : "No conversations match your search"}
-					/>
+				{isLoading ? (
+					<ChatList aria-busy="true" aria-label="Loading conversations">
+						{[0, 1, 2, 3].map((i) => (
+							<SkeletonRow key={`sk-${i}`}>
+								<SkeletonBlock $w="40px" $h="40px" />
+								<SkeletonStack>
+									<SkeletonBlock $w="60%" $h="14px" />
+									<SkeletonBlock $w="40%" $h="11px" />
+								</SkeletonStack>
+							</SkeletonRow>
+						))}
+					</ChatList>
+				) : Object.keys(groups).length === 0 ? (
+					<EmptyWrap>
+						<EmptyState
+							icon="chat_bubble"
+							message={
+								conversations.length === 0
+									? "No conversations yet"
+									: "No conversations match your search"
+							}
+							subtitle={
+								conversations.length === 0
+									? "Start a new chat — it'll auto-save here."
+									: undefined
+							}
+						/>
+						{conversations.length === 0 && (
+							<StartChatBtn type="button" onClick={() => navigate("/chat", { state: { freshChat: true } })}>
+								<Icon name="edit_square" size={16} color={tokens.colors.onPrimaryFixed} />
+								Start a chat
+							</StartChatBtn>
+						)}
+					</EmptyWrap>
 				) : (
 					Object.entries(groups).map(([label, items]) => (
 						<div key={label}>
@@ -438,15 +540,19 @@ export function ChatHistoryPage() {
 								<GroupLine />
 							</GroupLabel>
 							<ChatList>
-								{items.map((entry) => (
+								{items.map((entry) => {
+									const ch = entry.character_id ? characterById.get(entry.character_id) : undefined;
+									const accent = ch ? accentOf(ch) : undefined;
+									const iconName = ch?.icon || "chat_bubble";
+									return (
 									<ChatItem
 										key={entry.id}
 										onClick={() => {
 											if (renamingId !== entry.id) navigate("/chat", { state: { conversationId: entry.id } });
 										}}
 									>
-										<ChatIcon>
-											<Icon name="chat_bubble" size={18} color={tokens.colors.onSurfaceVariant} />
+										<ChatIcon $accent={accent}>
+											<Icon name={iconName} size={18} color={accent || tokens.colors.onSurfaceVariant} />
 										</ChatIcon>
 										<ChatInfo>
 											{renamingId === entry.id ? (
@@ -492,7 +598,8 @@ export function ChatHistoryPage() {
 											</ActionGroup>
 										)}
 									</ChatItem>
-								))}
+									);
+								})}
 							</ChatList>
 						</div>
 					))

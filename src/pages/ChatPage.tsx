@@ -508,54 +508,98 @@ const TopBarBtn = styled.button`
   &:active { transform: scale(0.9); }
 `;
 
-/* ── Subtitle (character + model) ── */
+/* ── Header pill (character + model)
 
-const SubtitleBtn = styled.button`
+   This is the primary identity element for the chat page — it replaces the
+   redundant "Chat" title, since the bottom nav already labels the section.
+   The chip behaves like a model selector at the top of ChatGPT/Claude:
+   one tap target that surfaces character name on top, model name below. ── */
+
+const HeaderPill = styled.button<{ $accent: string }>`
   display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
-  padding: 0.125rem 0.5rem 0.125rem 0.25rem;
-  margin: -0.125rem 0;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem 0.375rem 0.375rem;
   background: transparent;
   border: none;
-  border-radius: ${tokens.borderRadius.md};
-  color: ${tokens.colors.onSurfaceVariant};
-  font-size: ${tokens.typography.fontSize.xs};
-  font-weight: ${tokens.typography.fontWeight.medium};
+  border-radius: ${tokens.borderRadius.lg};
+  color: ${tokens.colors.onSurface};
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background ${tokens.transitions.fast};
   max-width: 100%;
   min-width: 0;
+  text-align: left;
 
   &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
   &:active { background: ${tokens.colors.surfaceContainerHighest}; }
 `;
 
-const SubtitleCharName = styled.span`
+const HeaderAvatar = styled.span<{ $accent: string }>`
+  width: 32px;
+  height: 32px;
+  border-radius: ${tokens.borderRadius.circle};
+  background: ${({ $accent }) => $accent}1f;
+  border: 1px solid ${({ $accent }) => $accent}40;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+`;
+
+const HeaderTextStack = styled.span`
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+`;
+
+const HeaderCharName = styled.span`
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize.base};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  line-height: 1.1;
   color: ${tokens.colors.onSurface};
-  font-weight: ${tokens.typography.fontWeight.semibold};
+  min-width: 0;
+`;
+
+const HeaderCharNameText = styled.span`
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 8rem;
+  max-width: 9rem;
 `;
 
-const SubtitleSep = styled.span`
-  color: ${tokens.colors.outline};
-`;
-
-const SubtitleModel = styled.span`
-  color: ${tokens.colors.primary};
-  font-weight: ${tokens.typography.fontWeight.semibold};
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 10rem;
-`;
-
-const SubtitleEmpty = styled.span`
+const HeaderModelLine = styled.span`
+  font-size: 11px;
+  font-weight: ${tokens.typography.fontWeight.medium};
   color: ${tokens.colors.onSurfaceVariant};
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 14rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+`;
+
+const ModelDot = styled.span<{ $on: boolean }>`
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: ${({ $on }) => ($on ? tokens.colors.secondary : tokens.colors.outline)};
+  box-shadow: ${({ $on }) =>
+		$on ? `0 0 6px ${tokens.colors.secondary}80` : "none"};
+`;
+
+const HeaderEmpty = styled.span`
+  color: ${tokens.colors.onSurfaceVariant};
+  font-weight: ${tokens.typography.fontWeight.medium};
 `;
 
 /* ── First-run coachmark — points at the subtitle so the character switcher
@@ -1165,7 +1209,7 @@ export function ChatPage() {
 				pairs.push({ user: msgs[i].text, assistant: msgs[i + 1].text });
 			}
 		}
-		// Send ALL history �� backend does token-aware truncation with the actual tokenizer
+		// Send ALL history — backend does token-aware truncation with the actual tokenizer
 		return pairs;
 	};
 
@@ -1293,8 +1337,40 @@ export function ChatPage() {
 	};
 
 	const handleDeleteMessage = (idx: number) => {
-		setMessages((prev) => prev.filter((_, i) => i !== idx));
+		setMessages((prev) => {
+			const next = prev.filter((_, i) => i !== idx);
+			// Persist the deletion. Without this, the trimmed message comes back
+			// the next time the conversation is reopened, since saveChat only
+			// fires on GenerationComplete.
+			if (next.length >= 2) {
+				saveChat(next);
+			}
+			return next;
+		});
 		setActiveMessageIdx(null);
+	};
+
+	/**
+	 * Edit-and-resend a user message. Drops the target message plus everything
+	 * after it from the visible history, reseeds the input box with that text,
+	 * and lets the user tap Send to regenerate. Mirrors the ChatGPT/Claude
+	 * pattern: editing a turn invalidates every reply that depended on it.
+	 */
+	const handleEditMessage = (idx: number) => {
+		if (isGenerating) return;
+		const target = messages[idx];
+		if (!target || target.role !== "user") return;
+		setActiveMessageIdx(null);
+		const trimmed = messages.slice(0, idx);
+		setMessages(trimmed);
+		setInput(target.text);
+		// Persist the truncation immediately so a navigation away doesn't lose it.
+		if (trimmed.length >= 2) saveChat(trimmed);
+		// Defer focus + autosize until the input value has applied.
+		requestAnimationFrame(() => {
+			textareaRef.current?.focus();
+			autoResize();
+		});
 	};
 
 	const handleShareChat = async () => {
@@ -1357,10 +1433,11 @@ export function ChatPage() {
 			</LoadingOverlay>
 		)}
 		<AppLayout
-			title="Chat"
+			hideLogo
 			subtitle={
-				<SubtitleBtn
+				<HeaderPill
 					type="button"
+					$accent={accentOf(activeCharacter ?? null)}
 					onClick={() => {
 						dismissCoach();
 						if (!activeModel && !isLoadingModel) {
@@ -1371,27 +1448,33 @@ export function ChatPage() {
 					}}
 					aria-label={
 						activeCharacter
-							? `Character: ${activeCharacter.name}. Model: ${activeModel ?? "none"}. Tap to change character.`
+							? `Character: ${activeCharacter.name}. Model: ${activeModel ?? "none"}. Tap to change.`
 							: "Choose character"
 					}
 					title={activeCharacter?.description || activeCharacter?.name}
 				>
-					{activeCharacter ? (
-						<>
-							<Icon name={activeCharacter.icon || "auto_awesome"} size={12} color={accentOf(activeCharacter)} />
-							<SubtitleCharName>{activeCharacter.name}</SubtitleCharName>
-						</>
-					) : (
-						<SubtitleEmpty>Choose character</SubtitleEmpty>
-					)}
-					<SubtitleSep>·</SubtitleSep>
-					{activeModel ? (
-						<SubtitleModel>{activeModel}</SubtitleModel>
-					) : (
-						<SubtitleEmpty>{isLoadingModel ? "Loading…" : "No model"}</SubtitleEmpty>
-					)}
-					<Icon name="expand_more" size={14} color={tokens.colors.onSurfaceVariant} />
-				</SubtitleBtn>
+					<HeaderAvatar $accent={accentOf(activeCharacter ?? null)}>
+						<Icon
+							name={activeCharacter?.icon || "auto_awesome"}
+							size={16}
+							color={accentOf(activeCharacter ?? null)}
+						/>
+					</HeaderAvatar>
+					<HeaderTextStack>
+						<HeaderCharName>
+							{activeCharacter ? (
+								<HeaderCharNameText>{activeCharacter.name}</HeaderCharNameText>
+							) : (
+								<HeaderEmpty>Choose character</HeaderEmpty>
+							)}
+							<Icon name="expand_more" size={14} color={tokens.colors.onSurfaceVariant} />
+						</HeaderCharName>
+						<HeaderModelLine>
+							<ModelDot $on={!!activeModel && !isLoadingModel} />
+							{activeModel ?? (isLoadingModel ? "Loading model…" : "No model loaded")}
+						</HeaderModelLine>
+					</HeaderTextStack>
+				</HeaderPill>
 			}
 			rightActions={
 				<TopBarRight>
@@ -1502,6 +1585,12 @@ export function ChatPage() {
 							</Bubble>
 							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
 								<MessageCopyBtn text={msg.text} />
+								{msg.role === "user" && (
+									<MsgActionBtn onClick={() => handleEditMessage(i)} aria-label="Edit and resend">
+										<Icon name="edit" size={14} />
+										Edit
+									</MsgActionBtn>
+								)}
 								<MsgActionBtn onClick={() => handleDeleteMessage(i)}>
 									<Icon name="delete" size={14} />
 									Delete
