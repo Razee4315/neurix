@@ -54,6 +54,27 @@ pub async fn get_chats_dir(base: &Path) -> Result<std::path::PathBuf, String> {
     Ok(dir)
 }
 
+/// Validate that a conversation id is a safe filename component.
+///
+/// The frontend always supplies UUIDs (or a few legacy hashes), but the id is
+/// crossing a process boundary into the filesystem. Without this check, a
+/// crafted id like `"../../etc/passwd"` would resolve outside the chats
+/// directory in `chats_dir.join(format!("{id}.json"))`. We accept only
+/// `[A-Za-z0-9_-]` and bound the length so an attacker can't smuggle path
+/// separators, NUL bytes, or oversized filenames.
+fn validate_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || id.len() > 128 {
+        return Err("Invalid conversation id".into());
+    }
+    if !id
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err("Invalid conversation id".into());
+    }
+    Ok(())
+}
+
 pub async fn list_conversations(chats_dir: &Path) -> Result<Vec<ConversationMeta>, String> {
     if !chats_dir.exists() {
         return Ok(vec![]);
@@ -85,6 +106,7 @@ pub async fn list_conversations(chats_dir: &Path) -> Result<Vec<ConversationMeta
 }
 
 pub async fn load_conversation(chats_dir: &Path, id: &str) -> Result<Option<Conversation>, String> {
+    validate_id(id)?;
     let path = chats_dir.join(format!("{}.json", id));
     if !path.exists() {
         return Ok(None);
@@ -95,6 +117,7 @@ pub async fn load_conversation(chats_dir: &Path, id: &str) -> Result<Option<Conv
 }
 
 pub async fn save_conversation(chats_dir: &Path, conversation: &Conversation) -> Result<(), String> {
+    validate_id(&conversation.id)?;
     fs::create_dir_all(chats_dir).await.map_err(|e| e.to_string())?;
     let path = chats_dir.join(format!("{}.json", conversation.id));
     let data = serde_json::to_string_pretty(conversation).map_err(|e| e.to_string())?;
@@ -103,6 +126,7 @@ pub async fn save_conversation(chats_dir: &Path, conversation: &Conversation) ->
 }
 
 pub async fn delete_conversation(chats_dir: &Path, id: &str) -> Result<(), String> {
+    validate_id(id)?;
     let path = chats_dir.join(format!("{}.json", id));
     if path.exists() {
         fs::remove_file(&path).await.map_err(|e| e.to_string())?;
@@ -118,4 +142,40 @@ pub async fn clear_all(chats_dir: &Path) -> Result<(), String> {
         info!("Cleared all conversations");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_id;
+
+    #[test]
+    fn accepts_uuid() {
+        assert!(validate_id("3f29c5d4-9c4e-4a7b-9a4c-1234567890ab").is_ok());
+    }
+
+    #[test]
+    fn accepts_hex_and_underscore() {
+        assert!(validate_id("abc_DEF-123").is_ok());
+    }
+
+    #[test]
+    fn rejects_traversal() {
+        assert!(validate_id("../../etc/passwd").is_err());
+        assert!(validate_id("..").is_err());
+        assert!(validate_id("a/b").is_err());
+        assert!(validate_id("a\\b").is_err());
+    }
+
+    #[test]
+    fn rejects_empty_and_oversized() {
+        assert!(validate_id("").is_err());
+        assert!(validate_id(&"a".repeat(129)).is_err());
+    }
+
+    #[test]
+    fn rejects_nul_and_punctuation() {
+        assert!(validate_id("abc\0").is_err());
+        assert!(validate_id("a.b").is_err());
+        assert!(validate_id("a b").is_err());
+    }
 }
