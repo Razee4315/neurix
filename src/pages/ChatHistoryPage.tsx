@@ -627,7 +627,6 @@ export function ChatHistoryPage() {
 															if (e.key === "Enter") e.currentTarget.blur();
 															if (e.key === "Escape") setRenamingId(null);
 														}}
-														// biome-ignore lint/a11y/noAutofocus: the field appears in response to the user choosing Rename
 														autoFocus
 													/>
 												) : (
