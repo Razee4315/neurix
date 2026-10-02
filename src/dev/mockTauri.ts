@@ -39,6 +39,8 @@ interface MockKnobs {
 	ramGb: number | null;
 	/** Milliseconds between streamed tokens. */
 	tokenDelayMs: number;
+	/** How many times each command has been invoked. */
+	calls: Record<string, number>;
 	/** Arguments of the most recent `run_inference` call, for inspection. */
 	lastInference: Record<string, unknown> | null;
 	/** Wipe all mock data and reload. */
@@ -176,6 +178,7 @@ const knobs: MockKnobs = {
 	stopReason: null,
 	ramGb: 8,
 	tokenDelayMs: 25,
+	calls: {},
 	lastInference: null,
 	reset: () => {
 		localStorage.removeItem(STORAGE_KEY);
@@ -470,6 +473,7 @@ const handlers: Record<string, (args: Args) => unknown> = {
 };
 
 mockIPC(async (cmd, payload) => {
+	knobs.calls[cmd] = (knobs.calls[cmd] ?? 0) + 1;
 	if (cmd === "plugin:fs|write_text_file") {
 		lastWrittenFile = new TextDecoder().decode(payload as unknown as Uint8Array);
 		return null;

@@ -77,6 +77,9 @@ const DownloadContext = createContext<DownloadContextValue>({
 export function DownloadProvider({ children }: { children: React.ReactNode }) {
 	const [downloads, setDownloads] = useState<Record<string, DownloadState>>({});
 	const [installedVersion, setInstalledVersion] = useState(0);
+	// Latest downloads for event handlers that outlive a render.
+	const downloadsRef = useRef(downloads);
+	downloadsRef.current = downloads;
 	// Model IDs with an in-flight native download.
 	const activeRef = useRef<Set<string>>(new Set());
 	// Model IDs still running their async pre-checks.
@@ -320,14 +323,10 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 			if (!isOnWifi()) {
 				for (const modelId of Array.from(activeRef.current)) {
-					setDownloads((prev) => {
-						const existing = prev[modelId];
-						if (!existing) return prev;
-						autoPausedRef.current.set(modelId, existing.model);
-						return {
-							...prev,
-							[modelId]: { ...existing, error: "Paused: WiFi connection lost. It will resume when WiFi is back." },
-						};
+					const current = downloadsRef.current[modelId];
+					if (current) autoPausedRef.current.set(modelId, current.model);
+					updateDownload(modelId, {
+						error: "Paused: WiFi connection lost. It will resume when WiFi is back.",
 					});
 					modelService.pauseDownload(modelId).catch(() => {});
 				}
@@ -352,7 +351,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 			window.removeEventListener("online", handleNetworkChange);
 			window.clearInterval(pollId);
 		};
-	}, [startDownload]);
+	}, [startDownload, updateDownload]);
 
 	const value = useMemo<DownloadContextValue>(
 		() => ({
