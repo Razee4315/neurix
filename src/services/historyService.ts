@@ -5,6 +5,11 @@ export async function getConversations(): Promise<ConversationMeta[]> {
 	return invoke("get_conversations");
 }
 
+/** Conversations whose title or any message contains `query`. */
+export async function searchConversations(query: string): Promise<ConversationMeta[]> {
+	return invoke("search_conversations", { query });
+}
+
 export async function loadConversation(id: string): Promise<Conversation | null> {
 	return invoke("load_conversation", { id });
 }

@@ -1,70 +1,72 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { modelService, settingsService, notificationService } from "@/services";
-import type { DownloadEvent, ModelInfo, Settings } from "@/services/types";
+import { modelService, notificationService, settingsService } from "@/services";
+import type { DownloadEvent, ModelInfo } from "@/services/types";
+import { isMobile } from "@/utils/platform";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
-// Network detection. We are deliberately fail-closed: if we can't prove the
-// user is on WiFi (or ethernet), we treat it as "not WiFi" and block the
-// download. The previous implementation was fail-open and let downloads
-// proceed any time conn.type was 'unknown' — common on Android WebViews —
-// which silently consumed user mobile data.
+// Network detection (mobile only). Deliberately fail-closed: if we cannot
+// prove the user is on WiFi we treat it as "not WiFi" and block, so a
+// download never silently burns mobile data.
 //
-// Returns:
 //   isWifi: true  -> confirmed WiFi/ethernet, allow download
 //   isWifi: false -> confirmed cellular OR offline, block
-//   isWifi: null  -> unknown — caller must treat this as a block when
-//                    wifi_only is enabled
-function detectNetwork(): { isWifi: boolean | null; apiAvailable: boolean } {
-	// Offline = definitely not on WiFi.
-	if (!navigator.onLine) return { isWifi: false, apiAvailable: true };
+//   isWifi: null  -> unknown; blocked when wifi_only is enabled
+//
+// Desktop WebViews do not report a connection type at all and have no
+// metered-data concept here, so desktop is always treated as unmetered.
+function detectNetwork(): boolean | null {
+	if (!navigator.onLine) return false;
+	if (!isMobile()) return true;
 
-	const nav = navigator as Navigator & {
-		connection?: { type?: string; effectiveType?: string };
-	};
-	const conn = nav.connection;
-
-	// API unavailable: cannot determine. Fail-closed.
-	if (!conn || !conn.type) return { isWifi: null, apiAvailable: false };
-
-	// Allow-list: only confirmed wired/wireless LAN counts as "WiFi".
-	if (conn.type === "wifi" || conn.type === "ethernet" || conn.type === "wimax") {
-		return { isWifi: true, apiAvailable: true };
-	}
-	// Confirmed cellular -> block.
-	if (conn.type === "cellular") {
-		return { isWifi: false, apiAvailable: true };
-	}
-	// Anything else ("unknown", "other", "none", "bluetooth"): fail-closed.
-	return { isWifi: null, apiAvailable: true };
+	const conn = (navigator as Navigator & { connection?: { type?: string } }).connection;
+	if (!conn?.type) return null;
+	if (conn.type === "wifi" || conn.type === "ethernet" || conn.type === "wimax") return true;
+	if (conn.type === "cellular") return false;
+	// "unknown", "other", "none", "bluetooth": fail-closed.
+	return null;
 }
 
-// Returns true if we are confidently on a non-metered network. Used to gate
-// downloads when wifi_only is enabled. Treats unknown as not-WiFi.
-function isOnWifi(): boolean {
-	return detectNetwork().isWifi === true;
-}
+const isOnWifi = () => detectNetwork() === true;
+
+export type DownloadStatus =
+	| "downloading"
+	| "verifying"
+	| "paused"
+	| "finished"
+	| "failed";
 
 export interface DownloadState {
+	model: ModelInfo;
 	modelId: string;
 	modelName: string;
 	sizeLabel: string;
-	status: "downloading" | "paused" | "finished" | "failed" | "cancelled";
+	status: DownloadStatus;
 	totalBytes: number;
 	downloadedBytes: number;
 	speedBps: number;
+	/** Why the download is paused or failed, when there is a reason to show. */
 	error?: string;
 }
 
 interface DownloadContextValue {
 	downloads: Record<string, DownloadState>;
+	/**
+	 * Increments whenever the set of installed models may have changed (a
+	 * download finished, or one was discarded). Pages refetch on this rather
+	 * than on every progress tick.
+	 */
+	installedVersion: number;
 	startDownload: (model: ModelInfo) => void;
 	pauseDownload: (modelId: string) => void;
 	resumeDownload: (model: ModelInfo) => void;
+	/** Stop and delete the partial file. */
 	cancelDownload: (modelId: string) => void;
+	/** Forget a finished/failed entry without touching files. */
 	removeDownload: (modelId: string) => void;
 }
 
 const DownloadContext = createContext<DownloadContextValue>({
 	downloads: {},
+	installedVersion: 0,
 	startDownload: () => {},
 	pauseDownload: () => {},
 	resumeDownload: () => {},
@@ -74,13 +76,13 @@ const DownloadContext = createContext<DownloadContextValue>({
 
 export function DownloadProvider({ children }: { children: React.ReactNode }) {
 	const [downloads, setDownloads] = useState<Record<string, DownloadState>>({});
-	// Tracks model IDs that have an active invoke call (download in progress on Rust side)
+	const [installedVersion, setInstalledVersion] = useState(0);
+	// Model IDs with an in-flight native download.
 	const activeRef = useRef<Set<string>>(new Set());
-	// Tracks model IDs that are in the process of starting (async pre-checks)
+	// Model IDs still running their async pre-checks.
 	const startingRef = useRef<Set<string>>(new Set());
-	// Stores the ModelInfo for any download we auto-paused due to WiFi loss,
-	// so we can auto-resume when WiFi returns. Cleared on user-initiated
-	// pause/cancel so we don't fight the user.
+	// Downloads WE paused because WiFi dropped, so they can auto-resume when
+	// it returns. Cleared on user pause/cancel so we never fight the user.
 	const autoPausedRef = useRef<Map<string, ModelInfo>>(new Map());
 
 	const updateDownload = useCallback((modelId: string, patch: Partial<DownloadState>) => {
@@ -91,59 +93,56 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, []);
 
+	const bumpInstalled = useCallback(() => setInstalledVersion((v) => v + 1), []);
+
 	const startDownload = useCallback((model: ModelInfo) => {
-		// Guard: don't start if already downloading or already starting
 		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
 		startingRef.current.add(model.id);
-		// User (or auto-resume) explicitly chose to start, so this is no longer
-		// an auto-paused download.
 		autoPausedRef.current.delete(model.id);
 
-		// Set UI state immediately (synchronous)
 		setDownloads((prev) => ({
 			...prev,
 			[model.id]: {
+				model,
 				modelId: model.id,
 				modelName: model.name,
 				sizeLabel: model.size_label,
 				status: "downloading",
-				totalBytes: model.size_bytes,
+				totalBytes: prev[model.id]?.totalBytes ?? model.size_bytes,
 				downloadedBytes: prev[model.id]?.downloadedBytes ?? 0,
 				speedBps: 0,
 			},
 		}));
 
-		// Run async pre-checks then start the actual download
 		(async () => {
-			// Enforce WiFi-only setting. Fail-closed: only proceed when we can
-			// CONFIRM WiFi. If detection is uncertain we block and tell the user.
+			// Enforce WiFi-only. Fail-closed: proceed only on CONFIRMED WiFi.
 			try {
-				const currentSettings: Settings = await settingsService.getSettings();
-				if (currentSettings.wifi_only) {
-					const network = detectNetwork();
-					if (network.isWifi !== true) {
+				const current = await settingsService.getSettings();
+				if (current.wifi_only) {
+					const wifi = detectNetwork();
+					if (wifi !== true) {
 						startingRef.current.delete(model.id);
-						const reason = network.isWifi === false
-							? "Mobile data detected. Connect to WiFi to download."
-							: "Could not confirm WiFi connection. Connect to a known WiFi network, or turn off WiFi-only in Settings.";
-						updateDownload(model.id, { status: "paused", error: reason });
+						updateDownload(model.id, {
+							status: "paused",
+							error: wifi === false
+								? "You're on mobile data. Connect to WiFi, or turn off WiFi-only downloads in Settings."
+								: "Couldn't confirm a WiFi connection. Connect to WiFi, or turn off WiFi-only downloads in Settings.",
+						});
 						return;
 					}
 				}
 			} catch {
-				// If settings check fails, fail-closed: don't proceed
 				startingRef.current.delete(model.id);
 				updateDownload(model.id, {
 					status: "failed",
-					error: "Could not verify network settings. Please try again.",
+					error: "Could not read your download settings. Please try again.",
 				});
 				return;
 			}
 
-			// Check available disk space
 			try {
-				const hasSpace = await settingsService.checkAvailableSpace(model.size_bytes);
-				if (!hasSpace) {
+				const remaining = model.size_bytes;
+				if (!(await settingsService.checkAvailableSpace(remaining))) {
 					startingRef.current.delete(model.id);
 					updateDownload(model.id, {
 						status: "failed",
@@ -152,98 +151,93 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 					return;
 				}
 			} catch {
-				// If space check fails, proceed anyway
+				// Space check unavailable: let the download itself report a full disk.
 			}
 
-			// Mark as active (Rust invoke is about to start)
 			activeRef.current.add(model.id);
 			startingRef.current.delete(model.id);
 
 			const handleEvent = (event: DownloadEvent) => {
 				switch (event.event) {
 					case "Started":
-						if (event.data && "total_bytes" in event.data) {
-							updateDownload(model.id, {
-								totalBytes: event.data.total_bytes,
-								status: "downloading",
-							});
+						updateDownload(model.id, {
+							totalBytes: event.data.total_bytes,
+							status: "downloading",
+							error: undefined,
+						});
+						break;
+					case "Progress": {
+						const { bytes_downloaded, total_bytes, speed_bps } = event.data;
+						updateDownload(model.id, {
+							downloadedBytes: bytes_downloaded,
+							totalBytes: total_bytes,
+							speedBps: speed_bps,
+							status: "downloading",
+						});
+						if (total_bytes > 0) {
+							notificationService.notifyDownloadProgress(
+								model.name,
+								(bytes_downloaded / total_bytes) * 100,
+							);
 						}
 						break;
-					case "Progress":
-						if (event.data && "bytes_downloaded" in event.data) {
-							updateDownload(model.id, {
-								downloadedBytes: event.data.bytes_downloaded,
-								totalBytes: event.data.total_bytes,
-								speedBps: event.data.speed_bps,
-								status: "downloading",
-							});
-						}
+					}
+					case "Verifying":
+						updateDownload(model.id, { status: "verifying", speedBps: 0 });
 						break;
 					case "Finished":
-						updateDownload(model.id, { status: "finished", speedBps: 0 });
 						activeRef.current.delete(model.id);
+						updateDownload(model.id, { status: "finished", speedBps: 0, error: undefined });
+						bumpInstalled();
 						notificationService.notifyDownloadComplete(model.name);
 						break;
-					case "Failed": {
-						const errMsg = event.data && "error" in event.data ? event.data.error : "Unknown error";
+					case "Failed":
+						activeRef.current.delete(model.id);
 						updateDownload(model.id, {
 							status: "failed",
 							speedBps: 0,
-							error: errMsg,
+							error: event.data.error,
 						});
-						activeRef.current.delete(model.id);
-						notificationService.notifyDownloadFailed(model.name, errMsg);
+						notificationService.notifyDownloadFailed(model.name, event.data.error);
 						break;
-					}
 					case "Cancelled":
-						// Preserve existing error message (e.g., from WiFi disconnect)
-						setDownloads((prev) => {
-							const existing = prev[model.id];
-							if (!existing) return prev;
-							return {
-								...prev,
-								[model.id]: {
-									...existing,
-									status: "paused",
-									speedBps: 0,
-									// Keep existing error if set, otherwise clear it
-									error: existing.error || undefined,
-								},
-							};
-						});
 						activeRef.current.delete(model.id);
+						// Keeps any reason already set (e.g. "WiFi connection lost").
+						updateDownload(model.id, { status: "paused", speedBps: 0 });
 						notificationService.clearDownloadNotification();
 						break;
 				}
 			};
 
-			// Pass our local network reading to the backend so it can refuse
-			// the download if WiFi-only is on but we couldn't confirm WiFi.
 			modelService.downloadModel(model.id, isOnWifi(), handleEvent).catch((err) => {
-				updateDownload(model.id, { status: "failed", error: String(err) });
 				activeRef.current.delete(model.id);
-				notificationService.notifyDownloadFailed(model.name, String(err));
+				// A "Failed" event may already have set the message; don't replace
+				// a specific reason with the generic rejection text.
+				setDownloads((prev) => {
+					const existing = prev[model.id];
+					if (!existing || existing.status === "failed") return prev;
+					return {
+						...prev,
+						[model.id]: { ...existing, status: "failed", speedBps: 0, error: String(err) },
+					};
+				});
 			});
 		})();
-	}, [updateDownload]);
+	}, [updateDownload, bumpInstalled]);
 
 	const pauseDownload = useCallback((modelId: string) => {
-		if (!activeRef.current.has(modelId)) return; // Nothing to pause
-		// User-initiated pause: remove from auto-resume tracker so we don't
-		// surprise them by silently resuming when WiFi comes back.
+		if (!activeRef.current.has(modelId)) return;
 		autoPausedRef.current.delete(modelId);
-		modelService.cancelDownload(modelId);
-		// Status will be set to "paused" when Cancelled event arrives
-	}, []);
+		updateDownload(modelId, { error: undefined });
+		modelService.pauseDownload(modelId).catch(() => {});
+		// Status flips to "paused" when the Cancelled event arrives.
+	}, [updateDownload]);
 
 	const resumeDownload = useCallback((model: ModelInfo) => {
-		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
-		// Always check WiFi on resume - user's data protection takes priority
 		startDownload(model);
 	}, [startDownload]);
 
 	const cancelDownload = useCallback((modelId: string) => {
-		modelService.cancelDownload(modelId);
 		activeRef.current.delete(modelId);
 		startingRef.current.delete(modelId);
 		autoPausedRef.current.delete(modelId);
@@ -253,7 +247,8 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 			delete next[modelId];
 			return next;
 		});
-	}, []);
+		modelService.discardDownload(modelId).catch(() => {}).finally(bumpInstalled);
+	}, [bumpInstalled]);
 
 	const removeDownload = useCallback((modelId: string) => {
 		setDownloads((prev) => {
@@ -263,99 +258,116 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		});
 	}, []);
 
-	// Monitor network changes and pause downloads when WiFi is lost.
-	//
-	// Android WebViews don't reliably fire navigator.connection 'change'
-	// events, so we also poll every 8s while a download is active. The poll
-	// is short-circuited when there are no active downloads.
+	// Restore downloads interrupted in an earlier session (or by a reload of
+	// the WebView) as paused entries, so they can be resumed or discarded
+	// instead of silently holding storage.
 	useEffect(() => {
-		const nav = navigator as Navigator & {
-			connection?: EventTarget & { type?: string };
-		};
-		const conn = nav.connection;
+		let cancelled = false;
+		(async () => {
+			try {
+				// A native download that outlived the WebView has no listener
+				// any more: pause it so its bytes are kept and it shows below.
+				const orphaned = await modelService.getActiveDownloads();
+				await Promise.all(orphaned.map((id) => modelService.pauseDownload(id).catch(() => {})));
 
-		const pauseAllActive = async (reason: string) => {
-			if (activeRef.current.size === 0) return;
-			// Resolve ModelInfo for each active download so we can auto-resume
-			// when WiFi returns. We only catalog-lookup once per pause event.
-			let catalog: ModelInfo[] = [];
-			try { catalog = await modelService.getCatalog(); } catch { /* best-effort */ }
-			for (const modelId of activeRef.current) {
-				const info = catalog.find((m) => m.id === modelId);
-				if (info) autoPausedRef.current.set(modelId, info);
-				modelService.cancelDownload(modelId);
+				const [partials, catalog] = await Promise.all([
+					modelService.getPartialDownloads(),
+					modelService.getCatalog(),
+				]);
+				if (cancelled) return;
 				setDownloads((prev) => {
-					const existing = prev[modelId];
-					if (!existing) return prev;
-					return {
-						...prev,
-						[modelId]: {
-							...existing,
+					const next = { ...prev };
+					for (const p of partials) {
+						const model = catalog.find((m) => m.id === p.id);
+						if (!model || next[p.id]) continue;
+						next[p.id] = {
+							model,
+							modelId: p.id,
+							modelName: p.name,
+							sizeLabel: p.size_label,
 							status: "paused",
+							totalBytes: p.total_bytes,
+							downloadedBytes: p.downloaded_bytes,
 							speedBps: 0,
-							error: reason,
-						},
-					};
+						};
+					}
+					return next;
 				});
+			} catch {
+				// Nothing to restore, or the backend is unavailable.
 			}
-			activeRef.current.clear();
-		};
+		})();
+		return () => { cancelled = true; };
+	}, []);
+
+	// Pause downloads when WiFi is lost and resume them when it returns.
+	//
+	// Android WebViews don't reliably fire navigator.connection 'change', so
+	// this also polls — but only while there is something to watch.
+	useEffect(() => {
+		if (!isMobile()) return;
+		const conn = (navigator as Navigator & { connection?: EventTarget }).connection;
 
 		const handleNetworkChange = async () => {
+			if (activeRef.current.size === 0 && autoPausedRef.current.size === 0) return;
 			let wifiOnly = false;
 			try {
-				const settings = await settingsService.getSettings();
-				wifiOnly = settings.wifi_only;
+				wifiOnly = (await settingsService.getSettings()).wifi_only;
 			} catch {
 				return;
 			}
-
 			if (!wifiOnly) return;
 
-			const onWifi = isOnWifi();
-
-			// On wifi loss: pause active downloads.
-			if (!onWifi && activeRef.current.size > 0) {
-				await pauseAllActive("Download paused: WiFi connection lost");
+			if (!isOnWifi()) {
+				for (const modelId of Array.from(activeRef.current)) {
+					setDownloads((prev) => {
+						const existing = prev[modelId];
+						if (!existing) return prev;
+						autoPausedRef.current.set(modelId, existing.model);
+						return {
+							...prev,
+							[modelId]: { ...existing, error: "Paused: WiFi connection lost. It will resume when WiFi is back." },
+						};
+					});
+					modelService.pauseDownload(modelId).catch(() => {});
+				}
 				return;
 			}
 
-			// On wifi return: resume any auto-paused downloads. User-initiated
-			// pauses are NOT in this map, so this never overrides user intent.
-			if (onWifi && autoPausedRef.current.size > 0) {
+			if (autoPausedRef.current.size > 0) {
 				const toResume = Array.from(autoPausedRef.current.values());
 				autoPausedRef.current.clear();
-				for (const model of toResume) {
-					startDownload(model);
-				}
+				for (const model of toResume) startDownload(model);
 			}
 		};
 
-		if (conn) conn.addEventListener("change", handleNetworkChange);
+		conn?.addEventListener("change", handleNetworkChange);
 		window.addEventListener("offline", handleNetworkChange);
-
-		// Polling fallback for Android WebViews where 'change' doesn't fire.
+		window.addEventListener("online", handleNetworkChange);
 		const pollId = window.setInterval(handleNetworkChange, 8000);
 
-		// Also re-check when the tab becomes visible again — Android often
-		// suspends timers in the background, so we may have missed a switch.
-		window.addEventListener("online", handleNetworkChange);
-
 		return () => {
-			if (conn) conn.removeEventListener("change", handleNetworkChange);
+			conn?.removeEventListener("change", handleNetworkChange);
 			window.removeEventListener("offline", handleNetworkChange);
 			window.removeEventListener("online", handleNetworkChange);
 			window.clearInterval(pollId);
 		};
 	}, [startDownload]);
 
-	return (
-		<DownloadContext.Provider
-			value={{ downloads, startDownload, pauseDownload, resumeDownload, cancelDownload, removeDownload }}
-		>
-			{children}
-		</DownloadContext.Provider>
+	const value = useMemo<DownloadContextValue>(
+		() => ({
+			downloads,
+			installedVersion,
+			startDownload,
+			pauseDownload,
+			resumeDownload,
+			cancelDownload,
+			removeDownload,
+		}),
+		[downloads, installedVersion, startDownload, pauseDownload, resumeDownload, cancelDownload, removeDownload],
 	);
+
+	return <DownloadContext.Provider value={value}>{children}</DownloadContext.Provider>;
 }
 
 export function useDownloads() {

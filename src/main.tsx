@@ -8,8 +8,17 @@ import { applyTheme, storedThemeId } from "./theme/themes";
 // of the default palette while settings load.
 applyTheme(storedThemeId());
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-	<React.StrictMode>
-		<App />
-	</React.StrictMode>,
-);
+async function bootstrap() {
+	// In a plain browser (no Tauri runtime) during development, install the
+	// in-memory backend so the UI can be previewed. Stripped from production.
+	if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
+		await import("./dev/mockTauri");
+	}
+	ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+		<React.StrictMode>
+			<App />
+		</React.StrictMode>,
+	);
+}
+
+bootstrap();

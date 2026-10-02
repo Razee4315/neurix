@@ -9,6 +9,7 @@ export interface ModelInfo {
 	hf_filename: string;
 	tokenizer_repo: string;
 	chat_template: ChatTemplate;
+	context_length: number;
 	company: string;
 	parameters: string;
 	quantization: string;
@@ -17,24 +18,16 @@ export interface ModelInfo {
 
 export type ChatTemplate = "Llama3" | "SmolLM" | "Gemma" | "Phi3" | "Qwen";
 
-export interface DownloadEvent {
-	event: "Started" | "Progress" | "Finished" | "Failed" | "Cancelled";
-	data?: DownloadStarted | DownloadProgress | DownloadFailed;
-}
-
-export interface DownloadStarted {
-	total_bytes: number;
-}
-
-export interface DownloadProgress {
-	bytes_downloaded: number;
-	total_bytes: number;
-	speed_bps: number;
-}
-
-export interface DownloadFailed {
-	error: string;
-}
+export type DownloadEvent =
+	| { event: "Started"; data: { total_bytes: number } }
+	| {
+			event: "Progress";
+			data: { bytes_downloaded: number; total_bytes: number; speed_bps: number };
+	  }
+	| { event: "Verifying" }
+	| { event: "Finished" }
+	| { event: "Failed"; data: { error: string } }
+	| { event: "Cancelled" };
 
 export interface DownloadedModel {
 	id: string;
@@ -44,35 +37,45 @@ export interface DownloadedModel {
 	tag: string;
 }
 
-export interface InferenceEvent {
-	event: "TokenGenerated" | "GenerationComplete" | "ContextTrimmed" | "Error";
-	data?: TokenGenerated | GenerationComplete | ContextTrimmed | InferenceError;
+/** A download interrupted in an earlier session and still on disk. */
+export interface PartialDownload {
+	id: string;
+	name: string;
+	size_label: string;
+	total_bytes: number;
+	downloaded_bytes: number;
 }
 
-export interface TokenGenerated {
-	token: string;
-	tokens_per_second: number;
+/** The model currently selected for chat. */
+export interface ActiveModel {
+	id: string;
+	name: string;
 }
 
-export interface GenerationComplete {
-	total_tokens: number;
-	duration_ms: number;
-}
+/** Why the backend stopped generating. */
+export type StopReason =
+	| "eos"
+	| "length"
+	| "cancelled"
+	| "stop_sequence"
+	| "repetition"
+	| "low_confidence";
 
-export interface ContextTrimmed {
-	pairs_dropped: number;
-}
-
-export interface InferenceError {
-	message: string;
-}
+export type InferenceEvent =
+	| { event: "TokenGenerated"; data: { token: string; tokens_per_second: number } }
+	| {
+			event: "GenerationComplete";
+			data: { total_tokens: number; duration_ms: number; stop_reason: StopReason };
+	  }
+	| { event: "ContextTrimmed"; data: { pairs_dropped: number } }
+	| { event: "Error"; data: { message: string } };
 
 export interface Character {
 	/** "preset:<slug>" for built-ins, "custom:<uuid>" for user-created. */
 	id: string;
 	name: string;
 	description: string;
-	/** Material Symbols icon name (e.g. "auto_awesome"). */
+	/** Icon name from the app's icon set (e.g. "auto_awesome"). */
 	icon: string;
 	/**
 	 * Hex color used to tint the character's icon bubble and chip.
@@ -116,6 +119,10 @@ export interface Settings {
 	top_p: number;
 	max_tokens: number;
 	font_size?: string;
+	/** Id of the color theme (see theme/themes.ts). */
+	theme?: string;
+	/** True once the first-run walkthrough has been finished or skipped. */
+	onboarding_done?: boolean;
 	last_model_id?: string | null;
 	/** ID of the character used when starting a new chat. */
 	active_character_id?: string;
@@ -126,6 +133,27 @@ export interface Settings {
 export interface StorageInfo {
 	used_bytes: number;
 	models_count: number;
+	/** Bytes held by unfinished downloads. */
+	partial_bytes: number;
+}
+
+export interface DeviceInfo {
+	/** Physical RAM in bytes, or null when the platform does not report it. */
+	total_memory_bytes: number | null;
+}
+
+/** Portable copy of the user's chats and custom characters. */
+export interface Backup {
+	kind: "neurix.backup";
+	version: 1;
+	exported_at: string;
+	custom_characters: Character[];
+	conversations: Conversation[];
+}
+
+export interface ImportSummary {
+	conversations: number;
+	characters: number;
 }
 
 export interface Conversation {
@@ -158,4 +186,6 @@ export interface ConversationMeta {
 	character_id?: string;
 	character_name?: string;
 	updated_at: string;
+	/** Excerpt around a search hit inside a message (search results only). */
+	snippet?: string;
 }
