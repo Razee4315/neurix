@@ -1,8 +1,9 @@
 import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
-import { notificationService } from "@/services";
+import { useAppContext } from "@/context/AppContext";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { vibrate } from "@/utils/platform";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { css, keyframes } from "styled-components";
@@ -27,7 +28,7 @@ const STEPS: OnboardingStep[] = [
 		headline: "Sovereign",
 		highlightWord: "intelligence.",
 		description:
-			"Download and run powerful AI models directly on your phone. No servers, no accounts, no compromise.",
+			"Download a model once and run it right here on your device. No servers, no accounts, no subscription.",
 		badge: "LOCAL PROCESSING",
 	},
 	{
@@ -37,7 +38,7 @@ const STEPS: OnboardingStep[] = [
 		headline: "Run",
 		highlightWord: "offline.",
 		description:
-			"Process everything locally on your device. No cloud storage, no internet connection required, zero latency.",
+			"After the download, no connection is needed. It works on a flight, on a mountain road, anywhere.",
 		badge: "ON-DEVICE ONLY",
 	},
 	{
@@ -47,7 +48,7 @@ const STEPS: OnboardingStep[] = [
 		headline: "Total",
 		highlightWord: "privacy.",
 		description:
-			"Your conversations never leave your device. Zero data collection, zero tracking, zero surveillance. Pick a model to get started — we recommend Llama 3.2 1B for your first try.",
+			"Your conversations never leave your device. Nothing is collected or tracked. Next, pick a model — Llama 3.2 1B is a good first one.",
 		badge: "ZERO DATA COLLECTION",
 	},
 ];
@@ -315,40 +316,42 @@ const NextButton = styled.button<{ $fullWidth: boolean }>`
 
 export function OnboardingScreen() {
 	const navigate = useNavigate();
+	const { updateSettings } = useAppContext();
 	const [currentStep, setCurrentStep] = useState(0);
 	const step = STEPS[currentStep];
 	const touchStartRef = useRef(0);
 
-	const handleNext = async () => {
-		if (navigator.vibrate) navigator.vibrate(8);
-		if (currentStep < STEPS.length - 1) {
-			setCurrentStep((s) => s + 1);
-		} else {
-			// Request notification permission before navigating to store
-			await notificationService.requestNotificationPermission();
-			navigate("/store");
-		}
+	const isFirst = currentStep === 0;
+	const isLast = currentStep === STEPS.length - 1;
+
+	// Finishing and skipping both end the tour for good: it is not shown
+	// again on the next launch.
+	const finish = () => {
+		updateSettings({ onboarding_done: true }).catch(() => {});
+		navigate("/store");
+	};
+
+	const handleNext = () => {
+		vibrate(8);
+		if (isLast) finish();
+		else setCurrentStep((s) => s + 1);
 	};
 
 	const handleBack = () => {
-		if (navigator.vibrate) navigator.vibrate(5);
-		if (currentStep > 0) {
-			setCurrentStep((s) => s - 1);
-		}
+		vibrate(5);
+		setCurrentStep((s) => Math.max(0, s - 1));
 	};
 
-	// Swipe gesture support — swipe left = next, swipe right = back
+	// Swipe left = next, swipe right = back. Swiping never finishes the tour;
+	// leaving it takes a deliberate tap.
 	const handleTouchStart = (e: React.TouchEvent) => {
 		touchStartRef.current = e.touches[0].clientX;
 	};
 	const handleTouchEnd = (e: React.TouchEvent) => {
 		const diff = e.changedTouches[0].clientX - touchStartRef.current;
-		if (diff < -60) handleNext();        // swipe left
-		else if (diff > 60) handleBack();    // swipe right
+		if (diff < -60 && !isLast) handleNext();
+		else if (diff > 60 && !isFirst) handleBack();
 	};
-
-	const isFirst = currentStep === 0;
-	const isLast = currentStep === STEPS.length - 1;
 
 	return (
 		<Container data-testid="onboarding-screen">
@@ -357,56 +360,52 @@ export function OnboardingScreen() {
 					<NeurixLogo size={28} />
 					<BrandName>NEURIX</BrandName>
 				</LogoGroup>
-				<SkipButton onClick={() => navigate("/store")}>SKIP</SkipButton>
+				<SkipButton type="button" onClick={finish}>
+					SKIP
+				</SkipButton>
 			</Header>
 
 			<MainContent onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-				<StepContent key={currentStep}>
+				<StepContent key={currentStep} aria-live="polite">
 					<IconCircle $color={step.iconColor}>
 						<Icon name={step.icon} size={36} fill color={step.iconColor} />
 					</IconCircle>
 
-					<StepLabel>Step {step.stepNumber}</StepLabel>
+					<StepLabel>
+						Step {currentStep + 1} of {STEPS.length}
+					</StepLabel>
 					<StepHeadline>
 						{step.headline} <Highlight>{step.highlightWord}</Highlight>
 					</StepHeadline>
 					<StepDescription>{step.description}</StepDescription>
 					<PrivacyBadge>
-						<Icon
-							name="verified_user"
-							size={14}
-							color={tokens.colors.secondary}
-						/>
+						<Icon name="verified_user" size={14} color={tokens.colors.secondary} />
 						<PrivacyBadgeLabel>{step.badge}</PrivacyBadgeLabel>
 					</PrivacyBadge>
 				</StepContent>
 			</MainContent>
 
 			<FooterSection>
-				<ProgressDots>
-					{STEPS.map((_, index) => (
+				<ProgressDots aria-hidden="true">
+					{STEPS.map((s, index) => (
 						<ProgressDot
-							key={`dot-${STEPS[index].stepNumber}`}
+							key={s.stepNumber}
 							$state={
-								index < currentStep
-									? "completed"
-									: index === currentStep
-										? "active"
-										: "upcoming"
+								index < currentStep ? "completed" : index === currentStep ? "active" : "upcoming"
 							}
 						/>
 					))}
 				</ProgressDots>
 
 				<ActionBar>
-					{!isFirst && <BackButton onClick={handleBack}>BACK</BackButton>}
-					<NextButton onClick={handleNext} $fullWidth={isFirst}>
-						{isLast ? "GET STARTED" : "NEXT"}
-						<Icon
-							name={isLast ? "check" : "arrow_forward"}
-							size={20}
-							color={tokens.colors.onPrimaryFixed}
-						/>
+					{!isFirst && (
+						<BackButton type="button" onClick={handleBack}>
+							BACK
+						</BackButton>
+					)}
+					<NextButton type="button" onClick={handleNext} $fullWidth={isFirst}>
+						{isLast ? "CHOOSE A MODEL" : "NEXT"}
+						<Icon name={isLast ? "check" : "arrow_forward"} size={20} />
 					</NextButton>
 				</ActionBar>
 			</FooterSection>

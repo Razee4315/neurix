@@ -1,6 +1,9 @@
+import { BootScreen } from "@/components/ui/BootScreen";
 import { Icon } from "@/components/ui/Icon";
+import { MountainScene } from "@/components/ui/Illustrations";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
-import { modelService, settingsService, notificationService } from "@/services";
+import { useAppContext } from "@/context/AppContext";
+import { modelService, notificationService, settingsService } from "@/services";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useState } from "react";
@@ -200,10 +203,18 @@ const BadgeLabel = styled.span`
 `;
 
 
+const SceneWrap = styled.div`
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  animation: ${fadeUp} 0.8s ease-out 0.1s both;
+`;
+
 /* ── Component ── */
 
 export function SplashScreen() {
 	const navigate = useNavigate();
+	const { loadModel, updateSettings } = useAppContext();
 	const [ready, setReady] = useState(false);
 
 	useEffect(() => {
@@ -219,88 +230,100 @@ export function SplashScreen() {
 				if (cancelled) return;
 
 				if (models.length > 0) {
-					// Returning user — try to load last model, then go to chat
-					let modelLoaded = false;
-					if (settings.last_model_id) {
-						const exists = models.find((m) => m.id === settings.last_model_id);
-						if (exists) {
-							try {
-								await modelService.loadModel(exists.id);
-								modelLoaded = true;
-							} catch {
-								// model load failed
-							}
-						}
+					// Returning user: load the last-used model (through the app
+					// context, so the rest of the UI knows it is loaded), then chat.
+					const target = models.find((m) => m.id === settings.last_model_id) ?? models[0];
+					try {
+						await loadModel(target.id);
+						if (!cancelled) navigate("/chat", { replace: true });
+					} catch {
+						if (!cancelled) navigate("/models", { replace: true });
 					}
-					navigate(modelLoaded ? "/chat" : "/models", { replace: true });
+					return;
+				}
+
+				// No model yet. Someone who already saw the walkthrough goes
+				// straight to the store instead of sitting through it again.
+				if (settings.onboarding_done) {
+					navigate("/store", { replace: true });
 					return;
 				}
 			} catch {
-				// first launch or error — show splash
+				// First launch or a backend error: fall through to the welcome screen.
 			}
 
 			if (!cancelled) setReady(true);
 		})();
 
-		return () => { cancelled = true; };
-	}, [navigate]);
+		return () => {
+			cancelled = true;
+		};
+	}, [navigate, loadModel]);
 
-	// Show a branded loading screen while the app boots (instead of blank white/black screen)
-	if (!ready) return (
-		<Container>
-			<HeroSection>
-				<LogoBlock>
-					<LogoWrapper>
-						<NeurixLogo size={64} />
-					</LogoWrapper>
-					<BrandName>
-						NEU<span>RIX</span>
-					</BrandName>
-				</LogoBlock>
-			</HeroSection>
-		</Container>
-	);
+	if (!ready) return <BootScreen />;
 
 	return (
 		<Container data-testid="splash-screen">
 			<HeroSection>
 				<LogoBlock>
 					<LogoWrapper>
-						<NeurixLogo size={80} />
+						<NeurixLogo size={72} />
 					</LogoWrapper>
 					<BrandName>
 						NEU<span>RIX</span>
 					</BrandName>
 				</LogoBlock>
 
+				<SceneWrap>
+					<MountainScene />
+				</SceneWrap>
+
 				<TextBlock>
 					<Headline>
-						Your AI. Your phone. <AccentText>No cloud.</AccentText>
+						Your AI. Your device. <AccentText>No cloud.</AccentText>
 					</Headline>
 					<Subtitle>
-						Sovereign intelligence processed entirely on-device. Zero data
-						leaving your hardware.
+						Download a model once, then chat anywhere — on a mountain road, on a
+						flight, with no signal at all.
 					</Subtitle>
 				</TextBlock>
 			</HeroSection>
 
 			<Footer>
 				<GetStartedButton
+					type="button"
 					onClick={() => navigate("/onboarding")}
 					data-testid="get-started-button"
 				>
-					Get Started
+					Get started
 				</GetStartedButton>
+				<SkipLink
+					type="button"
+					onClick={() => {
+						updateSettings({ onboarding_done: true }).catch(() => {});
+						navigate("/store");
+					}}
+				>
+					Skip the tour
+				</SkipLink>
 				<SecurityBadge>
-					<Icon
-						name="verified_user"
-						size={14}
-						fill
-						color={tokens.colors.secondary}
-					/>
-					<BadgeLabel>100% Private</BadgeLabel>
+					<Icon name="verified_user" size={14} fill color={tokens.colors.secondary} />
+					<BadgeLabel>100% private · works offline</BadgeLabel>
 				</SecurityBadge>
 			</Footer>
 		</Container>
 	);
 }
+
+const SkipLink = styled.button`
+  border: none;
+  background: transparent;
+  color: ${tokens.colors.onSurfaceVariant};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  padding: 0.5rem;
+  cursor: pointer;
+  align-self: center;
+
+  &:hover { color: ${tokens.colors.onSurface}; }
+`;

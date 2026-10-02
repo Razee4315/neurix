@@ -8,7 +8,8 @@
       "suspicious": { "noExplicitAny": "error", "noImplicitAnyLet": "error" },
       "correctness": { "noUnusedVariables": "error", "noUnusedImports": "error", "useExhaustiveDependencies": "warn" },
       "style": { "noNonNullAssertion": "warn", "useConst": "error", "useTemplate": "warn" },
-      "complexity": { "noExcessiveCognitiveComplexity": "off", "noForEach": "off" }
+      "complexity": { "noExcessiveCognitiveComplexity": "off", "noForEach": "off" },
+      "a11y": { "useSemanticElements": "off" }
     }
   },
   "formatter": {
