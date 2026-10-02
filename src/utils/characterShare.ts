@@ -1,4 +1,6 @@
+import { isKnownIcon } from "@/components/ui/Icon";
 import type { Character } from "@/services/types";
+import { LIMITS } from "./characterLimits";
 
 /**
  * Versioned wire format for shared characters.
@@ -90,33 +92,38 @@ export function parseShared(input: string): ParseResult {
 	if (!isNumberInRange(c.top_p, 0, 1)) {
 		return { ok: false, error: "Invalid top-p value." };
 	}
-	if (!isNumberInRange(c.max_tokens, 16, 8192)) {
+	if (!isNumberInRange(c.max_tokens, LIMITS.maxTokensMin, 8192)) {
 		return { ok: false, error: "Invalid max tokens value." };
 	}
 
 	const draft: Omit<Character, "id" | "created_at"> = {
-		name: c.name.trim().slice(0, 64),
-		description: isString(c.description) ? c.description.trim().slice(0, 120) : "",
-		icon: c.icon,
+		name: c.name.trim().slice(0, LIMITS.name),
+		description: isString(c.description) ? c.description.trim().slice(0, LIMITS.description) : "",
+		// The icon is rendered by name; anything outside the icon set would
+		// show as a blank or wrong glyph, so fall back to a neutral one.
+		icon: isKnownIcon(c.icon) ? c.icon : "person",
 		accent_color:
 			isString(c.accent_color) && /^#[0-9a-fA-F]{6}$/.test(c.accent_color)
 				? c.accent_color
 				: undefined,
-		system_prompt: c.system_prompt.trim().slice(0, 4000),
+		system_prompt: c.system_prompt.trim().slice(0, LIMITS.prompt),
 		temperature: c.temperature,
 		top_p: c.top_p,
-		max_tokens: Math.round(c.max_tokens),
+		// Older exports could carry a reply length larger than a model's
+		// context can serve; clamp instead of rejecting the whole character.
+		max_tokens: Math.min(Math.round(c.max_tokens), LIMITS.maxTokensMax),
 		conversation_starters:
 			Array.isArray(c.conversation_starters)
 				? c.conversation_starters
 						.filter(isString)
 						.map((s) => s.trim())
 						.filter((s) => s.length > 0)
-						.slice(0, 4)
+						.map((s) => s.slice(0, LIMITS.starter))
+						.slice(0, LIMITS.starterCount)
 				: undefined,
 		greeting:
 			isString(c.greeting) && c.greeting.trim().length > 0
-				? c.greeting.trim().slice(0, 200)
+				? c.greeting.trim().slice(0, LIMITS.greeting)
 				: undefined,
 		// Imported characters are always custom on the recipient's side,
 		// even if the source happened to be a preset. We strip is_preset on

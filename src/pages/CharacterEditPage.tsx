@@ -9,19 +9,22 @@ import type { Character, InferenceEvent } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { ACCENT_PALETTE, DEFAULT_ACCENT } from "@/utils/characterAccent";
+import { LIMITS } from "@/utils/characterLimits";
 import { cleanResponse } from "@/utils/cleanResponse";
+import { shortId } from "@/utils/format";
+import { vibrate } from "@/utils/platform";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
 /* ── Limits ── */
-const NAME_MAX = 32;
-const DESC_MAX = 60;
-const PROMPT_SOFT_CAP = 500; // research: small models choke on long personas
-const PROMPT_HARD_CAP = 2000;
-const STARTER_MAX = 80;
-const STARTER_COUNT = 4;
-const GREETING_MAX = 140;
+const NAME_MAX = LIMITS.name;
+const DESC_MAX = LIMITS.description;
+const PROMPT_SOFT_CAP = LIMITS.promptSoft;
+const PROMPT_HARD_CAP = LIMITS.prompt;
+const STARTER_MAX = LIMITS.starter;
+const STARTER_COUNT = LIMITS.starterCount;
+const GREETING_MAX = LIMITS.greeting;
 
 /**
  * Fixed prompt used by the "Try it" button. Deliberately neutral so it
@@ -43,7 +46,7 @@ const PROMPT_EXAMPLES: ReadonlyArray<{ short: string; full: string }> = [
 	{ short: "Cite the source", full: "If you're unsure, say so. Don't invent facts." },
 ];
 
-/* ── Available icons ── A curated grid of Material Symbols. We don't expose
+/* ── Available icons ── A curated grid from the icon set. We don't expose
    the full icon font because the picker becomes overwhelming and most icons
    look weird as a "character." ─ */
 const ICON_CHOICES = [
@@ -428,8 +431,7 @@ const SoftCapWarning = styled.div`
 
 /* ── Slider helpers ──
  * Plain-language labels so non-technical users can pick values without
- * understanding sampling theory. Bands are conservative — Anthropic Console,
- * OpenAI Playground, and llama.cpp's UI all chunk temperature similarly.
+ * understanding sampling theory.
  */
 
 function temperatureBand(t: number): string {
@@ -446,16 +448,58 @@ function topPBand(p: number): string {
 }
 
 function maxTokensBand(n: number): string {
-	if (n <= 256) return `≈ ${Math.round(n * 0.75)} words`;
-	if (n <= 768) return `≈ ${Math.round(n * 0.75)} words`;
-	return `≈ ${Math.round(n * 0.75)} words (long)`;
+	const words = `≈ ${Math.round(n * 0.75)} words`;
+	return n > 768 ? `${words} (long)` : words;
+}
+
+const SecondaryBtn = styled.button`
+  padding: 0.75rem 1.25rem;
+  border-radius: ${tokens.borderRadius.xl};
+  border: 1px solid ${tokens.colors.outlineVariant};
+  background: transparent;
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  cursor: pointer;
+
+  &:active { transform: scale(0.97); }
+`;
+
+interface Draft {
+	name: string;
+	description: string;
+	icon: string;
+	accentColor: string;
+	prompt: string;
+	temperature: number;
+	topP: number;
+	maxTokens: number;
+	greeting: string;
+	starters: string[];
+}
+
+function padStarters(list: string[] | undefined): string[] {
+	const padded = [...(list ?? [])];
+	while (padded.length < STARTER_COUNT) padded.push("");
+	return padded.slice(0, STARTER_COUNT);
+}
+
+function draftFrom(seed: Character | undefined, name: string): Draft {
+	return {
+		name,
+		description: seed?.description ?? "",
+		icon: seed?.icon ?? ICON_CHOICES[0],
+		accentColor: seed?.accent_color ?? DEFAULT_ACCENT,
+		prompt: seed?.system_prompt ?? "",
+		temperature: seed?.temperature ?? 0.7,
+		topP: seed?.top_p ?? 0.9,
+		maxTokens: Math.min(seed?.max_tokens ?? 512, LIMITS.maxTokensMax),
+		greeting: seed?.greeting ?? "",
+		starters: padStarters(seed?.conversation_starters),
+	};
 }
 
 /* ── Component ── */
-
-function generateId() {
-	return `custom:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-}
 
 export function CharacterEditPage() {
 	const navigate = useNavigate();
@@ -465,8 +509,8 @@ export function CharacterEditPage() {
 	const fromTemplateId = params.get("from");
 	const isEditing = !!idFromQuery;
 
-	const { allCharacters, customs, saveCustom, deleteCustom } = useCharacters();
-	const { activeModel } = useAppContext();
+	const { allCharacters, customs, saveCustom, deleteCustom, loaded } = useCharacters();
+	const { activeModelId } = useAppContext();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
 
@@ -487,42 +531,40 @@ export function CharacterEditPage() {
 
 	const seed = existing ?? template;
 	const seedName = existing?.name ?? (template ? `${template.name} (copy)` : "");
-	const [name, setName] = useState(seedName);
-	const [description, setDescription] = useState(seed?.description ?? "");
-	const [icon, setIcon] = useState(seed?.icon ?? ICON_CHOICES[0]);
-	const [accentColor, setAccentColor] = useState(seed?.accent_color ?? DEFAULT_ACCENT);
-	const [prompt, setPrompt] = useState(seed?.system_prompt ?? "");
-	const [temperature, setTemperature] = useState(seed?.temperature ?? 0.7);
-	const [topP, setTopP] = useState(seed?.top_p ?? 0.9);
-	const [maxTokens, setMaxTokens] = useState(seed?.max_tokens ?? 512);
-	const [greeting, setGreeting] = useState(seed?.greeting ?? "");
-	const [starters, setStarters] = useState<string[]>(() => {
-		const initial = seed?.conversation_starters ?? [];
-		const padded = [...initial];
-		while (padded.length < STARTER_COUNT) padded.push("");
-		return padded.slice(0, STARTER_COUNT);
-	});
 
+	// `initial` is what the form started from; comparing against it tells us
+	// whether there is anything unsaved.
+	const [initial, setInitial] = useState<Draft>(() => draftFrom(seed, seedName));
+	const [draft, setDraft] = useState<Draft>(initial);
+	const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
+		setDraft((d) => ({ ...d, [key]: value }));
+
+	// Characters load asynchronously; fill the form once the one being edited
+	// (or copied) is available. Keyed on the id so later settings refreshes
+	// don't wipe what the user is typing.
+	const seededFor = useRef<string | null>(seed ? seed.id : null);
 	useEffect(() => {
-		if (existing) {
-			setName(existing.name);
-			setDescription(existing.description);
-			setIcon(existing.icon);
-			setAccentColor(existing.accent_color ?? DEFAULT_ACCENT);
-			setPrompt(existing.system_prompt);
-			setTemperature(existing.temperature);
-			setTopP(existing.top_p);
-			setMaxTokens(existing.max_tokens);
-			setGreeting(existing.greeting ?? "");
-			const initial = existing.conversation_starters ?? [];
-			const padded = [...initial];
-			while (padded.length < STARTER_COUNT) padded.push("");
-			setStarters(padded.slice(0, STARTER_COUNT));
-		}
-	}, [existing]);
+		if (!seed || seededFor.current === seed.id) return;
+		seededFor.current = seed.id;
+		const next = draftFrom(seed, seedName);
+		setInitial(next);
+		setDraft(next);
+	}, [seed, seedName]);
 
-	const updateStarter = (idx: number, value: string) => {
-		setStarters((prev) => prev.map((s, i) => (i === idx ? value.slice(0, STARTER_MAX) : s)));
+	const isDirty = JSON.stringify(draft) !== JSON.stringify(initial);
+
+	const leave = async () => {
+		if (isDirty) {
+			const ok = await showConfirm({
+				title: "Discard changes?",
+				message: "This character has changes that haven't been saved.",
+				confirmLabel: "Discard",
+				cancelLabel: "Keep editing",
+				danger: true,
+			});
+			if (!ok) return;
+		}
+		navigate(-1);
 	};
 
 	/* ── Try it (live test) ── */
@@ -530,69 +572,59 @@ export function CharacterEditPage() {
 	const [testing, setTesting] = useState(false);
 	const [testOutput, setTestOutput] = useState("");
 	const [testError, setTestError] = useState<string | null>(null);
-	const testOutputRef = useRef("");
+	const testingRef = useRef(false);
+	testingRef.current = testing;
 
-	useEffect(() => {
-		testOutputRef.current = testOutput;
-	}, [testOutput]);
-
-	// Stop any in-flight test if the user navigates away mid-stream.
+	// Stop an in-flight test if the user leaves mid-stream.
 	useEffect(() => {
 		return () => {
-			// Best-effort: if we're still streaming on unmount, tell the
-			// engine to stop. The component won't see the events, but the
-			// model frees its slot.
-			chatService.stopInference().catch(() => {});
+			if (testingRef.current) chatService.stopInference().catch(() => {});
 		};
 	}, []);
 
 	const onTestEvent = useCallback((event: InferenceEvent) => {
-		const data = event.data;
 		switch (event.event) {
-			case "TokenGenerated": {
-				const d = data as { token: string };
-				setTestOutput((prev) => prev + d.token);
+			case "TokenGenerated":
+				setTestOutput((prev) => prev + event.data.token);
 				break;
-			}
-			case "GenerationComplete": {
+			case "GenerationComplete":
 				setTesting(false);
 				setTestOutput((prev) => cleanResponse(prev) || prev);
 				break;
-			}
-			case "Error": {
-				const d = data as { message: string };
+			case "Error":
 				setTesting(false);
-				setTestError(d.message);
+				setTestError(event.data.message);
 				setTestOutput("");
 				break;
-			}
-			// ContextTrimmed cannot fire here — we send no history.
+			// ContextTrimmed cannot fire here — no history is sent.
 		}
 	}, []);
 
 	const handleTry = async () => {
 		if (testing) return;
-		if (!activeModel) {
-			showToast("Load a model from the Models tab first.", "info");
+		if (!activeModelId) {
+			showToast("Load a model from the Models tab to test this character.", "info");
 			return;
 		}
-		const trimmedPromptDraft = prompt.trim();
-		if (!trimmedPromptDraft) {
+		const instructions = draft.prompt.trim();
+		if (!instructions) {
 			showToast("Add some instructions first.", "info");
 			return;
 		}
-		if (navigator.vibrate) navigator.vibrate(8);
+		vibrate(8);
 		setTestError(null);
 		setTestOutput("");
 		setTesting(true);
 		try {
 			await chatService.runInference(
-				TEST_PROMPT,
-				trimmedPromptDraft,
-				[],
-				temperature,
-				topP,
-				maxTokens,
+				{
+					prompt: TEST_PROMPT,
+					systemPrompt: instructions,
+					history: [],
+					temperature: draft.temperature,
+					topP: draft.topP,
+					maxTokens: draft.maxTokens,
+				},
 				onTestEvent,
 			);
 		} catch (err) {
@@ -607,50 +639,53 @@ export function CharacterEditPage() {
 	};
 
 	const appendToPrompt = (sentence: string) => {
-		setPrompt((prev) => {
-			const trimmed = prev.trim();
-			if (!trimmed) return sentence;
+		setDraft((d) => {
+			const trimmed = d.prompt.trim();
+			if (!trimmed) return { ...d, prompt: sentence };
 			// Avoid double-adding the same sentence.
-			if (trimmed.includes(sentence)) return prev;
+			if (trimmed.includes(sentence)) return d;
 			const sep = /[.!?]$/.test(trimmed) ? " " : ". ";
 			const next = `${trimmed}${sep}${sentence}`;
-			return next.length > PROMPT_HARD_CAP ? prev : next;
+			return next.length > PROMPT_HARD_CAP ? d : { ...d, prompt: next };
 		});
 	};
 
-	const trimmedName = name.trim();
-	const trimmedPrompt = prompt.trim();
+	const trimmedName = draft.name.trim();
+	const trimmedPrompt = draft.prompt.trim();
 	const canSave = trimmedName.length > 0 && trimmedPrompt.length > 0;
+	const [saving, setSaving] = useState(false);
 
 	const handleSave = async () => {
-		if (!canSave) return;
-		const cleanedStarters = starters
-			.map((s) => s.trim())
-			.filter((s) => s.length > 0)
-			.slice(0, STARTER_COUNT);
-		const trimmedGreeting = greeting.trim().slice(0, GREETING_MAX);
+		if (!canSave || saving) return;
+		const trimmedGreeting = draft.greeting.trim().slice(0, GREETING_MAX);
 		const character: Character = {
-			id: existing?.id ?? generateId(),
+			id: existing?.id ?? `custom:${shortId()}`,
 			name: trimmedName.slice(0, NAME_MAX),
-			description: description.trim().slice(0, DESC_MAX),
-			icon,
-			accent_color: accentColor,
+			description: draft.description.trim().slice(0, DESC_MAX),
+			icon: draft.icon,
+			accent_color: draft.accentColor,
 			system_prompt: trimmedPrompt.slice(0, PROMPT_HARD_CAP),
-			temperature,
-			top_p: topP,
-			max_tokens: maxTokens,
-			conversation_starters: cleanedStarters,
+			temperature: draft.temperature,
+			top_p: draft.topP,
+			max_tokens: draft.maxTokens,
+			conversation_starters: draft.starters
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0)
+				.slice(0, STARTER_COUNT),
 			...(trimmedGreeting ? { greeting: trimmedGreeting } : {}),
 			is_preset: false,
 			created_at: existing?.created_at ?? new Date().toISOString(),
+			...(existing?.last_used_at ? { last_used_at: existing.last_used_at } : {}),
 		};
+		setSaving(true);
 		try {
 			await saveCustom(character);
 			showToast(isEditing ? "Character updated" : "Character created", "success");
-			if (navigator.vibrate) navigator.vibrate(8);
+			vibrate(8);
 			navigate(-1);
 		} catch {
-			showToast("Couldn't save character", "error");
+			showToast("Couldn't save the character. Your changes are still here.", "error");
+			setSaving(false);
 		}
 	};
 
@@ -673,23 +708,30 @@ export function CharacterEditPage() {
 		}
 	};
 
+	// Editing a character that no longer exists (deleted, or a stale link):
+	// there is nothing to edit, so go back to chat instead of a blank form.
+	if (isEditing && loaded && !existing) return <Navigate to="/chat" replace />;
+
+	const { name, description, icon, accentColor, prompt, temperature, topP, maxTokens, greeting, starters } = draft;
+
 	return (
-		<AppLayout title={isEditing ? "Edit character" : "New character"}>
+		<AppLayout title={isEditing ? "Edit character" : "New character"} back={leave}>
 			<Page>
 				<Field>
-					<Label>Icon</Label>
-					<IconGrid>
-						{ICON_CHOICES.map((name) => (
+					<Label id="icon-label">Icon</Label>
+					<IconGrid role="radiogroup" aria-labelledby="icon-label">
+						{ICON_CHOICES.map((choice) => (
 							<IconCell
-								key={name}
+								key={choice}
 								type="button"
-								$active={icon === name}
+								role="radio"
+								$active={icon === choice}
 								$accent={accentColor}
-								onClick={() => setIcon(name)}
-								aria-label={`Use ${name} icon`}
-								aria-pressed={icon === name}
+								onClick={() => set("icon", choice)}
+								aria-label={choice.replace(/_/g, " ")}
+								aria-checked={icon === choice}
 							>
-								<Icon name={name} size={22} />
+								<Icon name={choice} size={22} />
 							</IconCell>
 						))}
 					</IconGrid>
@@ -704,7 +746,7 @@ export function CharacterEditPage() {
 								type="button"
 								$color={c.value}
 								$active={accentColor === c.value}
-								onClick={() => setAccentColor(c.value)}
+								onClick={() => set("accentColor", c.value)}
 								role="radio"
 								aria-checked={accentColor === c.value}
 								aria-label={c.label}
@@ -720,7 +762,8 @@ export function CharacterEditPage() {
 						value={name}
 						maxLength={NAME_MAX}
 						placeholder="e.g. Brainstorm Buddy"
-						onChange={(e) => setName(e.target.value)}
+						onChange={(e) => set("name", e.target.value)}
+						required
 					/>
 					<HelperRow>
 						<span>Shown in the picker.</span>
@@ -737,7 +780,7 @@ export function CharacterEditPage() {
 						value={description}
 						maxLength={DESC_MAX}
 						placeholder="Brief tagline"
-						onChange={(e) => setDescription(e.target.value)}
+						onChange={(e) => set("description", e.target.value)}
 					/>
 					<HelperRow>
 						<span>One short line under the name.</span>
@@ -754,10 +797,10 @@ export function CharacterEditPage() {
 						value={greeting}
 						maxLength={GREETING_MAX}
 						placeholder='e.g. "Hi! What can I help you with?"'
-						onChange={(e) => setGreeting(e.target.value)}
+						onChange={(e) => set("greeting", e.target.value)}
 					/>
 					<HelperRow>
-						<span>Shown as the first message on a fresh chat.</span>
+						<span>Shown at the top of a fresh chat.</span>
 						<Counter $over={greeting.length >= GREETING_MAX}>
 							{greeting.length}/{GREETING_MAX}
 						</Counter>
@@ -771,7 +814,8 @@ export function CharacterEditPage() {
 						value={prompt}
 						maxLength={PROMPT_HARD_CAP}
 						placeholder='e.g. "Reply in a warm, casual tone. Use plain language and contractions."'
-						onChange={(e) => setPrompt(e.target.value)}
+						onChange={(e) => set("prompt", e.target.value)}
+						required
 					/>
 					<HelperRow>
 						<span>Describe tone and style — short is better.</span>
@@ -811,38 +855,25 @@ export function CharacterEditPage() {
 								Stop
 							</TestStop>
 						) : (
-							<TestBtn
-								type="button"
-								onClick={handleTry}
-								disabled={!prompt.trim()}
-								$accent={accentColor}
-								aria-label="Test this character with a sample prompt"
-							>
+							<TestBtn type="button" onClick={handleTry} disabled={!prompt.trim()} $accent={accentColor}>
 								<Icon name="play_arrow" size={16} color={accentColor} />
 								Test sample reply
 							</TestBtn>
 						)}
 					</TestRow>
-					{(testing || testOutput || testError) && (
-						<>
-							{testError ? (
-								<TestErrorBox>{testError}</TestErrorBox>
-							) : (
-								<TestPanel $accent={accentColor}>
-									{testOutput ? (
-										testOutput
-									) : (
-										<TestEmpty>Generating…</TestEmpty>
-									)}
-								</TestPanel>
-							)}
-						</>
-					)}
+					{(testing || testOutput || testError) &&
+						(testError ? (
+							<TestErrorBox role="alert">{testError}</TestErrorBox>
+						) : (
+							<TestPanel $accent={accentColor} aria-live="polite">
+								{testOutput || <TestEmpty>Generating…</TestEmpty>}
+							</TestPanel>
+						))}
 				</Field>
 
 				<Field>
 					<Label>Add a rule</Label>
-					<ExampleChips role="list" aria-label="Example rules to add">
+					<ExampleChips>
 						{PROMPT_EXAMPLES.map((ex) => (
 							<ExampleChip
 								key={ex.short}
@@ -860,7 +891,8 @@ export function CharacterEditPage() {
 				<Field>
 					<Label>Conversation starters (optional)</Label>
 					{starters.map((value, idx) => (
-						<StarterRow key={`starter-${idx}`}>
+						// biome-ignore lint/suspicious/noArrayIndexKey: fixed-length list of slots, never reordered
+						<StarterRow key={idx}>
 							<StarterInput
 								value={value}
 								maxLength={STARTER_MAX}
@@ -871,14 +903,19 @@ export function CharacterEditPage() {
 											? "e.g. Quiz me on what I just learned"
 											: "Optional"
 								}
-								onChange={(e) => updateStarter(idx, e.target.value)}
+								onChange={(e) =>
+									set(
+										"starters",
+										starters.map((s, i) => (i === idx ? e.target.value.slice(0, STARTER_MAX) : s)),
+									)
+								}
 								aria-label={`Starter ${idx + 1}`}
 							/>
 							<StarterClearBtn
 								type="button"
 								disabled={value.length === 0}
 								aria-label={`Clear starter ${idx + 1}`}
-								onClick={() => updateStarter(idx, "")}
+								onClick={() => set("starters", starters.map((s, i) => (i === idx ? "" : s)))}
 							>
 								<Icon name="close" size={16} />
 							</StarterClearBtn>
@@ -889,7 +926,9 @@ export function CharacterEditPage() {
 					</HelperRow>
 				</Field>
 
-				<SectionDivider><SectionLabel>Advanced</SectionLabel></SectionDivider>
+				<SectionDivider>
+					<SectionLabel>Advanced</SectionLabel>
+				</SectionDivider>
 
 				<SliderRow>
 					<SliderHeader>
@@ -897,9 +936,12 @@ export function CharacterEditPage() {
 						<SliderValue>{temperature.toFixed(2)}</SliderValue>
 					</SliderHeader>
 					<Slider
-						type="range" min="0" max="2" step="0.05"
+						type="range"
+						min="0"
+						max="2"
+						step="0.05"
 						value={temperature}
-						onChange={(e) => setTemperature(Number.parseFloat(e.target.value))}
+						onChange={(e) => set("temperature", Number.parseFloat(e.target.value))}
 						aria-label="Creativity (temperature)"
 						aria-valuetext={`${temperatureBand(temperature)} (${temperature.toFixed(2)})`}
 					/>
@@ -915,9 +957,12 @@ export function CharacterEditPage() {
 						<SliderValue>{topP.toFixed(2)}</SliderValue>
 					</SliderHeader>
 					<Slider
-						type="range" min="0.05" max="1" step="0.05"
+						type="range"
+						min="0.05"
+						max="1"
+						step="0.05"
 						value={topP}
-						onChange={(e) => setTopP(Number.parseFloat(e.target.value))}
+						onChange={(e) => set("topP", Number.parseFloat(e.target.value))}
 						aria-label="Word variety (top-p)"
 						aria-valuetext={`${topPBand(topP)} (${topP.toFixed(2)})`}
 					/>
@@ -933,9 +978,12 @@ export function CharacterEditPage() {
 						<SliderValue>{maxTokens}</SliderValue>
 					</SliderHeader>
 					<Slider
-						type="range" min="64" max="2048" step="32"
+						type="range"
+						min={LIMITS.maxTokensMin}
+						max={LIMITS.maxTokensMax}
+						step="32"
 						value={maxTokens}
-						onChange={(e) => setMaxTokens(Number.parseInt(e.target.value, 10))}
+						onChange={(e) => set("maxTokens", Number.parseInt(e.target.value, 10))}
 						aria-label="Reply length (max tokens)"
 						aria-valuetext={`${maxTokens} tokens, ${maxTokensBand(maxTokens)}`}
 					/>
@@ -947,10 +995,15 @@ export function CharacterEditPage() {
 
 				<Actions>
 					{isEditing && existing && (
-						<DangerBtn type="button" onClick={handleDelete}>Delete</DangerBtn>
+						<DangerBtn type="button" onClick={handleDelete}>
+							Delete
+						</DangerBtn>
 					)}
-					<PrimaryBtn type="button" onClick={handleSave} disabled={!canSave}>
-						{isEditing ? "Save changes" : "Create character"}
+					<SecondaryBtn type="button" onClick={leave}>
+						Cancel
+					</SecondaryBtn>
+					<PrimaryBtn type="button" onClick={handleSave} disabled={!canSave || saving}>
+						{saving ? "Saving…" : isEditing ? "Save changes" : "Create character"}
 					</PrimaryBtn>
 				</Actions>
 			</Page>

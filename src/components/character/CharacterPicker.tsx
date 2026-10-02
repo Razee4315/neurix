@@ -1,12 +1,18 @@
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
+import { Spinner } from "@/components/ui/LoadingOverlay";
+import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
-import type { Character } from "@/services/types";
+import { modelService } from "@/services";
+import type { Character, DownloadedModel } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { parseShared, shareCharacter } from "@/utils/characterShare";
+import { shortId } from "@/utils/format";
+import { vibrate } from "@/utils/platform";
+import { useFocusTrap } from "@/utils/useFocusTrap";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -14,8 +20,8 @@ import styled, { keyframes } from "styled-components";
 interface Props {
 	open: boolean;
 	onClose: () => void;
-	/** Called when the user picks a character. Defaults to setting it active. */
-	onSelect?: (character: Character) => void;
+	/** Also offer switching the loaded model (used from the chat header). */
+	showModels?: boolean;
 }
 
 const fadeIn = keyframes`
@@ -28,10 +34,10 @@ const slideUp = keyframes`
   to { transform: translateY(0); }
 `;
 
-const Backdrop = styled.div`
+const Backdrop = styled.div<{ $top?: boolean }>`
   position: fixed;
   inset: 0;
-  z-index: 900;
+  z-index: ${({ $top }) => ($top ? tokens.zIndex.sheetTop : tokens.zIndex.sheet)};
   background: ${tokens.colors.scrim};
   animation: ${fadeIn} 0.2s ease-out;
 `;
@@ -41,11 +47,14 @@ const Sheet = styled.div<{ $dragY: number; $dragging: boolean }>`
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 901;
+  z-index: ${tokens.zIndex.sheet};
   max-height: 85dvh;
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
   background: ${tokens.colors.surfaceContainer};
-  border-top-left-radius: ${tokens.borderRadius.xl};
-  border-top-right-radius: ${tokens.borderRadius.xl};
+  border-top-left-radius: 1.25rem;
+  border-top-right-radius: 1.25rem;
   padding: 0.75rem 1rem
     calc(1rem + env(safe-area-inset-bottom, 0px));
   display: flex;
@@ -140,8 +149,17 @@ const Grid = styled.div`
   gap: 0.625rem;
 `;
 
+/* The card and its "more" button are siblings inside this shell: a button
+   nested in a button is invalid markup and breaks keyboard and screen-reader
+   use. */
+const CardShell = styled.div`
+  position: relative;
+`;
+
 const CardBase = styled.button<{ $active?: boolean; $accent: string }>`
   position: relative;
+  width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -225,8 +243,10 @@ const MenuSheet = styled.div`
   position: fixed;
   left: 1rem;
   right: 1rem;
+  max-width: 28rem;
+  margin: 0 auto;
   bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
-  z-index: 950;
+  z-index: ${tokens.zIndex.sheetTop};
   background: ${tokens.colors.surfaceContainerHigh};
   border-radius: ${tokens.borderRadius.xl};
   padding: 0.5rem;
@@ -299,7 +319,9 @@ const ImportSheet = styled.div`
   right: 1rem;
   top: 50%;
   transform: translateY(-50%);
-  z-index: 950;
+  max-width: 32rem;
+  margin: 0 auto;
+  z-index: ${tokens.zIndex.sheetTop};
   background: ${tokens.colors.surfaceContainerHigh};
   border-radius: ${tokens.borderRadius.xl};
   padding: 1.25rem;
@@ -384,52 +406,101 @@ const PrimaryBtn = styled.button`
   &:not(:disabled):active { transform: scale(0.96); }
 `;
 
-export function CharacterPicker({ open, onClose, onSelect }: Props) {
+/* ── Model switcher ── */
+
+const ModelList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+`;
+
+const ModelRow = styled.button<{ $active: boolean }>`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 0.875rem;
+  border-radius: ${tokens.borderRadius.xl};
+  border: 1.5px solid ${({ $active }) => ($active ? tokens.colors.primary : "transparent")};
+  background: ${({ $active }) =>
+		$active ? alpha(tokens.colors.primary, "14") : tokens.colors.surfaceContainerHigh};
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.base};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  text-align: left;
+  cursor: pointer;
+
+  &:disabled { cursor: default; opacity: 0.7; }
+  &:not(:disabled):active { transform: scale(0.98); }
+`;
+
+const ModelMeta = styled.span`
+  margin-left: auto;
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  color: ${tokens.colors.onSurfaceVariant};
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+`;
+
+const TextLink = styled.button`
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  color: ${tokens.colors.primary};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  padding: 0.5rem 0.25rem;
+  cursor: pointer;
+`;
+
+export function CharacterPicker({ open, onClose, showModels = false }: Props) {
 	const navigate = useNavigate();
 	const { presets, customs, activeCharacter, setActiveCharacter, saveCustom, deleteCustom } = useCharacters();
+	const { activeModelId, loadModel } = useAppContext();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
 	const [menuFor, setMenuFor] = useState<Character | null>(null);
+	const [models, setModels] = useState<DownloadedModel[] | null>(null);
+	const [loadingModelId, setLoadingModelId] = useState<string | null>(null);
+	const sheetRef = useRef<HTMLDivElement>(null);
+	const menuRef = useRef<HTMLDivElement>(null);
+	const importRef = useRef<HTMLDivElement>(null);
 	const [importOpen, setImportOpen] = useState(false);
 	const [importText, setImportText] = useState("");
 	const [importError, setImportError] = useState<string | null>(null);
 	const [importing, setImporting] = useState(false);
 
-	// Drag-to-dismiss state. Tracking these in refs (not state) avoids a
-	// re-render on every touchmove tick.
+	// Drag-to-dismiss. The live distance is kept in a ref so the document
+	// listeners can read it without being re-attached on every move; the
+	// state copy only drives the sheet's transform.
 	const dragStartY = useRef<number | null>(null);
+	const dragDistance = useRef(0);
 	const [dragY, setDragY] = useState(0);
 	const [dragging, setDragging] = useState(false);
 
 	const onDragStart = (e: React.TouchEvent | React.MouseEvent) => {
-		const y = "touches" in e ? e.touches[0].clientY : e.clientY;
-		dragStartY.current = y;
+		dragStartY.current = "touches" in e ? e.touches[0].clientY : e.clientY;
+		dragDistance.current = 0;
 		setDragging(true);
-	};
-
-	const onDragMove = (e: TouchEvent | MouseEvent) => {
-		if (dragStartY.current == null) return;
-		const y = "touches" in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
-		const delta = Math.max(0, y - dragStartY.current);
-		setDragY(delta);
-	};
-
-	const onDragEnd = () => {
-		const start = dragStartY.current;
-		dragStartY.current = null;
-		setDragging(false);
-		// Dismiss if dragged more than ~120px or past 1/4 of the viewport.
-		const threshold = Math.min(120, window.innerHeight * 0.25);
-		if (start != null && dragY > threshold) {
-			onClose();
-		}
-		setDragY(0);
 	};
 
 	useEffect(() => {
 		if (!dragging) return;
-		const onMove = (e: TouchEvent | MouseEvent) => onDragMove(e);
-		const onEnd = () => onDragEnd();
+		const onMove = (e: TouchEvent | MouseEvent) => {
+			if (dragStartY.current == null) return;
+			const y = "touches" in e ? e.touches[0].clientY : e.clientY;
+			dragDistance.current = Math.max(0, y - dragStartY.current);
+			setDragY(dragDistance.current);
+		};
+		const onEnd = () => {
+			dragStartY.current = null;
+			setDragging(false);
+			setDragY(0);
+			// Dismiss if dragged more than ~120px or past 1/4 of the viewport.
+			if (dragDistance.current > Math.min(120, window.innerHeight * 0.25)) onClose();
+		};
 		document.addEventListener("touchmove", onMove, { passive: true });
 		document.addEventListener("touchend", onEnd);
 		document.addEventListener("touchcancel", onEnd);
@@ -442,11 +513,35 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 			document.removeEventListener("mousemove", onMove);
 			document.removeEventListener("mouseup", onEnd);
 		};
-		// onDragMove/onDragEnd close over dragY via state, but we always need
-		// the live values; the closure is created fresh each render so this
-		// is fine.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [dragging, dragY]);
+	}, [dragging, onClose]);
+
+	// Only the top-most layer traps focus.
+	useFocusTrap(sheetRef, open && !menuFor && !importOpen);
+	useFocusTrap(menuRef, open && !!menuFor);
+	useFocusTrap(importRef, open && importOpen);
+
+	useEffect(() => {
+		if (!open || !showModels) return;
+		let cancelled = false;
+		modelService.getDownloadedModels()
+			.then((list) => { if (!cancelled) setModels(list); })
+			.catch(() => { if (!cancelled) setModels([]); });
+		return () => { cancelled = true; };
+	}, [open, showModels]);
+
+	const handleSwitchModel = async (model: DownloadedModel) => {
+		if (loadingModelId || model.id === activeModelId) return;
+		setLoadingModelId(model.id);
+		try {
+			await loadModel(model.id);
+			vibrate(10);
+			showToast(`Now using ${model.name}`, "success");
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : String(err), "error");
+		} finally {
+			setLoadingModelId(null);
+		}
+	};
 
 	// Close on Escape.
 	useEffect(() => {
@@ -454,20 +549,21 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 		const onKey = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
 				if (menuFor) setMenuFor(null);
+				else if (importOpen) setImportOpen(false);
 				else onClose();
 			}
 		};
 		document.addEventListener("keydown", onKey);
 		return () => document.removeEventListener("keydown", onKey);
-	}, [open, onClose, menuFor]);
+	}, [open, onClose, menuFor, importOpen]);
 
 	// Pin the active character to the top of its section so it's always
 	// visible without scrolling — most-used pattern in iOS settings, ChatGPT
 	// model picker, etc.
 	const sortedPresets = useMemo(() => {
-		if (!activeCharacter || !presets.some((p) => p.id === activeCharacter.id)) return presets;
-		const active = presets.find((p) => p.id === activeCharacter.id)!;
-		return [active, ...presets.filter((p) => p.id !== activeCharacter.id)];
+		const active = presets.find((p) => p.id === activeCharacter?.id);
+		if (!active) return presets;
+		return [active, ...presets.filter((p) => p.id !== active.id)];
 	}, [presets, activeCharacter]);
 
 	/**
@@ -493,14 +589,13 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 
 	if (!open) return null;
 
-	const handleSelect = async (c: Character) => {
-		if (navigator.vibrate) navigator.vibrate(5);
-		if (onSelect) {
-			onSelect(c);
-		} else {
-			await setActiveCharacter(c.id);
-		}
+	const handleSelect = (c: Character) => {
+		vibrate(5);
+		// Close straight away; the write is quick and failure is reported.
 		onClose();
+		setActiveCharacter(c.id).catch(() => {
+			showToast("Couldn't switch character", "error");
+		});
 	};
 
 	const handleCreate = () => {
@@ -546,7 +641,7 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 		setImporting(true);
 		setImportError(null);
 		try {
-			const newId = `custom:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+			const newId = `custom:${shortId()}`;
 			const character: Character = {
 				...result.draft,
 				id: newId,
@@ -584,7 +679,7 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 
 	const openMenu = (e: React.MouseEvent, c: Character) => {
 		e.stopPropagation();
-		if (navigator.vibrate) navigator.vibrate(5);
+		vibrate(5);
 		setMenuFor(c);
 	};
 
@@ -592,17 +687,27 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 		const isActive = activeCharacter?.id === c.id;
 		const accent = accentOf(c);
 		return (
-			<CardBase
-				key={c.id}
-				$active={isActive}
-				$accent={accent}
-				onClick={() => handleSelect(c)}
-				onContextMenu={(e) => {
-					e.preventDefault();
-					setMenuFor(c);
-				}}
-				aria-pressed={isActive}
-			>
+			<CardShell key={c.id}>
+				<CardBase
+					type="button"
+					$active={isActive}
+					$accent={accent}
+					onClick={() => handleSelect(c)}
+					onContextMenu={(e) => {
+						e.preventDefault();
+						setMenuFor(c);
+					}}
+					aria-pressed={isActive}
+				>
+					<IconBubble $active={isActive} $accent={accent}>
+						<Icon name={c.icon || "person"} size={20} />
+					</IconBubble>
+					<div>
+						<CardName>{c.name}</CardName>
+						<CardDesc>{c.description || (c.is_preset ? "" : "Custom")}</CardDesc>
+					</div>
+					{isActive && <ActiveBadge $accent={accent}>Active</ActiveBadge>}
+				</CardBase>
 				<MoreBtn
 					type="button"
 					aria-label={`More actions for ${c.name}`}
@@ -610,15 +715,7 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 				>
 					<Icon name="more_vert" size={18} />
 				</MoreBtn>
-				<IconBubble $active={isActive} $accent={accent}>
-					<Icon name={c.icon || "person"} size={20} />
-				</IconBubble>
-				<div>
-					<CardName>{c.name}</CardName>
-					<CardDesc>{c.description || (c.is_preset ? "" : "Custom")}</CardDesc>
-				</div>
-				{isActive && <ActiveBadge $accent={accent}>Active</ActiveBadge>}
-			</CardBase>
+			</CardShell>
 		);
 	};
 
@@ -626,27 +723,74 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 		<>
 			<Backdrop onClick={onClose} />
 			<Sheet
+				ref={sheetRef}
+				tabIndex={-1}
 				role="dialog"
 				aria-modal="true"
-				aria-label="Choose character"
+				aria-label={showModels ? "Character and model" : "Choose character"}
 				onClick={(e) => e.stopPropagation()}
 				$dragY={dragY}
 				$dragging={dragging}
 			>
-				<GrabberZone
-					onTouchStart={onDragStart}
-					onMouseDown={onDragStart}
-					aria-label="Drag down to close"
-				>
+				<GrabberZone onTouchStart={onDragStart} onMouseDown={onDragStart} aria-hidden="true">
 					<Grabber />
 				</GrabberZone>
 				<Header>
-					<Title>Choose character</Title>
-					<CloseBtn onClick={onClose} aria-label="Close">
+					<Title>{showModels ? "Character & model" : "Choose character"}</Title>
+					<CloseBtn type="button" onClick={onClose} aria-label="Close">
 						<Icon name="close" size={20} />
 					</CloseBtn>
 				</Header>
 				<Scroll>
+					{showModels && (
+						<>
+							<SectionLabel>Model</SectionLabel>
+							{models === null ? (
+								<EmptyHint>Loading models…</EmptyHint>
+							) : models.length === 0 ? (
+								<EmptyHint>No models installed yet. Download one to start chatting.</EmptyHint>
+							) : (
+								<ModelList>
+									{models.map((m) => {
+										const isActive = m.id === activeModelId;
+										return (
+											<ModelRow
+												key={m.id}
+												type="button"
+												$active={isActive}
+												disabled={loadingModelId !== null}
+												aria-pressed={isActive}
+												onClick={() => handleSwitchModel(m)}
+											>
+												<Icon name="deployed_code" size={18} color={tokens.colors.primary} />
+												{m.name}
+												<ModelMeta>
+													{m.id === loadingModelId ? (
+														<>
+															<Spinner $size={14} /> Loading…
+														</>
+													) : isActive ? (
+														"Loaded"
+													) : (
+														m.size_label
+													)}
+												</ModelMeta>
+											</ModelRow>
+										);
+									})}
+								</ModelList>
+							)}
+							<TextLink
+								type="button"
+								onClick={() => {
+									onClose();
+									navigate("/store");
+								}}
+							>
+								Browse more models
+							</TextLink>
+						</>
+					)}
 					<SectionLabel>Presets</SectionLabel>
 					<Grid>{sortedPresets.map(renderCard)}</Grid>
 
@@ -680,11 +824,10 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 
 			{importOpen && (
 				<>
-					<Backdrop
-						onClick={() => !importing && setImportOpen(false)}
-						style={{ zIndex: 940 }}
-					/>
+					<Backdrop $top onClick={() => !importing && setImportOpen(false)} />
 					<ImportSheet
+						ref={importRef}
+						tabIndex={-1}
 						role="dialog"
 						aria-modal="true"
 						aria-label="Import character"
@@ -729,8 +872,10 @@ export function CharacterPicker({ open, onClose, onSelect }: Props) {
 
 			{menuFor && (
 				<>
-					<Backdrop onClick={() => setMenuFor(null)} style={{ zIndex: 940 }} />
+					<Backdrop onClick={() => setMenuFor(null)} $top />
 					<MenuSheet
+						ref={menuRef}
+						tabIndex={-1}
 						role="dialog"
 						aria-modal="true"
 						aria-label={`Actions for ${menuFor.name}`}
