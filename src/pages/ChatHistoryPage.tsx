@@ -9,7 +9,8 @@ import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { vibrate } from "@/utils/platform";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
@@ -17,13 +18,6 @@ import styled, { keyframes } from "styled-components";
 
 const Page = styled.div`
   padding: 1.25rem;
-`;
-
-const Header = styled.div`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
 `;
 
 const ClearBtn = styled.button`
@@ -297,8 +291,35 @@ const ActionGroup = styled.div`
 
 /* ── Component ── */
 
-function groupByDate(conversations: ConversationMeta[]): Record<string, ConversationMeta[]> {
-	const groups: Record<string, ConversationMeta[]> = {};
+const RowButton = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: ${tokens.borderRadius.lg};
+`;
+
+const Snippet = styled.div`
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+  margin-top: 0.125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const RetryBtn = styled(StartChatBtn)``;
+
+function groupByDate(conversations: ConversationMeta[]): [string, ConversationMeta[]][] {
+	const groups = new Map<string, ConversationMeta[]>();
 	const now = new Date();
 	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 	const yesterday = new Date(today.getTime() - 86400000);
@@ -313,14 +334,21 @@ function groupByDate(conversations: ConversationMeta[]): Record<string, Conversa
 		} else if (convDay.getTime() === yesterday.getTime()) {
 			label = "Yesterday";
 		} else {
-			label = convDay.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+			// Include the year once a chat is from a different one, so two
+			// Decembers don't merge into a single group.
+			label = convDay.toLocaleDateString(undefined, {
+				month: "short",
+				day: "numeric",
+				...(convDay.getFullYear() !== now.getFullYear() ? { year: "numeric" } : {}),
+			});
 		}
 
-		if (!groups[label]) groups[label] = [];
-		groups[label].push(conv);
+		const list = groups.get(label);
+		if (list) list.push(conv);
+		else groups.set(label, [conv]);
 	}
 
-	return groups;
+	return [...groups.entries()];
 }
 
 function formatTime(dateStr: string): string {
@@ -334,7 +362,7 @@ export function ChatHistoryPage() {
 	const { allCharacters } = useCharacters();
 	const [search, setSearch] = useState("");
 	const [conversations, setConversations] = useState<ConversationMeta[]>([]);
-	const [isLoading, setIsLoading] = useState(true);
+	const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 	const [renamingId, setRenamingId] = useState<string | null>(null);
 	const [renameValue, setRenameValue] = useState("");
 	/**
@@ -343,6 +371,31 @@ export function ChatHistoryPage() {
 	 * old conversations and the filter just shows nothing for that bucket).
 	 */
 	const [characterFilter, setCharacterFilter] = useState<string | null>(null);
+	// Guards against an older search response overwriting a newer one.
+	const requestRef = useRef(0);
+
+	const query = search.trim();
+
+	const load = useCallback(async (q: string) => {
+		const request = ++requestRef.current;
+		try {
+			const list = q
+				? await historyService.searchConversations(q)
+				: await historyService.getConversations();
+			if (request !== requestRef.current) return;
+			setConversations(list);
+			setStatus("ready");
+		} catch {
+			if (request === requestRef.current) setStatus("error");
+		}
+	}, []);
+
+	// Search runs in the backend over titles and message text; wait for a
+	// pause in typing so each keystroke doesn't scan every conversation.
+	useEffect(() => {
+		const t = setTimeout(() => load(query), query ? 250 : 0);
+		return () => clearTimeout(t);
+	}, [query, load]);
 
 	/**
 	 * Build the filter rail from the current conversation set rather than from
@@ -368,107 +421,108 @@ export function ChatHistoryPage() {
 		[allCharacters],
 	);
 
-	const refresh = useCallback(async () => {
-		try {
-			const list = await historyService.getConversations();
-			setConversations(list);
-		} finally {
-			setIsLoading(false);
-		}
-	}, []);
-
-	useEffect(() => {
-		refresh();
-	}, [refresh]);
-
 	const handleDeleteOne = async (id: string, title: string) => {
-		const ok = await showConfirm({
-			title: "Delete Conversation",
-			message: `Delete "${title}"?`,
-			confirmLabel: "Delete",
-			cancelLabel: "Cancel",
-			danger: true,
-		});
-		if (!ok) return;
-		if (navigator.vibrate) navigator.vibrate(12);
-		await historyService.deleteConversation(id);
-		setConversations((prev) => prev.filter((c) => c.id !== id));
-	};
-
-	const handleStartRename = (id: string, currentTitle: string) => {
-		setRenamingId(id);
-		setRenameValue(currentTitle);
+		try {
+			// Keep a copy so the delete can be undone from the toast.
+			const backup = await historyService.loadConversation(id);
+			await historyService.deleteConversation(id);
+			vibrate(12);
+			setConversations((prev) => prev.filter((c) => c.id !== id));
+			showToast(
+				`Deleted "${title}"`,
+				"info",
+				backup
+					? {
+							label: "Undo",
+							onAction: () => {
+								historyService
+									.saveConversation(backup)
+									.then(() => load(query))
+									.catch(() => showToast("Couldn't restore the conversation", "error"));
+							},
+						}
+					: undefined,
+			);
+		} catch {
+			showToast("Couldn't delete the conversation", "error");
+		}
 	};
 
 	const handleFinishRename = async () => {
-		if (!renamingId || !renameValue.trim()) {
-			setRenamingId(null);
-			return;
-		}
-		try {
-			const conv = await historyService.loadConversation(renamingId);
-			if (conv) {
-				conv.title = renameValue.trim();
-				await historyService.saveConversation(conv);
-				setConversations((prev) =>
-					prev.map((c) => c.id === renamingId ? { ...c, title: renameValue.trim() } : c),
-				);
-				showToast("Conversation renamed", "success");
-			}
-		} catch {
-			showToast("Failed to rename", "error");
-		}
+		const id = renamingId;
+		const title = renameValue.trim();
 		setRenamingId(null);
+		if (!id || !title) return;
+		try {
+			const conv = await historyService.loadConversation(id);
+			if (!conv || conv.title === title) return;
+			await historyService.saveConversation({ ...conv, title });
+			setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title } : c)));
+			showToast("Conversation renamed", "success");
+		} catch {
+			showToast("Couldn't rename the conversation", "error");
+		}
 	};
 
 	const handleClearAll = async () => {
 		const ok = await showConfirm({
-			title: "Clear History",
-			message: "Delete all chat history? This cannot be undone.",
-			confirmLabel: "Delete All",
+			title: "Clear history",
+			message: `Delete all ${conversations.length} conversations? This cannot be undone.`,
+			confirmLabel: "Delete all",
 			cancelLabel: "Cancel",
 			danger: true,
 		});
 		if (!ok) return;
-		await historyService.clearAllConversations();
-		setConversations([]);
+		try {
+			await historyService.clearAllConversations();
+			setConversations([]);
+			showToast("Chat history cleared", "info");
+		} catch {
+			showToast("Couldn't clear chat history", "error");
+		}
 	};
 
-	const filtered = conversations.filter((c) => {
-		if (search && !c.title.toLowerCase().includes(search.toLowerCase())) return false;
-		if (characterFilter && c.character_id !== characterFilter) return false;
-		return true;
-	});
-
+	const filtered = characterFilter
+		? conversations.filter((c) => c.character_id === characterFilter)
+		: conversations;
 	const groups = groupByDate(filtered);
+	const isEmpty = status === "ready" && conversations.length === 0 && !query;
 
 	return (
-		<AppLayout title="Chat History">
+		<AppLayout
+			title="Chat History"
+			back="/chat"
+			rightActions={
+				conversations.length > 0 && !query ? (
+					<ClearBtn type="button" onClick={handleClearAll}>
+						Clear all
+					</ClearBtn>
+				) : undefined
+			}
+		>
 			<Page>
-				<Header>
-					<ClearBtn onClick={handleClearAll}>Clear all</ClearBtn>
-				</Header>
+				{!isEmpty && (
+					<SearchBox>
+						<SearchIconWrap>
+							<Icon name="search" size={18} />
+						</SearchIconWrap>
+						<SearchInput
+							type="search"
+							placeholder="Search titles and messages..."
+							value={search}
+							onChange={(e) => setSearch(e.target.value)}
+							aria-label="Search conversations"
+						/>
+					</SearchBox>
+				)}
 
-				<SearchBox>
-					<SearchIconWrap>
-						<Icon name="search" size={18} />
-					</SearchIconWrap>
-					<SearchInput
-						placeholder="Search chats..."
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
-						aria-label="Search conversations"
-					/>
-				</SearchBox>
-
-				{filterChips.length > 0 && (
-					<FilterRail role="tablist" aria-label="Filter by character">
+				{filterChips.length > 1 && (
+					<FilterRail role="group" aria-label="Filter by character">
 						<FilterChip
 							type="button"
-							role="tab"
 							$active={characterFilter === null}
 							$accent={tokens.colors.primary}
-							aria-selected={characterFilter === null}
+							aria-pressed={characterFilter === null}
 							onClick={() => setCharacterFilter(null)}
 						>
 							All
@@ -481,17 +535,12 @@ export function ChatHistoryPage() {
 								<FilterChip
 									key={chip.id}
 									type="button"
-									role="tab"
 									$active={isActive}
 									$accent={accent}
-									aria-selected={isActive}
-									onClick={() =>
-										setCharacterFilter(isActive ? null : chip.id)
-									}
+									aria-pressed={isActive}
+									onClick={() => setCharacterFilter(isActive ? null : chip.id)}
 								>
-									{c && (
-										<Icon name={c.icon || "person"} size={12} color={accent} />
-									)}
+									{c && <Icon name={c.icon || "person"} size={12} color={accent} />}
 									{chip.name} · {chip.count}
 								</FilterChip>
 							);
@@ -499,7 +548,7 @@ export function ChatHistoryPage() {
 					</FilterRail>
 				)}
 
-				{isLoading ? (
+				{status === "loading" ? (
 					<ChatList aria-busy="true" aria-label="Loading conversations">
 						{[0, 1, 2, 3].map((i) => (
 							<SkeletonRow key={`sk-${i}`}>
@@ -511,31 +560,43 @@ export function ChatHistoryPage() {
 							</SkeletonRow>
 						))}
 					</ChatList>
-				) : Object.keys(groups).length === 0 ? (
+				) : status === "error" ? (
 					<EmptyWrap>
 						<EmptyState
-							icon="chat_bubble"
-							message={
-								conversations.length === 0
-									? "No conversations yet"
-									: "No conversations match your search"
-							}
-							subtitle={
-								conversations.length === 0
-									? "Start a new chat — it'll auto-save here."
-									: undefined
-							}
-						/>
-						{conversations.length === 0 && (
+							icon="error_outline"
+							message="Couldn't load your chats"
+							subtitle="Your conversations are still on this device. Try again."
+						>
+							<RetryBtn type="button" onClick={() => { setStatus("loading"); load(query); }}>
+								<Icon name="refresh" size={16} />
+								Try again
+							</RetryBtn>
+						</EmptyState>
+					</EmptyWrap>
+				) : isEmpty ? (
+					<EmptyWrap>
+						<EmptyState
+							art="chats"
+							message="No conversations yet"
+							subtitle="Start a chat and it will be saved here automatically."
+						>
 							<StartChatBtn type="button" onClick={() => navigate("/chat", { state: { freshChat: true } })}>
-								<Icon name="edit_square" size={16} color={tokens.colors.onPrimaryFixed} />
+								<Icon name="edit_square" size={16} />
 								Start a chat
 							</StartChatBtn>
-						)}
+						</EmptyState>
+					</EmptyWrap>
+				) : groups.length === 0 ? (
+					<EmptyWrap>
+						<EmptyState
+							art="search"
+							message="Nothing found"
+							subtitle={query ? `No chat mentions "${query}".` : "No chats with this character."}
+						/>
 					</EmptyWrap>
 				) : (
-					Object.entries(groups).map(([label, items]) => (
-						<div key={label}>
+					groups.map(([label, items]) => (
+						<section key={label} aria-label={label}>
 							<GroupLabel>
 								<GroupText>{label}</GroupText>
 								<GroupLine />
@@ -544,65 +605,80 @@ export function ChatHistoryPage() {
 								{items.map((entry) => {
 									const ch = entry.character_id ? characterById.get(entry.character_id) : undefined;
 									const accent = ch ? accentOf(ch) : undefined;
-									const iconName = ch?.icon || "chat_bubble";
-									return (
-									<ChatItem
-										key={entry.id}
-										onClick={() => {
-											if (renamingId !== entry.id) navigate("/chat", { state: { conversationId: entry.id } });
-										}}
-									>
-										<ChatIcon $accent={accent}>
-											<Icon name={iconName} size={18} color={accent || tokens.colors.onSurfaceVariant} />
-										</ChatIcon>
-										<ChatInfo>
-											{renamingId === entry.id ? (
-												<RenameInput
-													value={renameValue}
-													onChange={(e) => setRenameValue(e.target.value)}
-													onBlur={handleFinishRename}
-													onKeyDown={(e) => {
-														if (e.key === "Enter") handleFinishRename();
-														if (e.key === "Escape") setRenamingId(null);
-													}}
-													autoFocus
-													onClick={(e) => e.stopPropagation()}
+									const isRenaming = renamingId === entry.id;
+									const body = (
+										<>
+											<ChatIcon $accent={accent}>
+												<Icon
+													name={ch?.icon || "chat_bubble"}
+													size={18}
+													color={accent || tokens.colors.onSurfaceVariant}
 												/>
+											</ChatIcon>
+											<ChatInfo>
+												{isRenaming ? (
+													<RenameInput
+														value={renameValue}
+														maxLength={80}
+														aria-label="Conversation title"
+														onChange={(e) => setRenameValue(e.target.value)}
+														onBlur={handleFinishRename}
+														onKeyDown={(e) => {
+															if (e.key === "Enter") e.currentTarget.blur();
+															if (e.key === "Escape") setRenamingId(null);
+														}}
+														// biome-ignore lint/a11y/noAutofocus: the field appears in response to the user choosing Rename
+														autoFocus
+													/>
+												) : (
+													<ChatTitle>{entry.title}</ChatTitle>
+												)}
+												{entry.snippet && !isRenaming && <Snippet>{entry.snippet}</Snippet>}
+												<ChatMeta>
+													{entry.model_name} · {formatTime(entry.updated_at)}
+												</ChatMeta>
+											</ChatInfo>
+										</>
+									);
+									return (
+										<ChatItem key={entry.id}>
+											{isRenaming ? (
+												<RowButton as="div">{body}</RowButton>
 											) : (
-												<ChatTitle>{entry.title}</ChatTitle>
+												<RowButton
+													type="button"
+													onClick={() => navigate("/chat", { state: { conversationId: entry.id } })}
+												>
+													{body}
+												</RowButton>
 											)}
-											<ChatMeta>
-												{entry.model_name} · {formatTime(entry.updated_at)}
-											</ChatMeta>
-										</ChatInfo>
-										{renamingId !== entry.id && (
-											<ActionGroup>
-												<ActionBtn
-													onClick={(e) => {
-														e.stopPropagation();
-														handleStartRename(entry.id, entry.title);
-													}}
-													aria-label="Rename conversation"
-												>
-													<Icon name="edit" size={18} color={tokens.colors.onSurfaceVariant} />
-												</ActionBtn>
-												<ActionBtn
-													$danger
-													onClick={(e) => {
-														e.stopPropagation();
-														handleDeleteOne(entry.id, entry.title);
-													}}
-													aria-label="Delete conversation"
-												>
-													<Icon name="delete" size={18} color={tokens.colors.error} />
-												</ActionBtn>
-											</ActionGroup>
-										)}
-									</ChatItem>
+											{!isRenaming && (
+												<ActionGroup>
+													<ActionBtn
+														type="button"
+														onClick={() => {
+															setRenamingId(entry.id);
+															setRenameValue(entry.title);
+														}}
+														aria-label={`Rename ${entry.title}`}
+													>
+														<Icon name="edit" size={18} color={tokens.colors.onSurfaceVariant} />
+													</ActionBtn>
+													<ActionBtn
+														type="button"
+														$danger
+														onClick={() => handleDeleteOne(entry.id, entry.title)}
+														aria-label={`Delete ${entry.title}`}
+													>
+														<Icon name="delete" size={18} color={tokens.colors.error} />
+													</ActionBtn>
+												</ActionGroup>
+											)}
+										</ChatItem>
 									);
 								})}
 							</ChatList>
-						</div>
+						</section>
 					))
 				)}
 			</Page>
