@@ -5,6 +5,7 @@ import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { useDownloads } from "@/context/DownloadContext";
 import { modelService, settingsService } from "@/services";
 import type { ModelInfo } from "@/services/types";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -233,7 +234,7 @@ const DownloadedBadge = styled.span`
   letter-spacing: 0.05em;
   padding: 0.125rem 0.375rem;
   border-radius: ${tokens.borderRadius.sm};
-  background: ${tokens.colors.secondary}18;
+  background: ${alpha(tokens.colors.secondary, "18")};
   color: ${tokens.colors.secondary};
 `;
 
@@ -244,9 +245,9 @@ const DownloadingBadge = styled.span`
   letter-spacing: 0.05em;
   padding: 0.15rem 0.5rem;
   border-radius: ${tokens.borderRadius.sm};
-  background: ${tokens.colors.tertiary}22;
+  background: ${alpha(tokens.colors.tertiary, "22")};
   color: ${tokens.colors.tertiary};
-  border: 1px solid ${tokens.colors.tertiary}33;
+  border: 1px solid ${alpha(tokens.colors.tertiary, "33")};
 `;
 
 const RecommendedBadge = styled.span`
@@ -256,9 +257,9 @@ const RecommendedBadge = styled.span`
   letter-spacing: 0.05em;
   padding: 0.15rem 0.375rem;
   border-radius: ${tokens.borderRadius.sm};
-  background: linear-gradient(135deg, ${tokens.colors.primary}22, ${tokens.colors.secondary}22);
+  background: linear-gradient(135deg, ${alpha(tokens.colors.primary, "22")}, ${alpha(tokens.colors.secondary, "22")});
   color: ${tokens.colors.primary};
-  border: 1px solid ${tokens.colors.primary}33;
+  border: 1px solid ${alpha(tokens.colors.primary, "33")};
 `;
 
 const StorageHint = styled.div`

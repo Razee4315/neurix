@@ -5,6 +5,7 @@ import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
 import { modelService, settingsService } from "@/services";
 import type { DownloadedModel, ModelInfo, StorageInfo } from "@/services/types";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -152,7 +153,7 @@ const Card = styled.div<{ $active: boolean }>`
   border: 2px solid ${({ $active }) =>
 		$active ? tokens.colors.primary : "transparent"};
   ${({ $active }) => $active && `
-    box-shadow: 0 0 0 1px ${tokens.colors.primary}20, ${tokens.shadows.ambient};
+    box-shadow: 0 0 0 1px ${alpha(tokens.colors.primary, "20")}, ${tokens.shadows.ambient};
   `}
 `;
 
@@ -228,14 +229,14 @@ const DeleteBtn = styled.button`
   height: 44px;
   border-radius: ${tokens.borderRadius.lg};
   border: none;
-  background: ${tokens.colors.error}12;
+  background: ${alpha(tokens.colors.error, "12")};
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: background ${tokens.transitions.fast};
 
-  &:hover { background: ${tokens.colors.error}22; }
+  &:hover { background: ${alpha(tokens.colors.error, "22")}; }
   &:active { transform: scale(0.95); }
 `;
 
@@ -261,7 +262,7 @@ const DownloadCard = styled.div`
   border-radius: ${tokens.borderRadius.lg};
   padding: 1rem;
   margin-bottom: 0.5rem;
-  border: 1px solid ${tokens.colors.tertiary}30;
+  border: 1px solid ${alpha(tokens.colors.tertiary, "30")};
 `;
 
 const DownloadCardTop = styled.div`
@@ -285,9 +286,9 @@ const DownloadStatus = styled.span<{ $status: string }>`
   border-radius: ${tokens.borderRadius.md};
   background: ${({ $status }) => {
 		switch ($status) {
-			case "downloading": return tokens.colors.tertiary + "22";
-			case "paused": return tokens.colors.outline + "22";
-			case "failed": return tokens.colors.error + "22";
+			case "downloading": return alpha(tokens.colors.tertiary, "22");
+			case "paused": return alpha(tokens.colors.outline, "22");
+			case "failed": return alpha(tokens.colors.error, "22");
 			default: return tokens.colors.surfaceContainerHighest;
 		}
 	}};
@@ -355,9 +356,9 @@ const DownloadActionBtn = styled.button<{ $primary?: boolean }>`
   ${({ $primary }) =>
 		$primary
 			? `
-    background: ${tokens.colors.tertiary}22;
+    background: ${alpha(tokens.colors.tertiary, "22")};
     color: ${tokens.colors.tertiary};
-    &:hover { background: ${tokens.colors.tertiary}33; }
+    &:hover { background: ${alpha(tokens.colors.tertiary, "33")}; }
   `
 			: `
     background: ${tokens.colors.surfaceContainerHighest};
@@ -395,8 +396,8 @@ const loadingSpin = keyframes`
 `;
 
 const glowRing = keyframes`
-  0%, 100% { box-shadow: 0 0 0 0 ${tokens.colors.primary}4d; }
-  50% { box-shadow: 0 0 20px 4px ${tokens.colors.primary}26; }
+  0%, 100% { box-shadow: 0 0 0 0 ${alpha(tokens.colors.primary, "4d")}; }
+  50% { box-shadow: 0 0 20px 4px ${alpha(tokens.colors.primary, "26")}; }
 `;
 
 const LoadingOverlay = styled.div`
@@ -408,7 +409,7 @@ const LoadingOverlay = styled.div`
   align-items: center;
   justify-content: center;
   gap: 1.5rem;
-  background: ${tokens.colors.background}f2;
+  background: ${alpha(tokens.colors.background, "f2")};
   padding: 2rem;
   animation: ${overlayFadeIn} 0.2s ease-out both;
 `;

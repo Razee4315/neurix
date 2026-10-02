@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useDownloads } from "@/context/DownloadContext";
 import { modelService } from "@/services";
 import type { ModelInfo } from "@/services/types";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -131,7 +132,7 @@ const SuccessCircle = styled.div`
   width: 56px;
   height: 56px;
   border-radius: ${tokens.borderRadius.circle};
-  background: ${tokens.colors.secondary}18;
+  background: ${alpha(tokens.colors.secondary, "18")};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -162,9 +163,9 @@ const ActionBtn = styled.button<{ $variant?: "danger" | "primary" }>`
 		$variant === "danger"
 			? `
     background: transparent;
-    border: 1px solid ${tokens.colors.error}33;
+    border: 1px solid ${alpha(tokens.colors.error, "33")};
     color: ${tokens.colors.error};
-    &:hover { background: ${tokens.colors.error}0d; }
+    &:hover { background: ${alpha(tokens.colors.error, "0d")}; }
   `
 			: $variant === "primary"
 				? `

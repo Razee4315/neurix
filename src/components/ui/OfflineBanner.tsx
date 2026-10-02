@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useState } from "react";
 import styled, { keyframes } from "styled-components";
@@ -13,8 +14,8 @@ const Banner = styled.div`
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
-  background: ${tokens.colors.error}22;
-  border-bottom: 1px solid ${tokens.colors.error}33;
+  background: ${alpha(tokens.colors.error, "22")};
+  border-bottom: 1px solid ${alpha(tokens.colors.error, "33")};
   animation: ${slideDown} 0.2s ease-out;
 `;
 

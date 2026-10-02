@@ -1,4 +1,5 @@
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import type { ReactNode } from "react";
 import styled, { keyframes } from "styled-components";
@@ -24,8 +25,8 @@ interface AppLayoutProps {
 const Shell = styled.div`
   display: flex;
   flex-direction: column;
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   background: ${tokens.colors.background};
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0px);
@@ -40,7 +41,7 @@ const TopBar = styled.header<{ $hasSubtitle: boolean }>`
   min-height: 56px;
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLow};
-  border-bottom: 1px solid ${tokens.colors.outlineVariant}30;
+  border-bottom: 1px solid ${alpha(tokens.colors.outlineVariant, "30")};
   gap: 0.5rem;
 `;
 

@@ -6,8 +6,8 @@
 }
 
 html {
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   margin: 0;
   padding: 0;
 }
@@ -15,10 +15,10 @@ html {
 body {
   margin: 0;
   padding: 0;
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
-  background: #0e0e0f;
+  background: rgb(var(--c-background, 14 14 15));
 }
 
 * {
@@ -26,8 +26,8 @@ body {
 }
 
 #root {
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }

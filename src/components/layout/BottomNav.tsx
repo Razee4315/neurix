@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -17,7 +18,7 @@ const NavOuter = styled.div`
   width: 100%;
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLow};
-  border-top: 1px solid ${tokens.colors.outlineVariant}30;
+  border-top: 1px solid ${alpha(tokens.colors.outlineVariant, "30")};
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: flex;
   justify-content: center;
@@ -50,7 +51,7 @@ const Tab = styled.button<{ $active: boolean }>`
   border-radius: 20px;
   transition: background 0.25s ease, transform 0.15s ease;
   background: ${({ $active }) =>
-		$active ? `${tokens.colors.primary}18` : "transparent"};
+		$active ? `${alpha(tokens.colors.primary, "18")}` : "transparent"};
 
   &:active { transform: scale(0.9); }
 `;

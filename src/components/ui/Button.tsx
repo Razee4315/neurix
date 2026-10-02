@@ -1,3 +1,4 @@
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import styled, { css } from "styled-components";
 
@@ -20,7 +21,7 @@ const primaryStyles = css`
   color: ${tokens.colors.onPrimaryFixed};
   border: none;
   box-shadow: ${tokens.shadows.glow.primary};
-  &:hover:not(:disabled) { box-shadow: 0 0 30px ${tokens.colors.primary}40; }
+  &:hover:not(:disabled) { box-shadow: 0 0 30px ${alpha(tokens.colors.primary, "40")}; }
   &:active:not(:disabled) { transform: scale(0.98); }
 `;
 

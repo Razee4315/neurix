@@ -8,6 +8,7 @@ import { useCharacters } from "@/context/CharacterContext";
 import { chatService, historyService, modelService, settingsService } from "@/services";
 import type { ChatHistoryEntry } from "@/services/chatService";
 import type { Conversation, InferenceEvent } from "@/services/types";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
@@ -210,14 +211,14 @@ const Bubble = styled.div<{ $role: "ai" | "user" }>`
   ${({ $role }) =>
 		$role === "user"
 			? `
-    background: ${tokens.colors.primaryContainer}14;
-    border: 1px solid ${tokens.colors.primaryContainer}20;
+    background: ${alpha(tokens.colors.primaryContainer, "14")};
+    border: 1px solid ${alpha(tokens.colors.primaryContainer, "20")};
     color: ${tokens.colors.onSurface};
     border-bottom-right-radius: 4px;
   `
 			: `
     background: ${tokens.colors.surfaceContainerHigh};
-    border: 1px solid ${tokens.colors.outlineVariant}30;
+    border: 1px solid ${alpha(tokens.colors.outlineVariant, "30")};
     color: ${tokens.colors.onSurfaceVariant};
     border-bottom-left-radius: 4px;
   `}
@@ -309,7 +310,7 @@ const CopyBtn = styled.button<{ $copied?: boolean }>`
   position: absolute;
   top: 0.375rem;
   right: 0.5rem;
-  background: ${({ $copied }) => ($copied ? tokens.colors.secondary + "18" : tokens.colors.surfaceContainerHigh)};
+  background: ${({ $copied }) => ($copied ? alpha(tokens.colors.secondary, "18") : tokens.colors.surfaceContainerHigh)};
   border: none;
   border-radius: ${tokens.borderRadius.sm};
   padding: 0.25rem 0.375rem;
@@ -361,7 +362,7 @@ const MsgActionBtn = styled.button<{ $copied?: boolean }>`
   gap: 0.375rem;
   min-height: 36px;
   padding: 0.5rem 0.75rem;
-  background: ${({ $copied }) => $copied ? tokens.colors.secondary + "18" : tokens.colors.surfaceContainerHigh};
+  background: ${({ $copied }) => $copied ? alpha(tokens.colors.secondary, "18") : tokens.colors.surfaceContainerHigh};
   border: none;
   border-radius: ${tokens.borderRadius.md};
   cursor: pointer;
@@ -404,7 +405,7 @@ const InputBar = styled.div`
   align-items: flex-end;
   gap: 0.5rem;
   background: ${tokens.colors.surfaceContainer};
-  border-top: 1px solid ${tokens.colors.outlineVariant}30;
+  border-top: 1px solid ${alpha(tokens.colors.outlineVariant, "30")};
   position: relative;
 `;
 
@@ -427,7 +428,7 @@ const TextInput = styled.textarea`
   max-height: 120px;
   padding: 0.625rem 0.875rem;
   background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${tokens.colors.outlineVariant}30;
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "30")};
   border-radius: 20px;
   font-size: ${tokens.typography.fontSize.base};
   font-family: ${tokens.typography.fontFamily.body};
@@ -443,7 +444,7 @@ const TextInput = styled.textarea`
   scrollbar-width: none;
 
   &::placeholder { color: ${tokens.colors.outline}; }
-  &:focus { border-color: ${tokens.colors.primary}40; }
+  &:focus { border-color: ${alpha(tokens.colors.primary, "40")}; }
 `;
 
 const SendBtn = styled.button<{ $hasText: boolean }>`
@@ -461,7 +462,7 @@ const SendBtn = styled.button<{ $hasText: boolean }>`
   ${({ $hasText }) =>
 		$hasText
 			? `background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});`
-			: `background: ${tokens.colors.surfaceContainerHigh}; border: 1px solid ${tokens.colors.outlineVariant}30;`}
+			: `background: ${tokens.colors.surfaceContainerHigh}; border: 1px solid ${alpha(tokens.colors.outlineVariant, "30")};`}
 
   &:hover { opacity: 0.85; }
   &:active { transform: scale(0.9); }
@@ -471,8 +472,8 @@ const StopBtn = styled.button`
   width: 40px;
   height: 40px;
   border-radius: 20px;
-  border: 1.5px solid ${tokens.colors.error}60;
-  background: ${tokens.colors.error}12;
+  border: 1.5px solid ${alpha(tokens.colors.error, "60")};
+  background: ${alpha(tokens.colors.error, "12")};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -539,8 +540,8 @@ const HeaderAvatar = styled.span<{ $accent: string }>`
   width: 32px;
   height: 32px;
   border-radius: ${tokens.borderRadius.circle};
-  background: ${({ $accent }) => $accent}1f;
-  border: 1px solid ${({ $accent }) => $accent}40;
+  background: ${({ $accent }) => alpha($accent, "1f")};
+  border: 1px solid ${({ $accent }) => alpha($accent, "40")};
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -594,7 +595,7 @@ const ModelDot = styled.span<{ $on: boolean }>`
   flex-shrink: 0;
   background: ${({ $on }) => ($on ? tokens.colors.secondary : tokens.colors.outline)};
   box-shadow: ${({ $on }) =>
-		$on ? `0 0 6px ${tokens.colors.secondary}80` : "none"};
+		$on ? `0 0 6px ${alpha(tokens.colors.secondary, "80")}` : "none"};
 `;
 
 const HeaderEmpty = styled.span`
@@ -622,7 +623,7 @@ const Coachmark = styled.div`
   padding: 0.625rem 0.875rem;
   background: ${tokens.colors.surfaceContainerHighest};
   color: ${tokens.colors.onSurface};
-  border: 1px solid ${tokens.colors.primary}40;
+  border: 1px solid ${alpha(tokens.colors.primary, "40")};
   border-radius: ${tokens.borderRadius.lg};
   font-size: ${tokens.typography.fontSize.xs};
   box-shadow: ${tokens.shadows.elevated};
@@ -638,8 +639,8 @@ const Coachmark = styled.div`
     width: 10px;
     height: 10px;
     background: ${tokens.colors.surfaceContainerHighest};
-    border-left: 1px solid ${tokens.colors.primary}40;
-    border-top: 1px solid ${tokens.colors.primary}40;
+    border-left: 1px solid ${alpha(tokens.colors.primary, "40")};
+    border-top: 1px solid ${alpha(tokens.colors.primary, "40")};
   }
 `;
 
@@ -675,7 +676,7 @@ const LoadingOverlay = styled.div`
   align-items: center;
   justify-content: center;
   gap: 1.5rem;
-  background: ${tokens.colors.background}f2;
+  background: ${alpha(tokens.colors.background, "f2")};
   padding:
     calc(env(safe-area-inset-top, 0px) + 2rem)
     calc(env(safe-area-inset-right, 0px) + 2rem)
@@ -792,7 +793,7 @@ const StarterChip = styled.button<{ $accent: string }>`
   gap: 0.5rem;
   padding: 0.625rem 0.875rem;
   background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${tokens.colors.outlineVariant}40;
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "40")};
   border-radius: ${tokens.borderRadius.lg};
   color: ${tokens.colors.onSurface};
   font-size: ${tokens.typography.fontSize.sm};
@@ -803,7 +804,7 @@ const StarterChip = styled.button<{ $accent: string }>`
   transition: transform ${tokens.transitions.fast}, background ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
   animation: ${fadeInUp} 0.3s ease-out both;
 
-  &:hover { border-color: ${({ $accent }) => $accent}60; }
+  &:hover { border-color: ${({ $accent }) => alpha($accent, "60")}; }
   &:active { transform: scale(0.98); background: ${tokens.colors.surfaceContainerHighest}; }
 `;
 

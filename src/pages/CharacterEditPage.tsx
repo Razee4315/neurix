@@ -6,8 +6,9 @@ import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { chatService } from "@/services";
 import type { Character, InferenceEvent } from "@/services/types";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
-import { ACCENT_PALETTE, DEFAULT_ACCENT, withAlpha } from "@/utils/characterAccent";
+import { ACCENT_PALETTE, DEFAULT_ACCENT } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -80,14 +81,14 @@ const Input = styled.input`
   width: 100%;
   padding: 0.75rem 0.875rem;
   background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${tokens.colors.outlineVariant}40;
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "40")};
   border-radius: ${tokens.borderRadius.md};
   color: ${tokens.colors.onSurface};
   font-size: ${tokens.typography.fontSize.base};
   font-family: ${tokens.typography.fontFamily.body};
   outline: none;
 
-  &:focus { border-color: ${tokens.colors.primary}80; }
+  &:focus { border-color: ${alpha(tokens.colors.primary, "80")}; }
 `;
 
 const TextArea = styled.textarea`
@@ -95,7 +96,7 @@ const TextArea = styled.textarea`
   min-height: 110px;
   padding: 0.75rem 0.875rem;
   background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${tokens.colors.outlineVariant}40;
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "40")};
   border-radius: ${tokens.borderRadius.md};
   color: ${tokens.colors.onSurface};
   font-size: ${tokens.typography.fontSize.base};
@@ -104,7 +105,7 @@ const TextArea = styled.textarea`
   resize: vertical;
   outline: none;
 
-  &:focus { border-color: ${tokens.colors.primary}80; }
+  &:focus { border-color: ${alpha(tokens.colors.primary, "80")}; }
 `;
 
 const HelperRow = styled.div`
@@ -127,7 +128,7 @@ const Tip = styled.div`
   align-items: flex-start;
   gap: 0.5rem;
   padding: 0.625rem 0.75rem;
-  background: ${tokens.colors.tertiary}14;
+  background: ${alpha(tokens.colors.tertiary, "14")};
   border-radius: ${tokens.borderRadius.md};
   font-size: ${tokens.typography.fontSize.xs};
   color: ${tokens.colors.onSurfaceVariant};
@@ -148,7 +149,7 @@ const IconCell = styled.button<{ $active?: boolean; $accent: string }>`
   border-radius: ${tokens.borderRadius.md};
   border: 1.5px solid ${({ $active, $accent }) => ($active ? $accent : "transparent")};
   background: ${({ $active, $accent }) =>
-		$active ? withAlpha($accent, "14") : tokens.colors.surfaceContainerHigh};
+		$active ? alpha($accent, "14") : tokens.colors.surfaceContainerHigh};
   color: ${({ $accent }) => $accent};
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -201,7 +202,7 @@ const ExampleChip = styled.button`
   padding: 0.375rem 0.625rem;
   border-radius: ${tokens.borderRadius.lg};
   background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px dashed ${tokens.colors.outlineVariant}80;
+  border: 1px dashed ${alpha(tokens.colors.outlineVariant, "80")};
   color: ${tokens.colors.onSurfaceVariant};
   font-size: ${tokens.typography.fontSize.xs};
   font-family: ${tokens.typography.fontFamily.body};
@@ -253,7 +254,7 @@ const SectionDivider = styled.div`
     content: "";
     flex: 1;
     height: 1px;
-    background: ${tokens.colors.outlineVariant}40;
+    background: ${alpha(tokens.colors.outlineVariant, "40")};
   }
 `;
 
@@ -335,13 +336,13 @@ const DangerBtn = styled.button`
   border-radius: ${tokens.borderRadius.lg};
   background: transparent;
   color: ${tokens.colors.error};
-  border: 1px solid ${tokens.colors.error}80;
+  border: 1px solid ${alpha(tokens.colors.error, "80")};
   font-size: ${tokens.typography.fontSize.base};
   font-weight: ${tokens.typography.fontWeight.bold};
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 
-  &:active { transform: scale(0.97); background: ${tokens.colors.error}10; }
+  &:active { transform: scale(0.97); background: ${alpha(tokens.colors.error, "10")}; }
 `;
 
 /* ── Try it ── */
@@ -359,7 +360,7 @@ const TestBtn = styled.button<{ $accent: string }>`
   padding: 0.5rem 0.875rem;
   border-radius: ${tokens.borderRadius.lg};
   background: transparent;
-  border: 1px solid ${({ $accent }) => $accent}60;
+  border: 1px solid ${({ $accent }) => alpha($accent, "60")};
   color: ${({ $accent }) => $accent};
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
@@ -368,7 +369,7 @@ const TestBtn = styled.button<{ $accent: string }>`
   transition: background ${tokens.transitions.fast}, transform ${tokens.transitions.fast};
 
   &:disabled { opacity: 0.5; cursor: not-allowed; }
-  &:not(:disabled):hover { background: ${({ $accent }) => withAlpha($accent, "14")}; }
+  &:not(:disabled):hover { background: ${({ $accent }) => alpha($accent, "14")}; }
   &:not(:disabled):active { transform: scale(0.96); }
 `;
 
@@ -379,7 +380,7 @@ const TestStop = styled.button`
   padding: 0.5rem 0.875rem;
   border-radius: ${tokens.borderRadius.lg};
   background: transparent;
-  border: 1px solid ${tokens.colors.error}80;
+  border: 1px solid ${alpha(tokens.colors.error, "80")};
   color: ${tokens.colors.error};
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
@@ -407,7 +408,7 @@ const TestEmpty = styled.span`
 const TestErrorBox = styled.div`
   padding: 0.5rem 0.625rem;
   border-radius: ${tokens.borderRadius.md};
-  background: ${tokens.colors.error}10;
+  background: ${alpha(tokens.colors.error, "10")};
   color: ${tokens.colors.error};
   font-size: ${tokens.typography.fontSize.xs};
 `;
@@ -418,7 +419,7 @@ const SoftCapWarning = styled.div`
   gap: 0.5rem;
   padding: 0.625rem 0.75rem;
   border-radius: ${tokens.borderRadius.md};
-  background: ${tokens.colors.tertiary}14;
+  background: ${alpha(tokens.colors.tertiary, "14")};
   color: ${tokens.colors.onSurface};
   font-size: ${tokens.typography.fontSize.xs};
   line-height: ${tokens.typography.lineHeight.relaxed};

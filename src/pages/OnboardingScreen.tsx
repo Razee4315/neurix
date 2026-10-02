@@ -1,6 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
 import { notificationService } from "@/services";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -143,7 +144,7 @@ const IconCircle = styled.div<{ $color: string }>`
   width: clamp(64px, 16vw, 80px);
   height: clamp(64px, 16vw, 80px);
   border-radius: ${tokens.borderRadius.circle};
-  background: ${({ $color }) => `${$color}12`};
+  background: ${({ $color }) => alpha($color, "12")};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -231,7 +232,7 @@ const ProgressDot = styled.div<{
 			case "completed":
 				return css`
           width: 2rem;
-          background: ${tokens.colors.primary}33;
+          background: ${alpha(tokens.colors.primary, "33")};
         `;
 			case "active":
 				return css`
@@ -266,7 +267,7 @@ const BackButton = styled.button`
   font-size: ${tokens.typography.fontSize.sm};
   letter-spacing: ${tokens.typography.letterSpacing.widest};
   text-transform: uppercase;
-  border: 1px solid rgba(72, 72, 73, 0.1);
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "1a")};
   cursor: pointer;
   transition: all ${tokens.transitions.normal};
 
@@ -303,7 +304,7 @@ const NextButton = styled.button<{ $fullWidth: boolean }>`
   transition: all ${tokens.transitions.normal};
 
   &:hover {
-    box-shadow: 0 0 30px ${tokens.colors.primary}40;
+    box-shadow: 0 0 30px ${alpha(tokens.colors.primary, "40")};
   }
   &:active {
     transform: scale(0.98);

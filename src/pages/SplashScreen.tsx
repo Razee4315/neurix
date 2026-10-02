@@ -1,6 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
 import { modelService, settingsService, notificationService } from "@/services";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -26,8 +27,8 @@ const glowPulse = keyframes`
 /* ── Layout ── */
 
 const Container = styled.div`
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -49,7 +50,7 @@ const Container = styled.div`
     height: 60%;
     background: radial-gradient(
       ellipse at center,
-      ${tokens.colors.primary}0a 0%,
+      ${alpha(tokens.colors.primary, "0a")} 0%,
       transparent 70%
     );
     pointer-events: none;
@@ -92,7 +93,7 @@ const LogoWrapper = styled.div`
     inset: -20%;
     background: radial-gradient(
       circle,
-      ${tokens.colors.primary}26 0%,
+      ${alpha(tokens.colors.primary, "26")} 0%,
       transparent 70%
     );
     border-radius: ${tokens.borderRadius.circle};

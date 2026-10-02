@@ -5,6 +5,7 @@ import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { useDownloads } from "@/context/DownloadContext";
 import { modelService } from "@/services";
 import type { ModelInfo } from "@/services/types";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -63,7 +64,7 @@ const TagBadge = styled.span`
   letter-spacing: 0.05em;
   padding: 0.2rem 0.5rem;
   border-radius: ${tokens.borderRadius.sm};
-  background: ${tokens.colors.primary}18;
+  background: ${alpha(tokens.colors.primary, "18")};
   color: ${tokens.colors.primary};
   margin-top: 0.5rem;
 `;

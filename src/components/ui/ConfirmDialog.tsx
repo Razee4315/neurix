@@ -17,12 +17,12 @@ const slideUp = keyframes`
 const Overlay = styled.div`
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: ${tokens.zIndex.modal};
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: rgba(0, 0, 0, 0.6);
+  background: ${tokens.colors.scrim};
   animation: ${fadeIn} 0.15s ease-out;
 `;
 
@@ -80,7 +80,7 @@ const Btn = styled.button<{ $danger?: boolean; $primary?: boolean }>`
 				: tokens.colors.surfaceContainerHighest};
   color: ${({ $danger, $primary }) =>
 		$danger
-			? "#fff"
+			? tokens.colors.onError
 			: $primary
 				? tokens.colors.onPrimary
 				: tokens.colors.onSurface};

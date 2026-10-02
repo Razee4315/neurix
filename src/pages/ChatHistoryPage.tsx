@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useCharacters } from "@/context/CharacterContext";
 import { historyService } from "@/services";
 import type { ConversationMeta } from "@/services/types";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -90,9 +91,9 @@ const FilterChip = styled.button<{ $active: boolean; $accent: string }>`
   padding: 0.375rem 0.75rem;
   flex-shrink: 0;
   border-radius: ${tokens.borderRadius.circle};
-  border: 1px solid ${({ $active, $accent }) => ($active ? $accent : tokens.colors.outlineVariant + "60")};
+  border: 1px solid ${({ $active, $accent }) => ($active ? $accent : alpha(tokens.colors.outlineVariant, "60"))};
   background: ${({ $active, $accent }) =>
-		$active ? `${$accent}14` : tokens.colors.surfaceContainerLow};
+		$active ? alpha($accent, "14") : tokens.colors.surfaceContainerLow};
   color: ${({ $active, $accent }) => ($active ? $accent : tokens.colors.onSurfaceVariant)};
   font-size: ${tokens.typography.fontSize.xs};
   font-weight: ${tokens.typography.fontWeight.semibold};
@@ -163,9 +164,9 @@ const ChatIcon = styled.div<{ $accent?: string }>`
   height: 40px;
   border-radius: ${tokens.borderRadius.lg};
   background: ${({ $accent }) =>
-		$accent ? `${$accent}1f` : tokens.colors.surfaceContainerHighest};
+		$accent ? alpha($accent, "1f") : tokens.colors.surfaceContainerHighest};
   border: 1px solid
-    ${({ $accent }) => ($accent ? `${$accent}3a` : "transparent")};
+    ${({ $accent }) => ($accent ? alpha($accent, "3a") : "transparent")};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -272,7 +273,7 @@ const RenameInput = styled.input`
 const ActionBtn = styled.button<{ $danger?: boolean }>`
   width: 44px;
   height: 44px;
-  background: ${({ $danger }) => $danger ? tokens.colors.error + "12" : tokens.colors.surfaceContainerHighest};
+  background: ${({ $danger }) => $danger ? alpha(tokens.colors.error, "12") : tokens.colors.surfaceContainerHighest};
   border: none;
   border-radius: ${tokens.borderRadius.lg};
   cursor: pointer;
@@ -283,7 +284,7 @@ const ActionBtn = styled.button<{ $danger?: boolean }>`
   transition: all ${tokens.transitions.fast};
 
   &:hover {
-    background: ${({ $danger }) => $danger ? tokens.colors.error + "22" : tokens.colors.surfaceBright};
+    background: ${({ $danger }) => $danger ? alpha(tokens.colors.error, "22") : tokens.colors.surfaceBright};
   }
   &:active { transform: scale(0.9); }
 `;

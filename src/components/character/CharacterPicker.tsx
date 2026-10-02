@@ -3,8 +3,9 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { useCharacters } from "@/context/CharacterContext";
 import type { Character } from "@/services/types";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
-import { accentOf, withAlpha } from "@/utils/characterAccent";
+import { accentOf } from "@/utils/characterAccent";
 import { parseShared, shareCharacter } from "@/utils/characterShare";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -31,7 +32,7 @@ const Backdrop = styled.div`
   position: fixed;
   inset: 0;
   z-index: 900;
-  background: rgba(0, 0, 0, 0.55);
+  background: ${tokens.colors.scrim};
   animation: ${fadeIn} 0.2s ease-out;
 `;
 
@@ -80,7 +81,7 @@ const EmptyHint = styled.div`
   grid-column: 1 / -1;
   padding: 0.875rem;
   border-radius: ${tokens.borderRadius.lg};
-  background: ${tokens.colors.surfaceContainerHigh}80;
+  background: ${alpha(tokens.colors.surfaceContainerHigh, "80")};
   color: ${tokens.colors.onSurfaceVariant};
   font-size: ${tokens.typography.fontSize.xs};
   line-height: ${tokens.typography.lineHeight.relaxed};
@@ -150,7 +151,7 @@ const CardBase = styled.button<{ $active?: boolean; $accent: string }>`
   border: 1.5px solid
     ${({ $active, $accent }) => ($active ? $accent : "transparent")};
   background: ${({ $active, $accent }) =>
-		$active ? withAlpha($accent, "14") : tokens.colors.surfaceContainerHigh};
+		$active ? alpha($accent, "14") : tokens.colors.surfaceContainerHigh};
   text-align: left;
   cursor: pointer;
   transition: transform ${tokens.transitions.fast}, background ${tokens.transitions.fast};
@@ -165,7 +166,7 @@ const IconBubble = styled.div<{ $active?: boolean; $accent: string }>`
   height: 36px;
   border-radius: ${tokens.borderRadius.md};
   background: ${({ $active, $accent }) =>
-		$active ? $accent : withAlpha($accent, "20")};
+		$active ? $accent : alpha($accent, "20")};
   display: flex;
   align-items: center;
   justify-content: center;
@@ -282,7 +283,7 @@ const CreateCard = styled.button`
   -webkit-tap-highlight-color: transparent;
   transition: background ${tokens.transitions.fast}, transform ${tokens.transitions.fast};
 
-  &:active { transform: scale(0.97); background: ${tokens.colors.primary}10; }
+  &:active { transform: scale(0.97); background: ${alpha(tokens.colors.primary, "10")}; }
 `;
 
 const ImportCard = styled(CreateCard)`
@@ -329,7 +330,7 @@ const ImportTextArea = styled.textarea`
   min-height: 140px;
   padding: 0.75rem;
   background: ${tokens.colors.surfaceContainer};
-  border: 1px solid ${tokens.colors.outlineVariant}40;
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "40")};
   border-radius: ${tokens.borderRadius.md};
   color: ${tokens.colors.onSurface};
   font-family: ${tokens.typography.fontFamily.mono};
@@ -337,14 +338,14 @@ const ImportTextArea = styled.textarea`
   resize: vertical;
   outline: none;
 
-  &:focus { border-color: ${tokens.colors.primary}80; }
+  &:focus { border-color: ${alpha(tokens.colors.primary, "80")}; }
 `;
 
 const ImportError = styled.div`
   font-size: ${tokens.typography.fontSize.xs};
   color: ${tokens.colors.error};
   padding: 0.375rem 0.5rem;
-  background: ${tokens.colors.error}12;
+  background: ${alpha(tokens.colors.error, "12")};
   border-radius: ${tokens.borderRadius.md};
 `;
 
