@@ -1,3 +1,4 @@
+import { Icon } from "@/components/ui/Icon";
 import { tokens } from "@/theme/tokens";
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 import styled, { keyframes } from "styled-components";
@@ -41,7 +42,7 @@ const ToastContainer = styled.div`
   align-items: center;
   pointer-events: none;
   padding: 0.75rem 1rem;
-  padding-top: env(safe-area-inset-top, 0.75rem);
+  padding-top: max(0.75rem, env(safe-area-inset-top, 0px));
   gap: 0.5rem;
 `;
 
@@ -75,14 +76,6 @@ const ToastItem = styled.div<{ $variant: ToastVariant; $exiting: boolean }>`
   max-width: 22rem;
   width: 100%;
   animation: ${({ $exiting }) => ($exiting ? slideOut : slideIn)} 0.25s ease-out forwards;
-`;
-
-const ToastIcon = styled.span<{ $variant: ToastVariant }>`
-  font-family: "Material Symbols Outlined";
-  font-size: 20px;
-  color: ${({ $variant }) => VARIANT_COLORS[$variant].accent};
-  flex-shrink: 0;
-  font-variation-settings: "FILL" 1;
 `;
 
 const ToastMessage = styled.span`
@@ -128,12 +121,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 		<ToastContext.Provider value={{ showToast }}>
 			{children}
 			{toasts.length > 0 && (
-				<ToastContainer>
+				<ToastContainer role="status" aria-live="polite">
 					{toasts.map((toast) => (
 						<ToastItem key={toast.id} $variant={toast.variant} $exiting={toast.exiting}>
-							<ToastIcon $variant={toast.variant}>
-								{VARIANT_COLORS[toast.variant].icon}
-							</ToastIcon>
+							<Icon
+								name={VARIANT_COLORS[toast.variant].icon}
+								size={20}
+								fill
+								color={VARIANT_COLORS[toast.variant].accent}
+							/>
 							<ToastMessage>{toast.message}</ToastMessage>
 						</ToastItem>
 					))}
