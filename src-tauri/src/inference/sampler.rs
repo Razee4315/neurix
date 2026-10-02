@@ -116,7 +116,14 @@ impl LogitsSampler {
 
         // ── Step 6: Top-p (nucleus) sampling ──
         if self.top_p < 1.0 {
-            let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
+            // Min-p has already zeroed most of the vocabulary, so only the
+            // survivors need sorting — a handful of tokens instead of 100k+.
+            let mut indexed: Vec<(usize, f32)> = probs
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, p)| *p > 0.0)
+                .collect();
             indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let mut cumulative = 0.0f32;
