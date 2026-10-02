@@ -1,13 +1,17 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
+import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
+import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
-import { modelService } from "@/services";
 import type { ModelInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { formatBytes, formatEta, formatSpeed } from "@/utils/format";
+import { isMobile, vibrate } from "@/utils/platform";
+import { useCatalogModel } from "@/utils/useCatalogModel";
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
 const shimmer = keyframes`
@@ -183,89 +187,100 @@ const ActionBtn = styled.button<{ $variant?: "danger" | "primary" }>`
   &:active { transform: scale(0.98); }
 `;
 
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-	return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
+const Reason = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.75rem 0.875rem;
+  border-radius: ${tokens.borderRadius.xl};
+  background: ${alpha(tokens.colors.error, "14")};
+  border: 1px solid ${alpha(tokens.colors.error, "40")};
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.sm};
+  line-height: ${tokens.typography.lineHeight.relaxed};
+  text-align: left;
 
-function formatSpeed(bps: number): string {
-	if (bps <= 0) return "--";
-	if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
-	return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
-}
+  svg { margin-top: 2px; }
+`;
 
-function formatEta(bytesRemaining: number, speedBps: number): string {
-	if (speedBps <= 0) return "--";
-	const seconds = bytesRemaining / speedBps;
-	if (seconds < 60) return `${Math.ceil(seconds)}s`;
-	if (seconds < 3600) return `${Math.ceil(seconds / 60)} min`;
-	return `${(seconds / 3600).toFixed(1)} hr`;
-}
+const TITLES = {
+	idle: "Not downloading",
+	downloading: "Downloading model",
+	verifying: "Checking the download",
+	paused: "Download paused",
+	failed: "Download failed",
+	finished: "Download complete",
+} as const;
 
 export function DownloadingPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const { showConfirm } = useConfirm();
-	const stateModel = (location.state as { model?: ModelInfo })?.model;
+	const { activeModelId, loadModel } = useAppContext();
+	const stateModel = (location.state as { model?: ModelInfo } | null)?.model;
 	const idFromQuery = new URLSearchParams(location.search).get("id");
-	const [model, setModel] = useState<ModelInfo | null>(stateModel ?? null);
-	const [lookupFailed, setLookupFailed] = useState(false);
-	const { downloads, pauseDownload, resumeDownload, cancelDownload, removeDownload } = useDownloads();
-
-	useEffect(() => {
-		if (model || !idFromQuery) return;
-		let cancelled = false;
-		modelService.getCatalog().then((c) => {
-			if (cancelled) return;
-			const found = c.find((m) => m.id === idFromQuery);
-			if (found) setModel(found);
-			else setLookupFailed(true);
-		}).catch(() => { if (!cancelled) setLookupFailed(true); });
-		return () => { cancelled = true; };
-	}, [model, idFromQuery]);
+	const { model, lookupFailed } = useCatalogModel(stateModel, idFromQuery);
+	const { downloads, startDownload, pauseDownload, resumeDownload, cancelDownload, removeDownload } =
+		useDownloads();
 
 	const dl = model ? downloads[model.id] : undefined;
-	// Guard against running the redirect effect twice if React re-runs in
-	// strict mode or if rapid navigation re-triggers it.
-	const finishedRedirectFired = useRef(false);
+	const [opening, setOpening] = useState(false);
+	const finishedHandled = useRef(false);
 
-	// Auto-redirect on finish
+	// When the download finishes: on a first install (nothing loaded yet)
+	// load the model and go straight to chat; otherwise show it in My Models
+	// without switching away from the model the user is already using.
 	useEffect(() => {
-		if (dl?.status !== "finished") return;
-		if (finishedRedirectFired.current) return;
-		finishedRedirectFired.current = true;
-		if (navigator.vibrate) navigator.vibrate([10, 50, 10]);
-		const timer = setTimeout(() => {
-			removeDownload(dl.modelId);
-			navigate("/models");
-		}, 1500);
-		return () => clearTimeout(timer);
-	}, [dl, navigate, removeDownload]);
+		if (dl?.status !== "finished" || !model || finishedHandled.current) return;
+		finishedHandled.current = true;
+		vibrate([10, 50, 10]);
+		const modelId = model.id;
+		// Not cleared on re-render on purpose: `finishedHandled` guarantees it
+		// is scheduled once, and it has to survive the state updates it causes.
+		setTimeout(async () => {
+			removeDownload(modelId);
+			if (activeModelId) {
+				navigate("/models");
+				return;
+			}
+			setOpening(true);
+			try {
+				await loadModel(modelId);
+				navigate("/chat", { state: { freshChat: true } });
+			} catch {
+				navigate("/models");
+			}
+		}, 1200);
+	}, [dl?.status, model, activeModelId, loadModel, navigate, removeDownload]);
 
 	if (!model) {
-		if (!idFromQuery || lookupFailed) {
-			navigate("/store", { replace: true });
-			return null;
-		}
-		return null; // brief loading state while catalog lookup is in flight
+		if (!idFromQuery || lookupFailed) return <Navigate to="/store" replace />;
+		return (
+			<AppLayout title="Download" back="/store">
+				<Page aria-busy="true" />
+			</AppLayout>
+		);
 	}
 
-	const totalBytes = dl?.totalBytes || model.size_bytes;
-	const downloaded = dl?.downloadedBytes || 0;
-	const speed = dl?.speedBps || 0;
-	const status = dl?.status || "downloading";
-	const pct = totalBytes > 0 ? (downloaded / totalBytes) * 100 : 0;
+	if (opening) {
+		return <LoadingOverlay title={`Loading ${model.name}`} subtitle="Getting your first chat ready…" />;
+	}
 
-	const handlePause = () => pauseDownload(model.id);
-	const handleResume = () => resumeDownload(model);
+	const status = dl?.status ?? "idle";
+	const totalBytes = dl?.totalBytes || model.size_bytes;
+	const downloaded = dl?.downloadedBytes ?? 0;
+	const speed = dl?.speedBps ?? 0;
+	const pct = totalBytes > 0 ? Math.min(100, (downloaded / totalBytes) * 100) : 0;
+
 	const handleCancel = async () => {
 		const ok = await showConfirm({
-			title: "Cancel Download",
-			message: `Cancel downloading ${model.name}? Your progress will be lost.`,
-			confirmLabel: "Cancel Download",
-			cancelLabel: "Keep Downloading",
+			title: "Cancel download",
+			message:
+				downloaded > 0
+					? `Stop downloading ${model.name} and delete the ${formatBytes(downloaded)} downloaded so far? To keep your progress, pause instead.`
+					: `Stop downloading ${model.name}?`,
+			confirmLabel: "Cancel download",
+			cancelLabel: "Keep it",
 			danger: true,
 		});
 		if (!ok) return;
@@ -274,19 +289,13 @@ export function DownloadingPage() {
 	};
 
 	return (
-		<AppLayout title="Downloading">
+		<AppLayout title="Download" back="/store">
 			<Page>
 				<Header>
-					<ModelName>{model.name} · {model.size_label}</ModelName>
-					<Title>
-						{status === "finished"
-							? "Download Complete"
-							: status === "failed"
-								? "Download Failed"
-								: status === "paused"
-									? "Download Paused"
-									: "Downloading Model"}
-					</Title>
+					<ModelName>
+						{model.name} · {model.size_label}
+					</ModelName>
+					<Title>{TITLES[status]}</Title>
 				</Header>
 
 				<ProgressSection>
@@ -294,18 +303,24 @@ export function DownloadingPage() {
 						<div>
 							<StatLabel>Speed</StatLabel>
 							<br />
-							<PrimaryValue>{formatSpeed(speed)}</PrimaryValue>
+							<PrimaryValue>{status === "downloading" ? formatSpeed(speed) : "--"}</PrimaryValue>
 						</div>
 						<div style={{ textAlign: "right" }}>
 							<StatLabel>Remaining</StatLabel>
 							<br />
 							<StatValue>
-								{formatEta(totalBytes - downloaded, speed)}
+								{status === "downloading" ? formatEta(totalBytes - downloaded, speed) : "--"}
 							</StatValue>
 						</div>
 					</StatsRow>
 
-					<BarTrack>
+					<BarTrack
+						role="progressbar"
+						aria-label={`${model.name} download`}
+						aria-valuemin={0}
+						aria-valuemax={100}
+						aria-valuenow={Math.round(pct)}
+					>
 						<BarFill $pct={pct} />
 					</BarTrack>
 
@@ -317,20 +332,29 @@ export function DownloadingPage() {
 					</BarInfo>
 				</ProgressSection>
 
-				{status === "failed" && dl?.error && (
-					<Hint style={{ color: tokens.colors.error }}>{dl.error}</Hint>
+				{(status === "failed" || status === "paused") && dl?.error && (
+					<Reason role="alert">
+						<Icon name="error_outline" size={16} color={tokens.colors.error} />
+						<span>{dl.error}</span>
+					</Reason>
+				)}
+
+				{status === "idle" && (
+					<Hint>This model isn't downloading right now.</Hint>
 				)}
 
 				{status === "downloading" && (
 					<Hint>
-						You can leave this screen. The download will continue in the background.
+						{isMobile()
+							? "Keep Neurix open until this finishes. If it's interrupted, it resumes from where it stopped."
+							: "You can keep using Neurix while this downloads. Closing the app pauses it."}
 					</Hint>
 				)}
 
-				{status === "paused" && (
-					<Hint>
-						Download paused. Your progress is saved and will resume from where it left off.
-					</Hint>
+				{status === "verifying" && <Hint>Making sure the file arrived intact…</Hint>}
+
+				{status === "paused" && !dl?.error && (
+					<Hint>Your progress is saved. Resume to continue from where it stopped.</Hint>
 				)}
 
 				{status === "finished" && (
@@ -339,42 +363,43 @@ export function DownloadingPage() {
 							<Icon name="check" size={28} color={tokens.colors.secondary} />
 						</SuccessCircle>
 						<Hint style={{ color: tokens.colors.secondary }}>
-							Model ready! Redirecting to My Models...
+							{activeModelId ? "Model ready. Opening My Models…" : "Model ready. Opening your first chat…"}
 						</Hint>
 					</SuccessBlock>
 				)}
 
+				{status === "idle" && (
+					<ActionRow>
+						<ActionBtn type="button" $variant="primary" onClick={() => startDownload(model)}>
+							<Icon name="download" size={16} />
+							Start download
+						</ActionBtn>
+						<ActionBtn type="button" onClick={() => navigate("/store")}>
+							Back to Store
+						</ActionBtn>
+					</ActionRow>
+				)}
+
 				{status === "downloading" && (
 					<ActionRow>
-						<ActionBtn onClick={handlePause}>
+						<ActionBtn type="button" onClick={() => pauseDownload(model.id)}>
 							<Icon name="pause" size={16} />
 							Pause
 						</ActionBtn>
-						<ActionBtn $variant="danger" onClick={handleCancel}>
+						<ActionBtn type="button" $variant="danger" onClick={handleCancel}>
 							Cancel
 						</ActionBtn>
 					</ActionRow>
 				)}
 
-				{status === "paused" && (
+				{(status === "paused" || status === "failed") && (
 					<ActionRow>
-						<ActionBtn $variant="primary" onClick={handleResume}>
-							<Icon name="play_arrow" size={16} />
-							Resume
+						<ActionBtn type="button" $variant="primary" onClick={() => resumeDownload(model)}>
+							<Icon name={status === "failed" ? "refresh" : "play_arrow"} size={16} />
+							{status === "failed" ? "Try again" : "Resume"}
 						</ActionBtn>
-						<ActionBtn $variant="danger" onClick={handleCancel}>
+						<ActionBtn type="button" $variant="danger" onClick={handleCancel}>
 							Cancel
-						</ActionBtn>
-					</ActionRow>
-				)}
-
-				{status === "failed" && (
-					<ActionRow>
-						<ActionBtn $variant="primary" onClick={handleResume}>
-							Retry
-						</ActionBtn>
-						<ActionBtn onClick={() => navigate("/store")}>
-							Back to Store
 						</ActionBtn>
 					</ActionRow>
 				)}

@@ -7,6 +7,8 @@ import { modelService, settingsService } from "@/services";
 import type { ModelInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { formatGB } from "@/utils/format";
+import { requiredMemoryBytes } from "@/utils/platform";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -274,9 +276,21 @@ const StorageHint = styled.div`
   gap: 0.375rem;
 `;
 
+const FitNote = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.error};
+`;
+
+/** The smallest capable model: the safest first download on any device. */
+const RECOMMENDED_ID = "llama-3.2-1b";
+
 export function ModelStorePage() {
 	const navigate = useNavigate();
-	const { downloads } = useDownloads();
+	const { downloads, installedVersion } = useDownloads();
 	const [filter, setFilter] = useState(0);
 	const [search, setSearch] = useState("");
 	const [catalog, setCatalog] = useState<ModelInfo[]>([]);
@@ -284,6 +298,7 @@ export function ModelStorePage() {
 	const [catalogError, setCatalogError] = useState<string>("");
 	const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
 	const [freeSpace, setFreeSpace] = useState<string | null>(null);
+	const [deviceMemory, setDeviceMemory] = useState<number | null>(null);
 
 	const loadCatalog = useCallback(() => {
 		setCatalogStatus("loading");
@@ -301,46 +316,69 @@ export function ModelStorePage() {
 
 	useEffect(() => {
 		loadCatalog();
-		settingsService.getAvailableSpace().then((bytes) => {
-			setFreeSpace((bytes / (1024 * 1024 * 1024)).toFixed(1));
-		}).catch(() => {});
+		settingsService.getDeviceInfo()
+			.then((info) => setDeviceMemory(info.total_memory_bytes))
+			.catch(() => {});
 	}, [loadCatalog]);
 
-	// Refresh downloaded IDs whenever downloads change (catches completed downloads)
+	// Installed models and free space change only when a download finishes
+	// or is discarded — not on every progress tick.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: installedVersion is the refresh trigger
 	useEffect(() => {
-		modelService.getDownloadedModels().then((models) => {
-			setDownloadedIds(new Set(models.map((m) => m.id)));
-		});
-	}, [downloads]);
+		modelService.getDownloadedModels()
+			.then((models) => setDownloadedIds(new Set(models.map((m) => m.id))))
+			.catch(() => {});
+		settingsService.getAvailableSpace()
+			.then((bytes) => setFreeSpace(formatGB(bytes)))
+			.catch(() => {});
+	}, [installedVersion]);
 
+	const query = search.trim().toLowerCase();
 	const filtered = catalog.filter((m) => {
 		const matchesSearch =
-			!search ||
-			m.name.toLowerCase().includes(search.toLowerCase()) ||
-			m.description.toLowerCase().includes(search.toLowerCase());
+			!query ||
+			m.name.toLowerCase().includes(query) ||
+			m.description.toLowerCase().includes(query) ||
+			m.company.toLowerCase().includes(query);
 		const matchesFilter = filter === 0 || m.tag === FILTERS[filter];
 		return matchesSearch && matchesFilter;
 	});
 
 	const handleModelClick = (model: ModelInfo) => {
-		if (downloads[model.id]?.status === "downloading" || downloads[model.id]?.status === "paused") {
-			navigate(`/downloading?id=${encodeURIComponent(model.id)}`, { state: { model } });
-		} else {
-			// Pass model via state for fast first-paint; the ?id query lets the
-			// detail page recover after a reload.
-			navigate(`/store/model?id=${encodeURIComponent(model.id)}`, { state: { model } });
+		const inProgress = downloads[model.id] && downloads[model.id].status !== "finished";
+		// The ?id query lets either page recover after a reload.
+		navigate(`${inProgress ? "/downloading" : "/store/model"}?id=${encodeURIComponent(model.id)}`, {
+			state: { model },
+		});
+	};
+
+	const statusBadge = (m: ModelInfo) => {
+		const dl = downloads[m.id];
+		if (downloadedIds.has(m.id)) return <DownloadedBadge>Installed</DownloadedBadge>;
+		if (dl?.status === "downloading") {
+			const pct = Math.round((dl.downloadedBytes / Math.max(dl.totalBytes, 1)) * 100);
+			return <DownloadingBadge>{pct}%</DownloadingBadge>;
 		}
+		if (dl?.status === "verifying") return <DownloadingBadge>Checking…</DownloadingBadge>;
+		if (dl?.status === "paused") return <DownloadingBadge>Paused</DownloadingBadge>;
+		if (dl?.status === "failed") return <DownloadingBadge>Failed</DownloadingBadge>;
+		return (
+			<DlIcon>
+				<Icon name="download" size={18} color={tokens.colors.primary} />
+			</DlIcon>
+		);
 	};
 
 	return (
 		<AppLayout title="Model Store">
 			<OfflineBanner />
 			<Page>
-<SearchBox>
+				<SearchBox>
 					<SearchIconWrap>
 						<Icon name="search" size={18} />
 					</SearchIconWrap>
 					<SearchInput
+						type="search"
 						placeholder="Search models..."
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
@@ -348,9 +386,15 @@ export function ModelStorePage() {
 					/>
 				</SearchBox>
 
-				<Chips>
+				<Chips role="group" aria-label="Filter by type">
 					{FILTERS.map((f, i) => (
-						<Chip key={f} $active={i === filter} onClick={() => setFilter(i)}>
+						<Chip
+							key={f}
+							type="button"
+							$active={i === filter}
+							aria-pressed={i === filter}
+							onClick={() => setFilter(i)}
+						>
 							{f}
 						</Chip>
 					))}
@@ -358,23 +402,23 @@ export function ModelStorePage() {
 
 				{freeSpace && (
 					<StorageHint>
-						<Icon name="storage" size={14} color={tokens.colors.onSurfaceVariant} />
-						{freeSpace} GB free on device
+						<Icon name="storage" size={14} />
+						{freeSpace} GB free on this device
 					</StorageHint>
 				)}
 
 				{catalogStatus === "error" ? (
-					<CatalogError>
+					<CatalogError role="alert">
 						<Icon name="error_outline" size={32} color={tokens.colors.error} />
 						<CatalogErrorTitle>Couldn't load models</CatalogErrorTitle>
 						<CatalogErrorMessage>{catalogError}</CatalogErrorMessage>
 						<RetryButton type="button" onClick={loadCatalog}>
-							<Icon name="refresh" size={16} color={tokens.colors.onPrimary} />
+							<Icon name="refresh" size={16} />
 							Try again
 						</RetryButton>
 					</CatalogError>
 				) : catalogStatus === "loading" ? (
-					<Cards>
+					<Cards aria-busy="true" aria-label="Loading models">
 						{[1, 2, 3, 4].map((i) => (
 							<SkeletonCard key={i} style={{ animationDelay: `${i * 80}ms` }}>
 								<div style={{ flex: 1 }}>
@@ -389,46 +433,48 @@ export function ModelStorePage() {
 						))}
 					</Cards>
 				) : filtered.length === 0 ? (
-					<EmptyState message="No models match your search" />
+					<EmptyState
+						art="search"
+						message="No models match"
+						subtitle="Try a different search or filter."
+					/>
 				) : (
 					<Cards>
-						{filtered.map((m, i) => (
-							<Card
-								key={m.id}
-								onClick={() => handleModelClick(m)}
-								style={{ animationDelay: `${i * 50}ms` }}
-							>
-								<CardInfo>
-									<CardName>
-										{m.name}
-										{m.id === "llama-3.2-1b" && !downloadedIds.has(m.id) && (
-											<> <RecommendedBadge>Recommended</RecommendedBadge></>
+						{filtered.map((m, i) => {
+							const tooLarge =
+								deviceMemory !== null && requiredMemoryBytes(m.size_bytes) > deviceMemory;
+							return (
+								<Card
+									key={m.id}
+									type="button"
+									onClick={() => handleModelClick(m)}
+									style={{ animationDelay: `${i * 50}ms` }}
+								>
+									<CardInfo>
+										<CardName>
+											{m.name}
+											{m.id === RECOMMENDED_ID && !downloadedIds.has(m.id) && (
+												<>
+													{" "}
+													<RecommendedBadge>Recommended</RecommendedBadge>
+												</>
+											)}
+										</CardName>
+										<CardDesc>{m.description}</CardDesc>
+										{tooLarge && !downloadedIds.has(m.id) && (
+											<FitNote>
+												<Icon name="warning" size={12} />
+												May be too large for this device's memory
+											</FitNote>
 										)}
-									</CardName>
-									<CardDesc>{m.description}</CardDesc>
-								</CardInfo>
-								<CardRight>
-									<CardSize>{m.size_label}</CardSize>
-									{downloadedIds.has(m.id) ? (
-										<DownloadedBadge>Downloaded</DownloadedBadge>
-									) : downloads[m.id]?.status === "downloading" ? (
-										<DownloadingBadge>
-											{Math.round((downloads[m.id].downloadedBytes / Math.max(downloads[m.id].totalBytes, 1)) * 100)}%
-										</DownloadingBadge>
-									) : downloads[m.id]?.status === "paused" ? (
-										<DownloadingBadge>Paused</DownloadingBadge>
-									) : (
-										<DlIcon>
-											<Icon
-												name="download"
-												size={18}
-												color={tokens.colors.primary}
-											/>
-										</DlIcon>
-									)}
-								</CardRight>
-							</Card>
-						))}
+									</CardInfo>
+									<CardRight>
+										<CardSize>{m.size_label}</CardSize>
+										{statusBadge(m)}
+									</CardRight>
+								</Card>
+							);
+						})}
 					</Cards>
 				)}
 			</Page>

@@ -3,12 +3,15 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { useDownloads } from "@/context/DownloadContext";
-import { modelService } from "@/services";
+import { modelService, notificationService, settingsService } from "@/services";
 import type { ModelInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { formatGB } from "@/utils/format";
+import { requiredMemoryBytes, vibrate } from "@/utils/platform";
+import { useCatalogModel } from "@/utils/useCatalogModel";
 import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
 const fadeIn = keyframes`
@@ -19,21 +22,6 @@ const fadeIn = keyframes`
 const Page = styled.div`
   padding: 1.25rem;
   animation: ${fadeIn} 0.3s ease-out both;
-`;
-
-const BackBtn = styled.button`
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  background: none;
-  border: none;
-  color: ${tokens.colors.onSurfaceVariant};
-  font-size: ${tokens.typography.fontSize.sm};
-  cursor: pointer;
-  padding: 0;
-  margin-bottom: 1rem;
-
-  &:active { opacity: 0.7; }
 `;
 
 const Header = styled.div`
@@ -156,50 +144,58 @@ const SizeNote = styled.p`
   margin-top: 0.5rem;
 `;
 
+const Notice = styled.div<{ $tone: "warn" | "info" }>`
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin-top: 1rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: ${tokens.borderRadius.xl};
+  font-size: ${tokens.typography.fontSize.sm};
+  line-height: ${tokens.typography.lineHeight.relaxed};
+  color: ${tokens.colors.onSurface};
+  background: ${({ $tone }) =>
+		alpha($tone === "warn" ? tokens.colors.error : tokens.colors.tertiary, "14")};
+  border: 1px solid ${({ $tone }) =>
+		alpha($tone === "warn" ? tokens.colors.error : tokens.colors.tertiary, "40")};
+
+  svg { margin-top: 2px; }
+`;
+
 export function ModelDetailPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const stateModel = (location.state as { model?: ModelInfo })?.model;
+	const stateModel = (location.state as { model?: ModelInfo } | null)?.model;
 	// Allow deep-linking via ?id=... so reload doesn't kick back to /store.
 	const idFromQuery = new URLSearchParams(location.search).get("id");
-	const [model, setModel] = useState<ModelInfo | null>(stateModel ?? null);
-	const [lookupFailed, setLookupFailed] = useState(false);
-	const { downloads, startDownload } = useDownloads();
+	const { model, lookupFailed } = useCatalogModel(stateModel, idFromQuery);
+	const { downloads, installedVersion, startDownload } = useDownloads();
 	const { showConfirm } = useConfirm();
 	const [isDownloaded, setIsDownloaded] = useState(false);
+	const [deviceMemory, setDeviceMemory] = useState<number | null>(null);
+	const [freeBytes, setFreeBytes] = useState<number | null>(null);
 
-	// If we don't have a model from router state, try to look it up by id.
-	useEffect(() => {
-		if (model || !idFromQuery) return;
-		let cancelled = false;
-		modelService.getCatalog().then((c) => {
-			if (cancelled) return;
-			const found = c.find((m) => m.id === idFromQuery);
-			if (found) setModel(found);
-			else setLookupFailed(true);
-		}).catch(() => { if (!cancelled) setLookupFailed(true); });
-		return () => { cancelled = true; };
-	}, [model, idFromQuery]);
-
+	// biome-ignore lint/correctness/useExhaustiveDependencies: installedVersion is the refresh trigger
 	useEffect(() => {
 		if (!model) return;
-		modelService.getDownloadedModels().then((models) => {
-			setIsDownloaded(models.some((m) => m.id === model.id));
-		});
-	}, [model]);
+		modelService.getDownloadedModels()
+			.then((models) => setIsDownloaded(models.some((m) => m.id === model.id)))
+			.catch(() => {});
+	}, [model, installedVersion]);
 
-	// No model and nothing to look up -> bounce to store. We avoid redirecting
-	// while a lookup is in flight so reload-on-deep-link doesn't flicker.
+	useEffect(() => {
+		settingsService.getDeviceInfo()
+			.then((info) => setDeviceMemory(info.total_memory_bytes))
+			.catch(() => {});
+		settingsService.getAvailableSpace().then(setFreeBytes).catch(() => {});
+	}, []);
+
 	if (!model) {
-		if (!idFromQuery || lookupFailed) {
-			navigate("/store", { replace: true });
-			return null;
-		}
-		// Lookup in progress: show a thin spinner instead of jumping back.
+		// Nothing to look up, or the id is unknown: back to the store.
+		if (!idFromQuery || lookupFailed) return <Navigate to="/store" replace />;
 		return (
-			<AppLayout title="Loading">
-				<OfflineBanner />
-				<Page>
+			<AppLayout title="Model" back="/store">
+				<Page aria-busy="true">
 					<div style={{ padding: "2rem", textAlign: "center", color: tokens.colors.onSurfaceVariant }}>
 						Loading model details…
 					</div>
@@ -209,30 +205,32 @@ export function ModelDetailPage() {
 	}
 
 	const dl = downloads[model.id];
-	const isDownloading = dl?.status === "downloading" || dl?.status === "paused";
+	const inProgress = !!dl && dl.status !== "finished";
+	const tooLarge = deviceMemory !== null && requiredMemoryBytes(model.size_bytes) > deviceMemory;
+	const noSpace = freeBytes !== null && freeBytes < model.size_bytes;
 
 	const handleDownload = async () => {
 		const ok = await showConfirm({
-			title: "Download Model",
-			message: `Download ${model.name}? This will use ${model.size_label} of storage.`,
-			confirmLabel: "Download",
+			title: tooLarge ? "This model may not run here" : "Download model",
+			message: tooLarge
+				? `${model.name} needs about ${formatGB(requiredMemoryBytes(model.size_bytes))} GB of memory and this device has ${formatGB(deviceMemory ?? 0)} GB. It may fail to load or be very slow. Download ${model.size_label} anyway?`
+				: `Download ${model.name}? It will use ${model.size_label} of storage.`,
+			confirmLabel: tooLarge ? "Download anyway" : "Download",
 			cancelLabel: "Cancel",
 		});
 		if (!ok) return;
-		if (navigator.vibrate) navigator.vibrate(10);
+		vibrate(10);
+		// Ask for notifications here, where the reason is obvious: to be told
+		// when a long download finishes.
+		await notificationService.requestNotificationPermission();
 		startDownload(model);
-		navigate("/downloading", { state: { model } });
+		navigate(`/downloading?id=${encodeURIComponent(model.id)}`, { state: { model } });
 	};
 
 	return (
-		<AppLayout title={model?.name || "Model"}>
+		<AppLayout title={model.name} back="/store">
 			<OfflineBanner />
 			<Page>
-				<BackBtn onClick={() => navigate("/store")}>
-					<Icon name="arrow_back" size={18} />
-					Back to Store
-				</BackBtn>
-
 				<Header>
 					<CompanyTag>{model.company}</CompanyTag>
 					<ModelName>{model.name}</ModelName>
@@ -240,6 +238,24 @@ export function ModelDetailPage() {
 				</Header>
 
 				<Description>{model.description}</Description>
+
+				{tooLarge && !isDownloaded && (
+					<Notice $tone="warn" role="note">
+						<Icon name="warning" size={16} color={tokens.colors.error} />
+						<span>
+							This model needs about {formatGB(requiredMemoryBytes(model.size_bytes))} GB of memory;
+							this device has {formatGB(deviceMemory ?? 0)} GB. A smaller model will work better.
+						</span>
+					</Notice>
+				)}
+				{noSpace && !isDownloaded && !inProgress && (
+					<Notice $tone="warn" role="note">
+						<Icon name="storage" size={16} color={tokens.colors.error} />
+						<span>
+							Not enough free storage: {formatGB(freeBytes ?? 0)} GB free, {model.size_label} needed.
+						</span>
+					</Notice>
+				)}
 
 				<SectionLabel style={{ marginTop: "1.25rem" }}>Best for</SectionLabel>
 				<BestForList>
@@ -263,26 +279,39 @@ export function ModelDetailPage() {
 						<InfoValue>{model.quantization}</InfoValue>
 					</InfoRow>
 					<InfoRow>
-						<InfoLabel>Download Size</InfoLabel>
+						<InfoLabel>Context window</InfoLabel>
+						<InfoValue>{model.context_length.toLocaleString()} tokens</InfoValue>
+					</InfoRow>
+					<InfoRow>
+						<InfoLabel>Download size</InfoLabel>
 						<InfoValue>{model.size_label}</InfoValue>
 					</InfoRow>
 				</Section>
 
 				{isDownloaded ? (
-					<DownloadedBtn onClick={() => navigate("/models")}>
-						Already Downloaded — Go to Models
+					<DownloadedBtn type="button" onClick={() => navigate("/models")}>
+						Installed — open My Models
 					</DownloadedBtn>
-				) : isDownloading ? (
-					<DownloadBtn onClick={() => navigate("/downloading", { state: { model } })}>
-						Downloading... Tap to View
+				) : inProgress ? (
+					<DownloadBtn
+						type="button"
+						onClick={() =>
+							navigate(`/downloading?id=${encodeURIComponent(model.id)}`, { state: { model } })
+						}
+					>
+						{dl.status === "paused"
+							? "Download paused — view"
+							: dl.status === "failed"
+								? "Download failed — view"
+								: "Downloading — view progress"}
 					</DownloadBtn>
 				) : (
 					<>
-						<DownloadBtn onClick={handleDownload}>
+						<DownloadBtn type="button" onClick={handleDownload} disabled={noSpace}>
 							Download {model.name}
 						</DownloadBtn>
 						<SizeNote>
-							This will download {model.size_label} to your device
+							{model.size_label} · downloaded once, then works offline
 						</SizeNote>
 					</>
 				)}

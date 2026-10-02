@@ -1,12 +1,16 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
+import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
 import { modelService, settingsService } from "@/services";
-import type { DownloadedModel, ModelInfo, StorageInfo } from "@/services/types";
+import type { DownloadedModel, StorageInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { formatBytes, formatGB, formatSpeed } from "@/utils/format";
+import { vibrate } from "@/utils/platform";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -380,62 +384,9 @@ const DownloadError = styled.div`
 
 /* ── Loading Overlay ── */
 
-const overlayFadeIn = keyframes`
-  from { opacity: 0; }
-  to { opacity: 1; }
-`;
-
-const loadingPulse = keyframes`
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
-`;
-
 const loadingSpin = keyframes`
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-`;
-
-const glowRing = keyframes`
-  0%, 100% { box-shadow: 0 0 0 0 ${alpha(tokens.colors.primary, "4d")}; }
-  50% { box-shadow: 0 0 20px 4px ${alpha(tokens.colors.primary, "26")}; }
-`;
-
-const LoadingOverlay = styled.div`
-  position: fixed;
-  inset: 0;
-  z-index: 999;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.5rem;
-  background: ${alpha(tokens.colors.background, "f2")};
-  padding: 2rem;
-  animation: ${overlayFadeIn} 0.2s ease-out both;
-`;
-
-const Spinner = styled.div`
-  width: 48px;
-  height: 48px;
-  border: 3px solid ${tokens.colors.surfaceContainerHighest};
-  border-top-color: ${tokens.colors.primary};
-  border-radius: 50%;
-  animation: ${loadingSpin} 0.8s linear infinite, ${glowRing} 2s ease-in-out infinite;
-`;
-
-const LoadingTitle = styled.h2`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.xl};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
-  text-align: center;
-`;
-
-const LoadingSubtitle = styled.p`
-  font-size: ${tokens.typography.fontSize.base};
-  color: ${tokens.colors.onSurfaceVariant};
-  text-align: center;
-  animation: ${loadingPulse} 2s ease-in-out infinite;
 `;
 
 /* ── Pull to Refresh ── */
@@ -458,66 +409,86 @@ const RefreshSpinner = styled.div`
   animation: ${loadingSpin} 0.8s linear infinite;
 `;
 
+const SecondaryBtn = styled.button`
+  padding: 0.5rem 0.875rem;
+  border-radius: ${tokens.borderRadius.xl};
+  border: 1px solid ${tokens.colors.outlineVariant};
+  background: transparent;
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  cursor: pointer;
+
+  &:disabled { opacity: 0.5; cursor: default; }
+  &:not(:disabled):active { transform: scale(0.96); }
+`;
+
+const PrimaryCta = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.125rem;
+  border-radius: ${tokens.borderRadius.xl};
+  border: none;
+  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  color: ${tokens.colors.onPrimaryFixed};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  cursor: pointer;
+
+  &:active { transform: scale(0.96); }
+`;
+
+const STATUS_LABEL = {
+	downloading: "Downloading",
+	verifying: "Checking",
+	paused: "Paused",
+	failed: "Failed",
+	finished: "Done",
+} as const;
+
 /* ── Component ── */
-
-function formatStorageGB(bytes: number): string {
-	return (bytes / (1024 * 1024 * 1024)).toFixed(1);
-}
-
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-	return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function formatSpeed(bps: number): string {
-	if (bps < 1024) return `${bps} B/s`;
-	if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`;
-	return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`;
-}
 
 export function MyModelsPage() {
 	const navigate = useNavigate();
-	const { activeModel, refreshActiveModel } = useAppContext();
-	const { downloads, pauseDownload, resumeDownload, cancelDownload } = useDownloads();
+	const { activeModelId, loadModel, unloadModel, refreshActiveModel } = useAppContext();
+	const { downloads, installedVersion, pauseDownload, resumeDownload, cancelDownload } = useDownloads();
 	const { showConfirm, showAlert } = useConfirm();
+	const { showToast } = useToast();
 	const [search, setSearch] = useState("");
 	const [models, setModels] = useState<DownloadedModel[]>([]);
+	const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const pullStartRef = useRef(0);
 	const pageRef = useRef<HTMLDivElement>(null);
-	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0 });
+	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0, partial_bytes: 0 });
 	const [availableSpace, setAvailableSpace] = useState<number | null>(null);
-	const [catalog, setCatalog] = useState<ModelInfo[]>([]);
+	const [loadingModel, setLoadingModel] = useState<DownloadedModel | null>(null);
 
 	const refresh = useCallback(async () => {
-		const [downloaded, info, available, catalogData] = await Promise.all([
-			modelService.getDownloadedModels(),
-			settingsService.getStorageInfo(),
-			settingsService.getAvailableSpace().catch(() => null),
-			modelService.getCatalog().catch(() => []),
-		]);
-		setModels(downloaded);
-		setStorage(info);
-		setAvailableSpace(available);
-		setCatalog(catalogData);
+		try {
+			const [downloaded, info, available] = await Promise.all([
+				modelService.getDownloadedModels(),
+				settingsService.getStorageInfo(),
+				settingsService.getAvailableSpace().catch(() => null),
+			]);
+			setModels(downloaded);
+			setStorage(info);
+			setAvailableSpace(available);
+			setStatus("ready");
+		} catch {
+			setStatus("error");
+		}
 	}, []);
 
+	// Refetch on mount and whenever a download finishes or is discarded.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: installedVersion is the refresh trigger
 	useEffect(() => {
 		refresh();
-	}, [refresh]);
-
-	// Auto-refresh installed models when any download completes
-	useEffect(() => {
-		const hasFinished = Object.values(downloads).some(d => d.status === "finished");
-		if (hasFinished) {
-			refresh();
-		}
-	}, [downloads, refresh]);
+	}, [refresh, installedVersion]);
 
 	const handlePullRefresh = async () => {
-		if (navigator.vibrate) navigator.vibrate(8);
+		vibrate(8);
 		setIsRefreshing(true);
 		await refresh();
 		setIsRefreshing(false);
@@ -530,99 +501,113 @@ export function MyModelsPage() {
 	const handleTouchEnd = (e: React.TouchEvent) => {
 		const diff = e.changedTouches[0].clientY - pullStartRef.current;
 		const el = pageRef.current?.parentElement;
-		if (diff > 80 && el && el.scrollTop <= 0 && !isRefreshing) {
-			handlePullRefresh();
-		}
+		if (diff > 80 && el && el.scrollTop <= 0 && !isRefreshing) handlePullRefresh();
 	};
 
 	const filtered = models.filter(
 		(m) => !search || m.name.toLowerCase().includes(search.toLowerCase()),
 	);
 
-	const [loadingModelId, setLoadingModelId] = useState<string | null>(null);
-	const [loadingModelName, setLoadingModelName] = useState<string | null>(null);
-
 	const handleUse = async (model: DownloadedModel) => {
-		if (activeModel === model.name) {
+		if (activeModelId === model.id) {
 			navigate("/chat", { state: { freshChat: true } });
 			return;
 		}
-		setLoadingModelId(model.id);
-		setLoadingModelName(model.name);
+		setLoadingModel(model);
 		try {
-			await modelService.loadModel(model.id);
-			await refreshActiveModel();
-			if (navigator.vibrate) navigator.vibrate(15);
+			await loadModel(model.id);
+			vibrate(15);
 			navigate("/chat", { state: { freshChat: true } });
 		} catch (err) {
-			showAlert("Load Failed", String(err));
+			showAlert("Couldn't load the model", err instanceof Error ? err.message : String(err));
 		} finally {
-			setLoadingModelId(null);
-			setLoadingModelName(null);
+			setLoadingModel(null);
+		}
+	};
+
+	const handleUnload = async () => {
+		try {
+			await unloadModel();
+			showToast("Model unloaded. Its memory has been freed.", "info");
+		} catch {
+			showToast("Couldn't unload the model", "error");
 		}
 	};
 
 	const handleDelete = async (model: DownloadedModel) => {
-		const isActive = activeModel === model.name;
-		const message = isActive
-			? `"${model.name}" is currently loaded. Deleting it will unload the model and free ${model.size_label} of storage.`
-			: `Delete "${model.name}"? This will free ${model.size_label} of storage.`;
-
+		const isActive = activeModelId === model.id;
 		const ok = await showConfirm({
-			title: isActive ? "Delete Active Model" : "Delete Model",
-			message,
+			title: isActive ? "Delete the model in use" : "Delete model",
+			message: isActive
+				? `"${model.name}" is the model you're chatting with. Deleting it unloads it and frees ${model.size_label}. Your chats are kept.`
+				: `Delete "${model.name}"? This frees ${model.size_label}. You can download it again later.`,
 			confirmLabel: "Delete",
 			cancelLabel: "Cancel",
 			danger: true,
 		});
 		if (!ok) return;
-		if (navigator.vibrate) navigator.vibrate(15);
-		await modelService.deleteModel(model.id);
-		await refresh();
-		await refreshActiveModel();
+		vibrate(15);
+		try {
+			await modelService.deleteModel(model.id);
+			showToast(`${model.name} deleted`, "info");
+		} catch (err) {
+			showAlert("Couldn't delete the model", err instanceof Error ? err.message : String(err));
+		}
+		await Promise.all([refresh(), refreshActiveModel()]);
 	};
 
-	const usedGB = formatStorageGB(storage.used_bytes);
+	const handleCancelDownload = async (modelId: string, name: string) => {
+		const ok = await showConfirm({
+			title: "Cancel download",
+			message: `Stop downloading ${name} and delete what was downloaded so far?`,
+			confirmLabel: "Cancel download",
+			cancelLabel: "Keep it",
+			danger: true,
+		});
+		if (ok) cancelDownload(modelId);
+	};
+
+	const pending = Object.values(downloads).filter((d) => d.status !== "finished");
 	const storageKnown = availableSpace !== null;
 	const totalSpace = storageKnown ? storage.used_bytes + availableSpace : 0;
 	const usagePercent = storageKnown && totalSpace > 0 ? (storage.used_bytes / totalSpace) * 100 : 0;
-	const freeGB = storageKnown ? formatStorageGB(availableSpace) : null;
 
 	return (
 		<AppLayout title="My Models">
-			{loadingModelName && (
-				<LoadingOverlay>
-					<Spinner />
-					<LoadingTitle>Loading {loadingModelName}</LoadingTitle>
-					<LoadingSubtitle>This may take a moment...</LoadingSubtitle>
-				</LoadingOverlay>
+			{loadingModel && (
+				<LoadingOverlay title={`Loading ${loadingModel.name}`} subtitle="This can take a few seconds…" />
 			)}
 			<Page ref={pageRef} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
 				<PullIndicator $visible={isRefreshing}>
 					<RefreshSpinner />
 				</PullIndicator>
-<SearchBox>
-					<SearchIconWrap>
-						<Icon name="search" size={18} />
-					</SearchIconWrap>
-					<SearchInput
-						placeholder="Search downloaded models..."
-						value={search}
-						onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-							setSearch(e.target.value)
-						}
-						aria-label="Search downloaded models"
-					/>
-				</SearchBox>
+
+				{models.length > 3 && (
+					<SearchBox>
+						<SearchIconWrap>
+							<Icon name="search" size={18} />
+						</SearchIconWrap>
+						<SearchInput
+							type="search"
+							placeholder="Search downloaded models..."
+							value={search}
+							onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+							aria-label="Search downloaded models"
+						/>
+					</SearchBox>
+				)}
 
 				<StorageSection>
 					<StorageHeader>
 						<StorageLabel>
 							{storage.models_count} model{storage.models_count !== 1 ? "s" : ""}
-							{freeGB !== null ? ` · ${freeGB} GB free` : ""}
+							{storageKnown ? ` · ${formatGB(availableSpace)} GB free` : ""}
+							{storage.partial_bytes > 0
+								? ` · ${formatBytes(storage.partial_bytes)} in unfinished downloads`
+								: ""}
 						</StorageLabel>
 						<StorageValue>
-							{usedGB} <span>GB</span>
+							{formatGB(storage.used_bytes)} <span>GB</span>
 						</StorageValue>
 					</StorageHeader>
 					{storageKnown && (
@@ -632,113 +617,120 @@ export function MyModelsPage() {
 					)}
 				</StorageSection>
 
-				{/* Downloading Section */}
-				{Object.values(downloads).filter(d => d.status !== "finished").length > 0 && (
+				{pending.length > 0 && (
 					<DownloadSection>
 						<SectionTitle>
 							<Icon name="downloading" size={18} color={tokens.colors.tertiary} />
-							Downloading
+							Downloads
 						</SectionTitle>
-						{Object.values(downloads)
-							.filter(d => d.status !== "finished")
-							.map((dl) => {
-								const progress = dl.totalBytes > 0
-									? (dl.downloadedBytes / dl.totalBytes) * 100
-									: 0;
-								const modelInfo = catalog.find(m => m.id === dl.modelId);
+						{pending.map((dl) => {
+							const progress = dl.totalBytes > 0 ? (dl.downloadedBytes / dl.totalBytes) * 100 : 0;
+							return (
+								<DownloadCard key={dl.modelId}>
+									<DownloadCardTop>
+										<DownloadName>{dl.modelName}</DownloadName>
+										<DownloadStatus $status={dl.status}>{STATUS_LABEL[dl.status]}</DownloadStatus>
+									</DownloadCardTop>
 
-								return (
-									<DownloadCard key={dl.modelId}>
-										<DownloadCardTop>
-											<DownloadName>{dl.modelName}</DownloadName>
-											<DownloadStatus $status={dl.status}>
-												{dl.status === "downloading" ? "Downloading" :
-													dl.status === "paused" ? "Paused" :
-													dl.status === "failed" ? "Failed" : dl.status}
-											</DownloadStatus>
-										</DownloadCardTop>
+									{dl.error && (
+										<DownloadError role="alert">
+											<Icon name="error" size={14} color={tokens.colors.error} />
+											{dl.error}
+										</DownloadError>
+									)}
 
-										{dl.error && (
-											<DownloadError>
-												<Icon name="error" size={14} color={tokens.colors.error} />
-												{dl.error}
-											</DownloadError>
+									<ProgressBarContainer
+										role="progressbar"
+										aria-label={`${dl.modelName} download`}
+										aria-valuemin={0}
+										aria-valuemax={100}
+										aria-valuenow={Math.round(progress)}
+									>
+										<ProgressBarFill $pct={progress} />
+									</ProgressBarContainer>
+
+									<DownloadMeta>
+										<span>
+											{formatBytes(dl.downloadedBytes)} / {dl.sizeLabel} · {Math.round(progress)}%
+										</span>
+										{dl.status === "downloading" && dl.speedBps > 0 && (
+											<DownloadSpeed>{formatSpeed(dl.speedBps)}</DownloadSpeed>
 										)}
+									</DownloadMeta>
 
-										<ProgressBarContainer>
-											<ProgressBarFill $pct={progress} />
-										</ProgressBarContainer>
-
-										<DownloadMeta>
-											<span>
-												{formatBytes(dl.downloadedBytes)} / {dl.sizeLabel}
-												{" · "}{Math.round(progress)}%
-											</span>
-											{dl.status === "downloading" && dl.speedBps > 0 && (
-												<DownloadSpeed>{formatSpeed(dl.speedBps)}</DownloadSpeed>
-											)}
-										</DownloadMeta>
-
-										<DownloadActions>
-											{dl.status === "downloading" ? (
-												<DownloadActionBtn onClick={() => pauseDownload(dl.modelId)}>
-													<Icon name="pause" size={16} />
-													Pause
-												</DownloadActionBtn>
-											) : dl.status === "paused" && modelInfo ? (
-												<DownloadActionBtn $primary onClick={() => resumeDownload(modelInfo)}>
-													<Icon name="play_arrow" size={16} />
-													Resume
-												</DownloadActionBtn>
-											) : dl.status === "failed" && modelInfo ? (
-												<DownloadActionBtn $primary onClick={() => resumeDownload(modelInfo)}>
-													<Icon name="refresh" size={16} />
-													Retry
-												</DownloadActionBtn>
-											) : null}
-											<DownloadActionBtn onClick={() => cancelDownload(dl.modelId)}>
+									<DownloadActions>
+										{dl.status === "downloading" && (
+											<DownloadActionBtn type="button" onClick={() => pauseDownload(dl.modelId)}>
+												<Icon name="pause" size={16} />
+												Pause
+											</DownloadActionBtn>
+										)}
+										{(dl.status === "paused" || dl.status === "failed") && (
+											<DownloadActionBtn type="button" $primary onClick={() => resumeDownload(dl.model)}>
+												<Icon name={dl.status === "failed" ? "refresh" : "play_arrow"} size={16} />
+												{dl.status === "failed" ? "Retry" : "Resume"}
+											</DownloadActionBtn>
+										)}
+										{dl.status !== "verifying" && (
+											<DownloadActionBtn
+												type="button"
+												onClick={() => handleCancelDownload(dl.modelId, dl.modelName)}
+											>
 												<Icon name="close" size={16} />
 												Cancel
 											</DownloadActionBtn>
-										</DownloadActions>
-									</DownloadCard>
-								);
-							})}
+										)}
+									</DownloadActions>
+								</DownloadCard>
+							);
+						})}
 					</DownloadSection>
 				)}
 
 				<ListHeader>
 					<ListTitle>Installed</ListTitle>
-					<AddButton onClick={() => navigate("/store")}>
+					<AddButton type="button" onClick={() => navigate("/store")}>
 						<Icon name="add" size={16} color={tokens.colors.primary} />
 						Browse Store
 					</AddButton>
 				</ListHeader>
 
-				{models.length === 0 ? (
+				{status === "loading" ? (
+					<EmptyState icon="deployed_code" message="Loading your models…" />
+				) : status === "error" ? (
 					<EmptyState
-						icon="deployed_code"
-						message="No models downloaded yet"
-					/>
+						icon="error_outline"
+						message="Couldn't read your models"
+						subtitle="Something went wrong while checking storage."
+					>
+						<PrimaryCta type="button" onClick={refresh}>
+							<Icon name="refresh" size={16} />
+							Try again
+						</PrimaryCta>
+					</EmptyState>
+				) : models.length === 0 ? (
+					<EmptyState
+						art="models"
+						message="No models yet"
+						subtitle="Download one over WiFi and it's yours to use offline, forever."
+					>
+						<PrimaryCta type="button" onClick={() => navigate("/store")}>
+							<Icon name="download" size={16} />
+							Browse models
+						</PrimaryCta>
+					</EmptyState>
 				) : filtered.length === 0 ? (
-					<EmptyState
-						icon="deployed_code"
-						message="No models match your search"
-					/>
+					<EmptyState art="search" message="No models match your search" />
 				) : (
 					<Cards>
 						{filtered.map((m, i) => {
-							const isActive = activeModel === m.name;
+							const isActive = activeModelId === m.id;
 							return (
-								<Card
-									key={m.id}
-									$active={isActive}
-									style={{ animationDelay: `${i * 50}ms` }}
-								>
+								<Card key={m.id} $active={isActive} style={{ animationDelay: `${i * 50}ms` }}>
 									<CardTop>
 										<CardName>
 											<ModelName>{m.name}</ModelName>
-											{isActive && <ActiveBadge>Active</ActiveBadge>}
+											{isActive && <ActiveBadge>In use</ActiveBadge>}
 										</CardName>
 									</CardTop>
 									<CardMeta>
@@ -747,17 +739,19 @@ export function MyModelsPage() {
 									</CardMeta>
 									<CardActions>
 										<UseBtn
+											type="button"
 											$active={isActive}
 											onClick={() => handleUse(m)}
-											disabled={loadingModelId !== null}
+											disabled={loadingModel !== null}
 										>
-											{loadingModelId === m.id
-												? "Loading..."
-												: isActive
-													? "Active"
-													: "Use Model"}
+											{isActive ? "New chat" : "Use model"}
 										</UseBtn>
-										<DeleteBtn onClick={() => handleDelete(m)} aria-label={`Delete ${m.name}`}>
+										{isActive && (
+											<SecondaryBtn type="button" onClick={handleUnload}>
+												Unload
+											</SecondaryBtn>
+										)}
+										<DeleteBtn type="button" onClick={() => handleDelete(m)} aria-label={`Delete ${m.name}`}>
 											<Icon name="delete" size={18} color={tokens.colors.error} />
 										</DeleteBtn>
 									</CardActions>
