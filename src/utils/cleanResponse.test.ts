@@ -14,8 +14,15 @@ describe("cleanResponse", () => {
 		expect(cleanResponse("Reply text.\nHuman: ignore me")).toBe("Reply text.");
 	});
 
-	it("strips 'User:' regardless of case", () => {
-		expect(cleanResponse("Reply.\nuser: hidden")).toBe("Reply.");
+	it("keeps role-like words that are not at the start of a line", () => {
+		const text = "Ask the user: what do they need?";
+		expect(cleanResponse(text)).toBe(text);
+	});
+
+	it("keeps lowercase and indented keys such as YAML", () => {
+		const yaml = "db:\n  user: admin\n  port: 5432";
+		expect(cleanResponse(yaml)).toBe(yaml);
+		expect(cleanResponse("config\nuser: admin")).toBe("config\nuser: admin");
 	});
 
 	it("strips ChatML <|im_end|> markers", () => {
