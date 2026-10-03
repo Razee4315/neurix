@@ -122,12 +122,12 @@ export function AboutPage() {
 	};
 
 	return (
-		<AppLayout title="About">
+		<AppLayout title="About" back="/settings">
 			<Page>
 				<LogoSection>
 					<NeurixLogo size={64} />
 					<AppName>NEU<span>RIX</span></AppName>
-					<Version>v{import.meta.env.VITE_APP_VERSION || "0.3.0"}</Version>
+					<Version>v{import.meta.env.VITE_APP_VERSION ?? "dev"}</Version>
 				</LogoSection>
 
 				<Tagline>
@@ -137,7 +137,7 @@ export function AboutPage() {
 
 				<SectionTitle>Links</SectionTitle>
 				<Section>
-					<LinkRow onClick={() => openLink("https://github.com/Razee4315/neurix")}>
+					<LinkRow type="button" onClick={() => openLink("https://github.com/Razee4315/neurix")}>
 						<LinkIcon>
 							<Icon name="deployed_code" size={18} color={tokens.colors.primary} />
 						</LinkIcon>
@@ -147,7 +147,7 @@ export function AboutPage() {
 						</LinkText>
 						<Icon name="open_in_new" size={16} color={tokens.colors.onSurfaceVariant} />
 					</LinkRow>
-					<LinkRow onClick={() => openLink("https://github.com/Razee4315/neurix/blob/main/PRIVACY_POLICY.md")}>
+					<LinkRow type="button" onClick={() => openLink("https://github.com/Razee4315/neurix/blob/main/PRIVACY_POLICY.md")}>
 						<LinkIcon>
 							<Icon name="shield" size={18} color={tokens.colors.primary} />
 						</LinkIcon>

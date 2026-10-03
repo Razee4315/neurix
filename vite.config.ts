@@ -9,13 +9,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(path.resolve(__dirname, "package.json"), "utf-8"));
 const host = process.env.TAURI_DEV_HOST || "localhost";
 
-export default defineConfig((): UserConfig => {
+export default defineConfig(({ mode }): UserConfig => {
+  // Readable styled-components class names help in development; in a
+  // production build they are only extra bytes.
+  const readableClassNames = mode !== "production";
   return {
     plugins: [
       react({
         babel: {
           plugins: [
-            ["babel-plugin-styled-components", { displayName: true, fileName: true }],
+            [
+              "babel-plugin-styled-components",
+              { displayName: readableClassNames, fileName: readableClassNames },
+            ],
           ],
         },
       }),
@@ -35,10 +41,6 @@ export default defineConfig((): UserConfig => {
       host: "0.0.0.0",
       hmr: { protocol: "ws", host, port: 1421 },
       watch: { ignored: ["**/src-tauri/**"] },
-      proxy: {
-        "/api": { target: "http://localhost:8080", changeOrigin: true, secure: false },
-        "/auth": { target: "http://localhost:8080", changeOrigin: true, secure: false },
-      },
     },
     build: {
       target: process.env.TAURI_PLATFORM === "windows" ? "chrome105" : "safari13",

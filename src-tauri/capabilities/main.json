@@ -15,37 +15,12 @@
     "core:webview:default",
     "opener:default",
     "opener:allow-open-url",
-    "store:default",
-    "store:allow-load",
-    "store:allow-get",
-    "store:allow-set",
-    "store:allow-save",
-    "store:allow-delete",
-    "shell:default",
-    "shell:allow-open",
     "dialog:default",
     "dialog:allow-open",
+    "dialog:allow-save",
     "fs:default",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
-    "fs:allow-mkdir",
-    "fs:allow-remove",
-    "fs:allow-exists",
-    "fs:allow-read-dir",
-    "fs:allow-stat",
-    "notification:default",
-    "http:default",
-    {
-      "identifier": "http:allow-fetch",
-      "allow": [
-        { "url": "https://huggingface.co/**" }
-      ]
-    },
-    {
-      "identifier": "http:allow-fetch-send",
-      "allow": [
-        { "url": "https://huggingface.co/**" }
-      ]
-    }
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "notification:default"
   ]
 }

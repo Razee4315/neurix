@@ -1,5 +1,5 @@
 import { characterService, settingsService } from "@/services";
-import type { Character, Settings } from "@/services/types";
+import type { Character } from "@/services/types";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useAppContext } from "./AppContext";
 
@@ -28,8 +28,10 @@ const CharacterContext = createContext<CharacterContextValue>({
 	deleteCustom: async () => {},
 });
 
+const DEFAULT_ID = "preset:default";
+
 export function CharacterProvider({ children }: { children: React.ReactNode }) {
-	const { settings, refreshSettings } = useAppContext();
+	const { settings, updateSettings } = useAppContext();
 	const [presets, setPresets] = useState<Character[]>([]);
 	const [presetsLoaded, setPresetsLoaded] = useState(false);
 	// One-time guard for the legacy-prompt migration. useRef so a flip from
@@ -55,40 +57,40 @@ export function CharacterProvider({ children }: { children: React.ReactNode }) {
 			migrationDoneRef.current = true;
 			return; // Already on the new model.
 		}
-		const defaultPreset = presets.find((p) => p.id === "preset:default");
+		const defaultPreset = presets.find((p) => p.id === DEFAULT_ID);
 		const userPrompt = settings.system_prompt?.trim() ?? "";
 		const defaultPrompt = defaultPreset?.system_prompt.trim() ?? "";
 
+		migrationDoneRef.current = true;
 		(async () => {
-			migrationDoneRef.current = true;
-			if (userPrompt && userPrompt !== defaultPrompt) {
-				// Convert legacy prompt into a custom character.
-				const migrated: Character = {
-					id: `custom:migrated-${Date.now().toString(36)}`,
-					name: "My prompt",
-					description: "Migrated from your previous system prompt",
-					icon: "history_edu",
-					system_prompt: userPrompt,
-					temperature: settings.temperature,
-					top_p: settings.top_p,
-					max_tokens: settings.max_tokens,
-					is_preset: false,
-					created_at: new Date().toISOString(),
-				};
-				const next: Settings = {
-					...settings,
-					active_character_id: migrated.id,
-					custom_characters: [...(settings.custom_characters ?? []), migrated],
-				};
-				await settingsService.updateSettings(next);
-			} else {
-				// No interesting prompt to migrate; just mark them on the new model.
-				const next: Settings = { ...settings, active_character_id: "preset:default" };
-				await settingsService.updateSettings(next);
+			try {
+				if (userPrompt && userPrompt !== defaultPrompt) {
+					const migrated: Character = {
+						id: `custom:migrated-${Date.now().toString(36)}`,
+						name: "My prompt",
+						description: "Migrated from your previous system prompt",
+						icon: "history_edu",
+						system_prompt: userPrompt,
+						temperature: settings.temperature,
+						top_p: settings.top_p,
+						max_tokens: settings.max_tokens,
+						is_preset: false,
+						created_at: new Date().toISOString(),
+					};
+					await updateSettings({
+						active_character_id: migrated.id,
+						custom_characters: [...(settings.custom_characters ?? []), migrated],
+					});
+				} else {
+					// No interesting prompt to migrate; just mark them on the new model.
+					await updateSettings({ active_character_id: DEFAULT_ID });
+				}
+			} catch {
+				// The legacy prompt stays in settings; the Default preset is
+				// used until the next launch retries the migration.
 			}
-			await refreshSettings();
 		})();
-	}, [presetsLoaded, settings, presets, refreshSettings]);
+	}, [presetsLoaded, settings, presets, updateSettings]);
 
 	const customs = useMemo<Character[]>(
 		() => settings?.custom_characters ?? [],
@@ -99,79 +101,68 @@ export function CharacterProvider({ children }: { children: React.ReactNode }) {
 
 	const activeCharacter = useMemo<Character | null>(() => {
 		if (!presetsLoaded || !settings) return null;
-		const id = settings.active_character_id ?? "preset:default";
+		const id = settings.active_character_id ?? DEFAULT_ID;
 		return allCharacters.find((c) => c.id === id)
-			?? allCharacters.find((c) => c.id === "preset:default")
+			?? allCharacters.find((c) => c.id === DEFAULT_ID)
 			?? allCharacters[0]
 			?? null;
 	}, [presetsLoaded, settings, allCharacters]);
 
-	// Persist the active character id back to settings, and stamp the
-	// custom's last_used_at so the picker can surface recently used items.
-	// Presets aren't stored in settings, so we only stamp customs.
+	// Custom characters are edited as a list. Read the stored list right
+	// before changing it so an older copy held in React state cannot drop
+	// an edit made elsewhere.
+	const readStored = useCallback(() => settingsService.getSettings(), []);
+
+	// Persist the active character id, and stamp a custom with last_used_at so
+	// the picker can surface recently used items. Presets are not stored.
 	const setActiveCharacter = useCallback(async (id: string) => {
-		if (!settings) return;
-		const now = new Date().toISOString();
-		const customs = settings.custom_characters ?? [];
-		const stampedCustoms = customs.some((c) => c.id === id)
-			? customs.map((c) => (c.id === id ? { ...c, last_used_at: now } : c))
-			: customs;
-		const next: Settings = {
-			...settings,
-			active_character_id: id,
-			custom_characters: stampedCustoms,
-		};
-		await settingsService.updateSettings(next);
-		await refreshSettings();
-	}, [settings, refreshSettings]);
+		const existing = (await readStored()).custom_characters ?? [];
+		if (existing.some((c) => c.id === id)) {
+			const now = new Date().toISOString();
+			await updateSettings({
+				active_character_id: id,
+				custom_characters: existing.map((c) => (c.id === id ? { ...c, last_used_at: now } : c)),
+			});
+		} else {
+			await updateSettings({ active_character_id: id });
+		}
+	}, [readStored, updateSettings]);
 
 	// Insert or update a custom character. Presets are immutable.
 	const saveCustom = useCallback(async (character: Character) => {
-		if (!settings) return;
 		if (character.is_preset) return;
-		const existing = settings.custom_characters ?? [];
+		const existing = (await readStored()).custom_characters ?? [];
 		const idx = existing.findIndex((c) => c.id === character.id);
 		const nextList = idx >= 0
 			? existing.map((c, i) => (i === idx ? character : c))
 			: [...existing, character];
-		const next: Settings = { ...settings, custom_characters: nextList };
-		await settingsService.updateSettings(next);
-		await refreshSettings();
-	}, [settings, refreshSettings]);
+		await updateSettings({ custom_characters: nextList });
+	}, [readStored, updateSettings]);
 
 	const deleteCustom = useCallback(async (id: string) => {
-		if (!settings) return;
-		const existing = settings.custom_characters ?? [];
-		const nextList = existing.filter((c) => c.id !== id);
-		// If the deleted character was active, fall back to Default.
-		const nextActiveId = settings.active_character_id === id
-			? "preset:default"
-			: settings.active_character_id;
-		const next: Settings = {
-			...settings,
-			custom_characters: nextList,
-			active_character_id: nextActiveId,
-		};
-		await settingsService.updateSettings(next);
-		await refreshSettings();
-	}, [settings, refreshSettings]);
+		const stored = await readStored();
+		await updateSettings({
+			custom_characters: (stored.custom_characters ?? []).filter((c) => c.id !== id),
+			// If the deleted character was active, fall back to Default.
+			...(stored.active_character_id === id ? { active_character_id: DEFAULT_ID } : {}),
+		});
+	}, [readStored, updateSettings]);
 
-	return (
-		<CharacterContext.Provider
-			value={{
-				allCharacters,
-				presets,
-				customs,
-				activeCharacter,
-				loaded: presetsLoaded && settings !== null,
-				setActiveCharacter,
-				saveCustom,
-				deleteCustom,
-			}}
-		>
-			{children}
-		</CharacterContext.Provider>
+	const value = useMemo<CharacterContextValue>(
+		() => ({
+			allCharacters,
+			presets,
+			customs,
+			activeCharacter,
+			loaded: presetsLoaded && settings !== null,
+			setActiveCharacter,
+			saveCustom,
+			deleteCustom,
+		}),
+		[allCharacters, presets, customs, activeCharacter, presetsLoaded, settings, setActiveCharacter, saveCustom, deleteCustom],
 	);
+
+	return <CharacterContext.Provider value={value}>{children}</CharacterContext.Provider>;
 }
 
 export function useCharacters() {

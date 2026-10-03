@@ -53,7 +53,8 @@ src-tauri/            # Rust backend
 2. Make your changes. Run lint and type checks:
    ```bash
    npm run lint
-   npx tsc --noEmit
+   npm run typecheck
+   npm test
    cargo check --manifest-path src-tauri/Cargo.toml
    ```
 

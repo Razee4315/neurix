@@ -74,12 +74,15 @@ Neurix runs large language models entirely on your phone or desktop. No server, 
 - **8 curated models** — from 380 MB to 2.2 GB, pick what fits your device
 - **Offline after download** — use anywhere, anytime, no internet needed
 - **Private by design** — conversations never leave your device
-- **Model manager** — download, switch, delete models freely
-- **Chat history** — searchable, auto-saved locally
-- **System prompt** — customize how the AI responds
-- **Inference controls** — temperature, top-p, max tokens
-- **Resume downloads** — pause and continue where you left off
+- **Model manager** — download, switch, unload and delete models; warns when a model is too large for the device
+- **Chat history** — auto-saved locally, searchable by title and message text
+- **Characters** — built-in and custom personas, each with its own instructions, creativity, word variety and reply length
+- **Themes** — ten color themes (dark and light) and four text sizes
+- **Resume downloads** — pause and continue where you left off; downloads are verified before use
+- **Backup** — export chats and custom characters to a file and import them on another device
 - **Built with Rust** — lightweight, fast, minimal memory footprint
+
+> The screenshots above predate the current interface and will be refreshed.
 
 ## Available Models
 
@@ -154,8 +157,14 @@ npm run build:android       # Android APK/AAB
 | `npm run tauri:android` | Android dev |
 | `npm run build:android` | Android release build |
 | `npm run lint` | Biome lint |
+| `npm run typecheck` | TypeScript check |
 | `npm run format` | Biome format |
-| `npm run test` | Run tests |
+| `npm test` | Run unit tests once (`npm run test:watch` to watch) |
+
+`npm run dev` on its own opens the UI in a browser against an in-memory
+stand-in for the Rust backend (`src/dev/mockTauri.ts`), which is handy for
+working on screens without building the native app. It is never bundled in
+production builds.
 
 ---
 

@@ -29,6 +29,10 @@ pub struct Character {
     pub is_preset: bool,
     #[serde(default)]
     pub created_at: Option<String>,
+    /// ISO timestamp of the last time the user selected this character.
+    /// Drives the "recently used" ordering in the picker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_used_at: Option<String>,
 }
 
 /// Returns the built-in character presets.
@@ -58,6 +62,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             greeting: Some("Hi! What can I help you with?".into()),
             is_preset: true,
             created_at: None,
+            last_used_at: None,
         },
         Character {
             id: "preset:friendly".into(),
@@ -77,6 +82,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             greeting: Some("Hey, good to see you! How's it going?".into()),
             is_preset: true,
             created_at: None,
+            last_used_at: None,
         },
         Character {
             id: "preset:professional".into(),
@@ -97,6 +103,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             greeting: Some("How can I assist you today?".into()),
             is_preset: true,
             created_at: None,
+            last_used_at: None,
         },
         Character {
             id: "preset:concise".into(),
@@ -116,6 +123,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             greeting: Some("Ask away.".into()),
             is_preset: true,
             created_at: None,
+            last_used_at: None,
         },
         Character {
             id: "preset:tutor".into(),
@@ -136,6 +144,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             greeting: Some("What would you like to learn today? I'll take it step by step.".into()),
             is_preset: true,
             created_at: None,
+            last_used_at: None,
         },
         Character {
             id: "preset:creative".into(),
@@ -156,11 +165,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             greeting: Some("Let's make something interesting. What's the spark?".into()),
             is_preset: true,
             created_at: None,
+            last_used_at: None,
         },
     ]
-}
-
-/// Returns the preset character with the given id, if any.
-pub fn get_preset(id: &str) -> Option<Character> {
-    get_preset_characters().into_iter().find(|c| c.id == id)
 }

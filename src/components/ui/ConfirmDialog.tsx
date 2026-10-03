@@ -1,4 +1,5 @@
 import { tokens } from "@/theme/tokens";
+import { useFocusTrap } from "@/utils/useFocusTrap";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styled, { keyframes } from "styled-components";
 
@@ -17,12 +18,12 @@ const slideUp = keyframes`
 const Overlay = styled.div`
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: ${tokens.zIndex.modal};
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: rgba(0, 0, 0, 0.6);
+  background: ${tokens.colors.scrim};
   animation: ${fadeIn} 0.15s ease-out;
 `;
 
@@ -80,7 +81,7 @@ const Btn = styled.button<{ $danger?: boolean; $primary?: boolean }>`
 				: tokens.colors.surfaceContainerHighest};
   color: ${({ $danger, $primary }) =>
 		$danger
-			? "#fff"
+			? tokens.colors.onError
 			: $primary
 				? tokens.colors.onPrimary
 				: tokens.colors.onSurface};
@@ -120,19 +121,21 @@ const ConfirmContext = createContext<{ showConfirm: ShowConfirm; showAlert: Show
 
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 	const [dialog, setDialog] = useState<(DialogOptions & { resolve: (v: boolean) => void }) | null>(null);
-	const previouslyFocused = useRef<HTMLElement | null>(null);
+	const dialogRef = useRef<HTMLDivElement | null>(null);
 	const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
+	const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
+
+	// Keeps Tab inside the dialog and restores focus to the trigger on close.
+	useFocusTrap(dialogRef, dialog !== null);
 
 	const showConfirm = useCallback((options: DialogOptions): Promise<boolean> => {
 		return new Promise((resolve) => {
-			previouslyFocused.current = (document.activeElement as HTMLElement) ?? null;
 			setDialog({ ...options, resolve });
 		});
 	}, []);
 
 	const showAlert = useCallback((title: string, message: string): Promise<void> => {
 		return new Promise((resolve) => {
-			previouslyFocused.current = (document.activeElement as HTMLElement) ?? null;
 			setDialog({
 				title,
 				message,
@@ -146,11 +149,6 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 
 	const closeDialog = useCallback(() => {
 		setDialog(null);
-		// Restore focus to the trigger element so keyboard users don't get stranded.
-		queueMicrotask(() => {
-			previouslyFocused.current?.focus();
-			previouslyFocused.current = null;
-		});
 	}, []);
 
 	const handleConfirm = useCallback(() => {
@@ -163,9 +161,12 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 		closeDialog();
 	}, [dialog, closeDialog]);
 
-	// Move focus to primary action when dialog opens.
+	// Start on the action that is safe to trigger by accident: Cancel for
+	// destructive prompts, the primary action otherwise.
 	useEffect(() => {
-		if (dialog) confirmBtnRef.current?.focus();
+		if (!dialog) return;
+		if (dialog.danger && cancelBtnRef.current) cancelBtnRef.current.focus();
+		else confirmBtnRef.current?.focus();
 	}, [dialog]);
 
 	// Escape closes (= cancel for confirm, = OK for alert).
@@ -188,6 +189,8 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 			{dialog && (
 				<Overlay onClick={handleCancel}>
 					<Dialog
+						ref={dialogRef}
+						tabIndex={-1}
 						role="alertdialog"
 						aria-modal="true"
 						aria-labelledby="confirm-title"
@@ -201,8 +204,11 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 						<Actions>
 							{dialog.cancelLabel !== undefined ? (
 								<>
-									<Btn onClick={handleCancel}>{dialog.cancelLabel || "Cancel"}</Btn>
+									<Btn type="button" ref={cancelBtnRef} onClick={handleCancel}>
+										{dialog.cancelLabel || "Cancel"}
+									</Btn>
 									<Btn
+										type="button"
 										ref={confirmBtnRef}
 										$danger={dialog.danger}
 										$primary={!dialog.danger}
@@ -212,7 +218,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 									</Btn>
 								</>
 							) : (
-								<Btn ref={confirmBtnRef} $primary onClick={handleConfirm}>
+								<Btn type="button" ref={confirmBtnRef} $primary onClick={handleConfirm}>
 									{dialog.confirmLabel || "OK"}
 								</Btn>
 							)}

@@ -90,11 +90,23 @@ frontend reads in `chatService` and dispatches to a handler.
 
 ## Storage model
 
-Currently flat JSON via `tauri-plugin-store`:
+Currently flat JSON:
 
-- **settings**: a single object. Small, rewritten on every change.
-- **chat history**: a list of conversations, each with a list of messages.
-  Loaded fully on history page, queried by id when reopening.
+- **settings**: a single object in `tauri-plugin-store`. Every writer goes
+  through `settings::patch`, which merges only the keys it is given under a
+  lock. The frontend sends partial changes (`patch_settings`), never the
+  whole object, so a stale copy held in the UI cannot overwrite a field the
+  backend set in the meantime (e.g. `last_model_id` on model load). An
+  unreadable value is backed up and replaced with defaults.
+- **chat history**: one JSON file per conversation. Listing deserialises
+  only the header fields (serde skips the messages); search reads message
+  text. Saves are written to a temp file and renamed, and keep the original
+  `created_at`.
+
+The model selected for chat is tracked separately from the loaded weights
+(`AppState.active_model` vs `loaded_model`): the weights are checked out of
+the state for the duration of a reply, and the UI must still see the model
+as active then.
 
 This is fine for the current scale. **Threshold to swap to SQLite
 (via tauri-plugin-sql with FTS5)**: once history search becomes the
@@ -108,9 +120,25 @@ The app only ever talks to `huggingface.co`, and only for two reasons:
 1. Downloading a GGUF model file the user explicitly chose.
 2. Downloading the matching `tokenizer.json`.
 
-Both are gated by a WiFi-only check (in `DownloadContext`) that fails
-closed — if we cannot determine the network type, we block. Users can
-turn off the WiFi-only setting if they want to download over cellular.
+On phones and tablets both are gated by a WiFi-only check (in
+`DownloadContext`, re-checked in `download_model`) that fails closed — if
+we cannot determine the network type, we block and say why. Users can turn
+the setting off to download over cellular. Desktop WebViews do not report a
+connection type and have no metered-data concept here, so desktop builds
+are exempt.
+
+A finished download is verified before it is installed: size, GGUF magic
+bytes, and SHA-256 when HuggingFace supplies the content hash in the
+response headers.
+
+## Theming
+
+Colors are CSS variables. `theme/themes.ts` defines each theme as a set of
+hex values per color role; `applyTheme` writes them to `:root` as RGB
+triplets (`--c-primary: 143 245 255`), and `tokens.colors.*` are static
+strings (`rgb(var(--c-primary))`). Translucent variants go through
+`alpha(color, "1f")` rather than string concatenation. Icons are inline
+SVGs from `lucide-react`, looked up by name in `components/ui/Icon.tsx`.
 
 The CSP in `tauri.conf.json` enforces this: only `huggingface.co` is on
 the `connect-src` allowlist.

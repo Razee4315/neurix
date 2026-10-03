@@ -1,6 +1,9 @@
+import { Icon } from "@/components/ui/Icon";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import type { ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import { BottomNav } from "./BottomNav";
 
@@ -19,13 +22,20 @@ interface AppLayoutProps {
 	 * primary control and the small logo just adds noise.
 	 */
 	hideLogo?: boolean;
+	/**
+	 * Show a back button for pages that sit below a tab (history, about,
+	 * editor). A string is the route to go to, `true` goes back in history,
+	 * and a function lets the page decide (e.g. to confirm unsaved changes).
+	 * Needed on desktop, where there is no system back button.
+	 */
+	back?: string | true | (() => void);
 }
 
 const Shell = styled.div`
   display: flex;
   flex-direction: column;
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
   background: ${tokens.colors.background};
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0px);
@@ -36,11 +46,11 @@ const TopBar = styled.header<{ $hasSubtitle: boolean }>`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: ${({ $hasSubtitle }) => ($hasSubtitle ? "0.375rem 0.875rem" : "0 1rem")};
+  padding: ${({ $hasSubtitle }) => ($hasSubtitle ? "0.375rem 0.875rem" : "0 0.75rem")};
   min-height: 56px;
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLow};
-  border-bottom: 1px solid ${tokens.colors.outlineVariant}30;
+  border-bottom: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
   gap: 0.5rem;
 `;
 
@@ -52,6 +62,25 @@ const TitleGroup = styled.div`
   flex: 1;
 `;
 
+const BackBtn = styled.button`
+  width: 40px;
+  height: 40px;
+  margin-left: -0.25rem;
+  border-radius: ${tokens.borderRadius.xl};
+  border: none;
+  background: transparent;
+  color: ${tokens.colors.onSurface};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background ${tokens.transitions.fast};
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:active { transform: scale(0.92); }
+`;
+
 const TitleStack = styled.div`
   display: flex;
   flex-direction: column;
@@ -59,12 +88,15 @@ const TitleStack = styled.div`
   gap: 1px;
 `;
 
-const PageTitle = styled.span`
+const PageTitle = styled.h1`
   font-family: ${tokens.typography.fontFamily.headline};
   font-size: ${tokens.typography.fontSize.lg};
   font-weight: ${tokens.typography.fontWeight.bold};
   color: ${tokens.colors.onSurface};
   line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `;
 
 const Subtitle = styled.div`
@@ -89,8 +121,7 @@ const Actions = styled.div`
 
 /**
  * Slot used when a page passes a subtitle but no title — e.g. the chat page,
- * where the active character + model pill is the primary identifier and the
- * word "Chat" was redundant against the bottom-nav label.
+ * where the active character + model pill is the primary identifier.
  */
 const PrimarySlot = styled.div`
   display: flex;
@@ -99,7 +130,7 @@ const PrimarySlot = styled.div`
   flex: 1;
 `;
 
-const contentSlideIn = keyframes`
+const contentIn = keyframes`
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 `;
@@ -109,7 +140,7 @@ const Content = styled.main`
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
-  animation: ${contentSlideIn} 0.25s ease-out both;
+  animation: ${contentIn} 0.25s ease-out both;
 
   &::-webkit-scrollbar {
     width: 0;
@@ -117,13 +148,28 @@ const Content = styled.main`
   scrollbar-width: none;
 `;
 
-export function AppLayout({ children, title, subtitle, rightActions, hideLogo }: AppLayoutProps) {
+export function AppLayout({ children, title, subtitle, rightActions, hideLogo, back }: AppLayoutProps) {
+	const navigate = useNavigate();
 	const hasSubtitle = subtitle != null && subtitle !== false;
 	return (
 		<Shell>
 			<TopBar $hasSubtitle={hasSubtitle && !!title}>
 				<TitleGroup>
-					{!hideLogo && <NeurixLogo size={22} />}
+					{back ? (
+						<BackBtn
+							type="button"
+							aria-label="Back"
+							onClick={() => {
+								if (typeof back === "function") back();
+								else if (back === true) navigate(-1);
+								else navigate(back);
+							}}
+						>
+							<Icon name="arrow_back" size={20} />
+						</BackBtn>
+					) : (
+						!hideLogo && <NeurixLogo size={24} />
+					)}
 					{title ? (
 						<TitleStack>
 							<PageTitle>{title}</PageTitle>

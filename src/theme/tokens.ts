@@ -1,74 +1,38 @@
 /**
- * Design Tokens — Neurix "Obsidian Pulse" Design System
+ * Design tokens.
  *
- * Primary: #8ff5ff (Electric Blue) — AI "Flow State"
- * Secondary: #2ff801 (Cyber Green) — Security, Privacy, Success
- * Tertiary: #65afff (Hyper Link) — System actions, metadata
- * Background: #0e0e0f (Obsidian void)
- *
- * Philosophy: "The Stealth Laboratory" — bespoke, sovereign tech aesthetic.
- * No borders. Tonal layering only. Glow > shadow. Breathe > crowd.
+ * Color roles follow Material-style naming (surface tiers, on-colors,
+ * primary / secondary / tertiary). Their values come from the active theme.
  */
 export const tokens = {
+	// Colors resolve to CSS variables written by `applyTheme` (see themes.ts).
+	// Use `alpha(color, "1f")` for translucency instead of appending hex digits.
 	colors: {
-		// === PRIMARY (Electric Blue — AI Flow State) ===
-		primary: "#8ff5ff",
-		primaryDim: "#00deec",
-		primaryContainer: "#00eefc",
-		onPrimary: "#005d63",
-		onPrimaryFixed: "#003f43",
-		onPrimaryContainer: "#005359",
-		onPrimaryFixedVariant: "#005e64",
-		inversePrimary: "#006a71",
-
-		// === SECONDARY (Cyber Green — Security / Privacy) ===
-		secondary: "#2ff801",
-		secondaryDim: "#2be800",
-		secondaryContainer: "#106e00",
-		onSecondary: "#0b5800",
-		onSecondaryFixed: "#064200",
-		onSecondaryContainer: "#e7ffd9",
-		onSecondaryFixedVariant: "#0d6200",
-
-		// === TERTIARY (Hyper Link — System Actions) ===
-		tertiary: "#65afff",
-		tertiaryDim: "#4aa2f9",
-		tertiaryContainer: "#4aa2f9",
-		onTertiary: "#002e52",
-		onTertiaryFixed: "#001930",
-		onTertiaryContainer: "#00213e",
-		onTertiaryFixedVariant: "#003b68",
-
-		// === ERROR ===
-		error: "#ff716c",
-		errorDim: "#d7383b",
-		errorContainer: "#9f0519",
-		onError: "#490006",
-		onErrorContainer: "#ffa8a3",
-
-		// === SURFACES (Obsidian Tonal Layering) ===
-		background: "#0e0e0f",
-		surface: "#0e0e0f",
-		surfaceDim: "#0e0e0f",
-		surfaceBright: "#2c2c2d",
-		surfaceContainerLowest: "#000000",
-		surfaceContainerLow: "#131314",
-		surfaceContainer: "#1a191b",
-		surfaceContainerHigh: "#201f21",
-		surfaceContainerHighest: "#262627",
-		surfaceVariant: "#262627",
-		surfaceTint: "#8ff5ff",
-
-		// === ON-COLORS ===
-		onBackground: "#ffffff",
-		onSurface: "#ffffff",
-		onSurfaceVariant: "#adaaab",
-		inverseSurface: "#fcf8f9",
-		inverseOnSurface: "#565556",
-
-		// === OUTLINE ===
-		outline: "#767576",
-		outlineVariant: "#484849",
+		background: "rgb(var(--c-background))",
+		surface: "rgb(var(--c-surface))",
+		surfaceBright: "rgb(var(--c-surface-bright))",
+		surfaceContainerLowest: "rgb(var(--c-surface-container-lowest))",
+		surfaceContainerLow: "rgb(var(--c-surface-container-low))",
+		surfaceContainer: "rgb(var(--c-surface-container))",
+		surfaceContainerHigh: "rgb(var(--c-surface-container-high))",
+		surfaceContainerHighest: "rgb(var(--c-surface-container-highest))",
+		onSurface: "rgb(var(--c-on-surface))",
+		onSurfaceVariant: "rgb(var(--c-on-surface-variant))",
+		outline: "rgb(var(--c-outline))",
+		outlineVariant: "rgb(var(--c-outline-variant))",
+		primary: "rgb(var(--c-primary))",
+		primaryDim: "rgb(var(--c-primary-dim))",
+		primaryContainer: "rgb(var(--c-primary-container))",
+		onPrimary: "rgb(var(--c-on-primary))",
+		onPrimaryFixed: "rgb(var(--c-on-primary-fixed))",
+		onPrimaryContainer: "rgb(var(--c-on-primary-container))",
+		secondary: "rgb(var(--c-secondary))",
+		secondaryContainer: "rgb(var(--c-secondary-container))",
+		tertiary: "rgb(var(--c-tertiary))",
+		error: "rgb(var(--c-error))",
+		errorContainer: "rgb(var(--c-error-container))",
+		onError: "rgb(var(--c-on-error))",
+		scrim: "rgb(0 0 0 / 0.6)",
 	},
 
 	typography: {
@@ -138,13 +102,13 @@ export const tokens = {
 
 	shadows: {
 		none: "none",
-		ambient: "0 0 32px rgba(143, 245, 255, 0.06)",
+		ambient: "0 0 32px rgb(var(--c-primary) / 0.06)",
 		elevated: "0 4px 20px rgba(0, 0, 0, 0.3)",
 		nav: "0 -4px 20px rgba(0, 0, 0, 0.5)",
 		glow: {
-			primary: "0 0 20px rgba(143, 245, 255, 0.2)",
-			primaryStrong: "0 0 40px rgba(143, 245, 255, 0.15)",
-			secondary: "0 0 20px rgba(47, 248, 1, 0.2)",
+			primary: "0 0 20px rgb(var(--c-primary) / 0.2)",
+			primaryStrong: "0 0 40px rgb(var(--c-primary) / 0.15)",
+			secondary: "0 0 20px rgb(var(--c-secondary) / 0.2)",
 		},
 	},
 
@@ -167,9 +131,11 @@ export const tokens = {
 		content: 10,
 		input: 30,
 		nav: 50,
-		overlay: 100,
-		modal: 200,
-		toast: 300,
+		overlay: 900,
+		sheet: 930,
+		sheetTop: 940,
+		modal: 1000,
+		toast: 1100,
 	},
 } as const;
 

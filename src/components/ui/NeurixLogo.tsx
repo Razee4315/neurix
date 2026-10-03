@@ -14,10 +14,10 @@ export function NeurixLogo({ size = 40, className }: NeurixLogoProps) {
 			className={className}
 		>
 			<title>Neurix</title>
-			<rect width="100" height="100" fill="#0e0e0f" rx="18" />
+			<rect width="100" height="100" fill="rgb(var(--c-surface-container-lowest))" rx="18" />
 			<path
 				d="M 35 20 L 20 20 L 20 80 L 35 80"
-				stroke="#8ff5ff"
+				stroke="rgb(var(--c-primary))"
 				strokeWidth="8"
 				fill="none"
 				strokeLinejoin="round"
@@ -25,13 +25,13 @@ export function NeurixLogo({ size = 40, className }: NeurixLogoProps) {
 			/>
 			<path
 				d="M 65 20 L 80 20 L 80 80 L 65 80"
-				stroke="#8ff5ff"
+				stroke="rgb(var(--c-primary))"
 				strokeWidth="8"
 				fill="none"
 				strokeLinejoin="round"
 				strokeLinecap="round"
 			/>
-			<circle cx="50" cy="50" r="10" fill="#2ff801" />
+			<circle cx="50" cy="50" r="10" fill="rgb(var(--c-secondary))" />
 		</svg>
 	);
 }

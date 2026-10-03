@@ -5,3 +5,4 @@ export * as historyService from "./historyService";
 export * as settingsService from "./settingsService";
 export * as notificationService from "./notificationService";
 export * as characterService from "./characterService";
+export * as dataService from "./dataService";

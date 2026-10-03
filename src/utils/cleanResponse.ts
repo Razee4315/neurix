@@ -1,8 +1,9 @@
 // Trim stop-sequence artifacts and chat-template tokens that occasionally
 // leak through when a model finishes a turn before its EOS token fires.
 const STOP_PATTERNS: RegExp[] = [
-	/\n?Human:[\s\S]*$/i,
-	/\n?User:[\s\S]*$/i,
+	// Role labels count only at the start of a line. "user:" inside a
+	// sentence, a YAML key, or a line of code is ordinary output.
+	/(^|\n)(Human|User):[\s\S]*$/,
 	/<\|im_start\|>[\s\S]*$/,
 	/<\|im_end\|>[\s\S]*$/,
 	/<start_of_turn>[\s\S]*$/,

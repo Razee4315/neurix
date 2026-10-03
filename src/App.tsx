@@ -4,6 +4,7 @@ import { ToastProvider } from "@/components/ui/Toast";
 import { AppProvider } from "@/context/AppContext";
 import { CharacterProvider } from "@/context/CharacterContext";
 import { DownloadProvider } from "@/context/DownloadContext";
+import { BootScreen } from "@/components/ui/BootScreen";
 import { SplashScreen } from "@/pages/SplashScreen";
 import { GlobalStyles, theme } from "@/theme";
 import { Suspense, lazy } from "react";
@@ -53,7 +54,7 @@ function App() {
 				<ConfirmProvider>
 				<HashRouter>
 					<div className="app-container">
-						<Suspense fallback={<SplashScreen />}>
+						<Suspense fallback={<BootScreen />}>
 							<Routes>
 								<Route path="/" element={<SplashScreen />} />
 								<Route path="/onboarding" element={<OnboardingScreen />} />

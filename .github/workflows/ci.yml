@@ -1,7 +1,7 @@
 name: CI
 
 # Runs on every push and every pull request to main.
-# Catches TypeScript errors and Rust compilation issues early.
+# Catches type errors, lint violations, failing tests and Rust issues early.
 
 on:
   push:
@@ -13,7 +13,7 @@ on:
 
 jobs:
   check:
-    name: Type check + Rust check
+    name: Lint, test, build + Rust checks
     runs-on: windows-latest
 
     steps:
@@ -22,6 +22,8 @@ jobs:
 
       - name: Install Rust (stable)
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Cache Rust build artifacts
         uses: swatinem/rust-cache@v2
@@ -37,9 +39,25 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
       - name: Type check frontend (tsc + vite build)
         run: npm run build
 
       - name: Check Rust compilation
         working-directory: src-tauri
         run: cargo check
+
+      - name: Rust tests
+        working-directory: src-tauri
+        run: cargo test
+
+      # Reports lints without failing the build. Tighten to `-D warnings`
+      # once the existing warnings have been cleared.
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy

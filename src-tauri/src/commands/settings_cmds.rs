@@ -1,92 +1,41 @@
-use crate::settings::Settings;
+use std::path::{Path, PathBuf};
+
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use serde_json::{Map, Value};
 use tauri::{AppHandle, Manager};
-use tauri_plugin_store::StoreExt;
 use tokio::fs;
 
-const SETTINGS_STORE: &str = "settings.json";
-const SETTINGS_KEY: &str = "settings";
+use crate::settings::{self, Settings};
 
 #[tauri::command]
 pub async fn get_settings(app: AppHandle) -> Result<Settings, String> {
-    let store = app.store(SETTINGS_STORE).map_err(|e| e.to_string())?;
-    match store.get(SETTINGS_KEY) {
-        Some(val) => serde_json::from_value(val).map_err(|e| e.to_string()),
-        None => Ok(Settings::default()),
-    }
+    settings::load(&app)
 }
 
-/// Hard ceiling on user-created characters. Anything past this is almost
-/// certainly programmatic abuse (a buggy import loop, a malicious frontend),
-/// not a real user. Picker UX also degrades long before this point.
-const MAX_CUSTOM_CHARACTERS: usize = 100;
-/// Caps on per-character text fields. The picker truncates display, but the
-/// store keeps the original — so a 1 MB system_prompt would be persisted and
-/// re-read on every settings load until the user notices.
-const MAX_CHAR_NAME: usize = 64;
-const MAX_CHAR_DESC: usize = 200;
-const MAX_CHAR_SYSTEM_PROMPT: usize = 8192;
-const MAX_CHAR_GREETING: usize = 500;
-const MAX_CHAR_STARTERS: usize = 8;
-const MAX_CHAR_STARTER_LEN: usize = 200;
-
-fn truncate_in_place(s: &mut String, max: usize) {
-    if s.len() > max {
-        // Avoid splitting a multibyte UTF-8 codepoint mid-byte.
-        let mut cut = max;
-        while cut > 0 && !s.is_char_boundary(cut) {
-            cut -= 1;
-        }
-        s.truncate(cut);
-    }
+/// Merge the given top-level keys into the stored settings. Callers send
+/// only what they changed, so unrelated fields written elsewhere (for
+/// example `last_model_id`, set when a model loads) are never clobbered.
+#[tauri::command]
+pub async fn patch_settings(app: AppHandle, patch: Map<String, Value>) -> Result<Settings, String> {
+    settings::patch(&app, patch)
 }
 
 #[tauri::command]
-pub async fn update_settings(app: AppHandle, mut settings: Settings) -> Result<(), String> {
-    // Clamp inference parameters to safe ranges. The frontend sliders already
-    // enforce these, but the Tauri command is part of the public IPC surface
-    // so we re-validate here as defense in depth.
-    settings.temperature = settings.temperature.clamp(0.0, 2.0);
-    settings.top_p = settings.top_p.clamp(0.05, 1.0);
-    settings.max_tokens = settings.max_tokens.clamp(1, 8192);
-    // Cap system prompt length so a runaway paste can't bloat the store.
-    truncate_in_place(&mut settings.system_prompt, 8192);
-
-    // Bound the custom-character collection. A maliciously crafted import (or
-    // a buggy share loop) could otherwise grow the store unbounded.
-    if settings.custom_characters.len() > MAX_CUSTOM_CHARACTERS {
-        settings.custom_characters.truncate(MAX_CUSTOM_CHARACTERS);
-    }
-    for ch in settings.custom_characters.iter_mut() {
-        ch.temperature = ch.temperature.clamp(0.0, 2.0);
-        ch.top_p = ch.top_p.clamp(0.05, 1.0);
-        ch.max_tokens = ch.max_tokens.clamp(1, 8192);
-        truncate_in_place(&mut ch.name, MAX_CHAR_NAME);
-        truncate_in_place(&mut ch.description, MAX_CHAR_DESC);
-        truncate_in_place(&mut ch.system_prompt, MAX_CHAR_SYSTEM_PROMPT);
-        if let Some(g) = ch.greeting.as_mut() {
-            truncate_in_place(g, MAX_CHAR_GREETING);
-        }
-        if ch.conversation_starters.len() > MAX_CHAR_STARTERS {
-            ch.conversation_starters.truncate(MAX_CHAR_STARTERS);
-        }
-        for s in ch.conversation_starters.iter_mut() {
-            truncate_in_place(s, MAX_CHAR_STARTER_LEN);
-        }
-    }
-
-    let store = app.store(SETTINGS_STORE).map_err(|e| e.to_string())?;
-    let val = serde_json::to_value(&settings).map_err(|e| e.to_string())?;
-    store.set(SETTINGS_KEY, val);
-    store.save().map_err(|e| e.to_string())?;
-    Ok(())
+pub async fn reset_settings(app: AppHandle) -> Result<Settings, String> {
+    settings::reset(&app)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StorageInfo {
+    /// Installed models (weights + tokenizer).
     pub used_bytes: u64,
     pub models_count: u32,
+    /// Unfinished downloads still on disk.
+    pub partial_bytes: u64,
+}
+
+async fn file_len(path: &Path) -> u64 {
+    fs::metadata(path).await.map(|m| m.len()).unwrap_or(0)
 }
 
 #[tauri::command]
@@ -97,57 +46,98 @@ pub async fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
         .map_err(|e| e.to_string())?
         .join("models");
 
+    let mut info = StorageInfo { used_bytes: 0, models_count: 0, partial_bytes: 0 };
     if !models_dir.exists() {
-        return Ok(StorageInfo { used_bytes: 0, models_count: 0 });
+        return Ok(info);
     }
-
-    let mut total_bytes: u64 = 0;
-    let mut models_count: u32 = 0;
 
     let mut entries = fs::read_dir(&models_dir).await.map_err(|e| e.to_string())?;
     while let Some(entry) = entries.next_entry().await.map_err(|e| e.to_string())? {
         let path = entry.path();
-        if path.is_dir() {
-            let model_file = path.join("model.gguf");
-            if model_file.exists() {
-                models_count += 1;
-                if let Ok(meta) = fs::metadata(&model_file).await {
-                    total_bytes += meta.len();
-                }
-                let tok_file = path.join("tokenizer.json");
-                if let Ok(meta) = fs::metadata(&tok_file).await {
-                    total_bytes += meta.len();
-                }
-            }
+        if !path.is_dir() {
+            continue;
+        }
+        let model_file = path.join("model.gguf");
+        let tok_file = path.join("tokenizer.json");
+        let part_file = path.join("model.gguf.part");
+
+        info.partial_bytes += file_len(&part_file).await;
+        if model_file.exists() && tok_file.exists() {
+            info.models_count += 1;
+            info.used_bytes += file_len(&model_file).await + file_len(&tok_file).await;
+        } else {
+            // Weights without a tokenizer are an unfinished install.
+            info.partial_bytes += file_len(&model_file).await;
         }
     }
 
-    Ok(StorageInfo { used_bytes: total_bytes, models_count })
+    Ok(info)
+}
+
+fn space_check_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let data_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    // Use the data directory, or its parent if it has not been created yet.
+    Ok(if data_dir.exists() {
+        data_dir
+    } else {
+        data_dir.parent().unwrap_or(Path::new("/")).to_path_buf()
+    })
 }
 
 #[tauri::command]
 pub async fn check_available_space(app: AppHandle, required_bytes: u64) -> Result<bool, String> {
-    let data_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-
-    // Use the data directory's parent or itself to check free space
-    let check_path = if data_dir.exists() {
-        data_dir.clone()
-    } else {
-        data_dir.parent().unwrap_or(Path::new("/")).to_path_buf()
-    };
-
-    let available = fs2::available_space(&check_path).map_err(|e| e.to_string())?;
+    let available = fs2::available_space(space_check_path(&app)?).map_err(|e| e.to_string())?;
     // Require extra 100MB headroom beyond model size
     Ok(available > required_bytes + 100_000_000)
 }
 
 #[tauri::command]
 pub async fn get_available_space(app: AppHandle) -> Result<u64, String> {
-    let data_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
-    let check_path = if data_dir.exists() {
-        data_dir.clone()
-    } else {
-        data_dir.parent().unwrap_or(Path::new("/")).to_path_buf()
-    };
-    fs2::available_space(&check_path).map_err(|e| e.to_string())
+    fs2::available_space(space_check_path(&app)?).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Serialize)]
+pub struct DeviceInfo {
+    /// Physical RAM, when the platform lets us read it. `None` means
+    /// unknown — callers must not treat that as "too little".
+    pub total_memory_bytes: Option<u64>,
+}
+
+/// Parse the `MemTotal` line of `/proc/meminfo` ("MemTotal:  8040348 kB").
+fn parse_mem_total(meminfo: &str) -> Option<u64> {
+    meminfo
+        .lines()
+        .find(|line| line.starts_with("MemTotal:"))?
+        .split_whitespace()
+        .nth(1)?
+        .parse::<u64>()
+        .ok()
+        .map(|kb| kb * 1024)
+}
+
+#[tauri::command]
+pub async fn get_device_info() -> Result<DeviceInfo, String> {
+    // Android and Linux expose RAM through procfs. Other platforms report
+    // unknown rather than pulling in a system-info dependency.
+    let total_memory_bytes = fs::read_to_string("/proc/meminfo")
+        .await
+        .ok()
+        .and_then(|text| parse_mem_total(&text));
+    Ok(DeviceInfo { total_memory_bytes })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_mem_total;
+
+    #[test]
+    fn reads_mem_total() {
+        let sample = "MemTotal:        8040348 kB\nMemFree:          123456 kB\n";
+        assert_eq!(parse_mem_total(sample), Some(8_040_348 * 1024));
+    }
+
+    #[test]
+    fn missing_line_is_unknown() {
+        assert_eq!(parse_mem_total("MemFree: 1 kB\n"), None);
+    }
 }

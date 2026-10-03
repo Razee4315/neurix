@@ -22,15 +22,18 @@ export const ACCENT_PALETTE: ReadonlyArray<{ value: string; label: string }> = [
 
 export const DEFAULT_ACCENT = ACCENT_PALETTE[0].value;
 
-/** Resolve a character's accent, falling back to the system primary. */
+/**
+ * Resolve a character's accent, falling back to the theme primary.
+ *
+ * The palette is tuned for dark surfaces. On light themes the same hues are
+ * darkened so icons and labels keep enough contrast against pale backgrounds.
+ */
 export function accentOf(character: Character | null | undefined): string {
 	const c = character?.accent_color;
-	if (c && /^#[0-9a-fA-F]{6}$/.test(c)) return c;
-	return tokens.colors.primary;
-}
-
-/** Append an alpha hex pair to a `#rrggbb` color. */
-export function withAlpha(hex: string, alpha: string): string {
-	if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
-	return `${hex}${alpha}`;
+	if (!c || !/^#[0-9a-fA-F]{6}$/.test(c)) return tokens.colors.primary;
+	if (c.toLowerCase() === DEFAULT_ACCENT) return tokens.colors.primary;
+	if (document.documentElement.dataset.mode === "light") {
+		return `color-mix(in srgb, ${c} 58%, black)`;
+	}
+	return c;
 }

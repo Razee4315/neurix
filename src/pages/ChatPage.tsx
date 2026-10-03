@@ -1,911 +1,273 @@
-import { AppLayout } from "@/components/layout/AppLayout";
-import { EmptyState } from "@/components/ui/EmptyState";
-import { Icon } from "@/components/ui/Icon";
-import { useToast } from "@/components/ui/Toast";
 import { CharacterPicker } from "@/components/character/CharacterPicker";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Icon } from "@/components/ui/Icon";
+import { ChatScene } from "@/components/ui/Illustrations";
+import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
+import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
-import { chatService, historyService, modelService, settingsService } from "@/services";
-import type { ChatHistoryEntry } from "@/services/chatService";
-import type { Conversation, InferenceEvent } from "@/services/types";
+import { chatService, historyService, modelService } from "@/services";
+import type { InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { copyText, isTouchPrimary, vibrate } from "@/utils/platform";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import styled, { keyframes } from "styled-components";
+import { Markdown } from "./chat/Markdown";
+import {
+	type Message,
+	buildHistory,
+	createMessage,
+	cutShortLabel,
+	fromStored,
+	persistable,
+	toConversation,
+	wasCutShort,
+} from "./chat/messages";
+import {
+	Bubble,
+	BubbleBody,
+	BubbleLabel,
+	BubbleWrap,
+	CharCounter,
+	ChatContainer,
+	CoachClose,
+	Coachmark,
+	ContextNotice,
+	ContinueBtn,
+	CutShort,
+	HeaderAvatar,
+	HeaderCharName,
+	HeaderModelLine,
+	HeaderPill,
+	HeaderTextStack,
+	InputBar,
+	InputRow,
+	JumpBtn,
+	MessageActions,
+	MessagesArea,
+	ModelDot,
+	MsgActionBtn,
+	PrimaryCta,
+	RoundBtn,
+	SecondaryCta,
+	SpeedBadge,
+	StarterChip,
+	StartersGrid,
+	TextInput,
+	TopBarBtn,
+	TypingDots,
+	UserText,
+	Welcome,
+	WelcomeText,
+	WelcomeTitle,
+} from "./chat/styles";
 
-interface Message {
-	role: "ai" | "user";
-	text: string;
-}
-
-// Soft cap on user prompt length. Models choke before this, but it also
-// guards against accidental paste of huge files.
+// Soft cap on prompt length. Models choke well before this; it mainly guards
+// against an accidental paste of a huge file. Enforced by the textarea.
 const MAX_PROMPT_LENGTH = 16_000;
+const DRAFT_KEY = "neurix.chat.draft";
+const COACH_KEY = "neurix.coach.subtitle.v2";
+/** How close to the bottom (px) still counts as "following" the stream. */
+const FOLLOW_THRESHOLD = 96;
 
-/* ── Markdown Parser ── */
+/* ── Small pieces ── */
 
-function renderMarkdown(text: string) {
-	const parts: React.ReactNode[] = [];
-	const lines = text.split("\n");
-	let i = 0;
-	let key = 0;
+function CopyAction({ text }: { text: string }) {
+	const [copied, setCopied] = useState(false);
+	const { showToast } = useToast();
 
-	while (i < lines.length) {
-		const line = lines[i];
-
-		// Code block
-		if (line.startsWith("```")) {
-			const lang = line.slice(3).trim();
-			const codeLines: string[] = [];
-			i++;
-			while (i < lines.length && !lines[i].startsWith("```")) {
-				codeLines.push(lines[i]);
-				i++;
-			}
-			i++; // skip closing ```
-			const code = codeLines.join("\n");
-			parts.push(
-				<CodeBlock key={`cb-${key++}`}>
-					{lang && <CodeLang>{lang}</CodeLang>}
-					<CopyButton code={code} />
-					<CodePre>{code}</CodePre>
-				</CodeBlock>,
-			);
-			continue;
-		}
-
-		// Headers: # ## ###
-		const headingMatch = line.match(/^(#{1,3})\s+(.+)/);
-		if (headingMatch) {
-			const level = headingMatch[1].length;
-			parts.push(
-				<Heading key={`h-${key++}`} $level={level}>
-					{renderInline(headingMatch[2])}
-				</Heading>,
-			);
-			i++;
-			continue;
-		}
-
-		// Bullet list: - item or * item
-		const bulletMatch = line.match(/^[\s]*[-*]\s+(.+)/);
-		if (bulletMatch) {
-			parts.push(
-				<ListItem key={`li-${key++}`}>
-					<Bullet>-</Bullet>
-					<span>{renderInline(bulletMatch[1])}</span>
-				</ListItem>,
-			);
-			i++;
-			continue;
-		}
-
-		// Numbered list: 1. item, 2. item
-		const numMatch = line.match(/^[\s]*(\d+)[.)]\s+(.+)/);
-		if (numMatch) {
-			parts.push(
-				<ListItem key={`ni-${key++}`}>
-					<Bullet>{numMatch[1]}.</Bullet>
-					<span>{renderInline(numMatch[2])}</span>
-				</ListItem>,
-			);
-			i++;
-			continue;
-		}
-
-		// Empty line
-		if (line.trim() === "") {
-			parts.push(<br key={`br-${key++}`} />);
+	const handleCopy = async () => {
+		if (await copyText(text)) {
+			vibrate(5);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 2000);
 		} else {
-			parts.push(<TextLine key={`tl-${key++}`}>{renderInline(line)}</TextLine>);
+			showToast("Couldn't copy to the clipboard", "error");
 		}
-		i++;
-	}
-
-	return parts;
-}
-
-function renderInline(text: string): React.ReactNode[] {
-	const nodes: React.ReactNode[] = [];
-	// Match **bold**, *italic*, `inline code`, numbered lists
-	const regex = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`)/g;
-	let lastIndex = 0;
-	let match: RegExpExecArray | null = null;
-	let key = 0;
-
-	match = regex.exec(text);
-	while (match !== null) {
-		if (match.index > lastIndex) {
-			nodes.push(text.slice(lastIndex, match.index));
-		}
-		if (match[2]) {
-			nodes.push(<Bold key={`b-${key++}`}>{match[2]}</Bold>);
-		} else if (match[3]) {
-			nodes.push(<Italic key={`i-${key++}`}>{match[3]}</Italic>);
-		} else if (match[4]) {
-			nodes.push(<InlineCode key={`ic-${key++}`}>{match[4]}</InlineCode>);
-		}
-		lastIndex = regex.lastIndex;
-		match = regex.exec(text);
-	}
-	if (lastIndex < text.length) {
-		nodes.push(text.slice(lastIndex));
-	}
-	return nodes;
-}
-
-/* ── Copy Button with Feedback ── */
-
-function CopyButton({ code }: { code: string }) {
-	const [copied, setCopied] = useState(false);
-
-	const handleCopy = (e: React.MouseEvent) => {
-		e.stopPropagation();
-		navigator.clipboard.writeText(code);
-		if (navigator.vibrate) navigator.vibrate(5);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
 	};
 
 	return (
-		<CopyBtn
-			onClick={handleCopy}
-			$copied={copied}
-			aria-label={copied ? "Copied" : "Copy code"}
-		>
-			<Icon
-				name={copied ? "check" : "content_copy"}
-				size={14}
-				color={copied ? tokens.colors.secondary : undefined}
-			/>
-		</CopyBtn>
-	);
-}
-
-/* ── Animations ── */
-
-const dotPulse = keyframes`
-  0%, 100% { opacity: 0.3; transform: translateY(0); }
-  50% { opacity: 1; transform: translateY(-4px); }
-`;
-
-const fadeInUp = keyframes`
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-`;
-
-
-/* ── Styles ── */
-
-const ChatContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-`;
-
-const MessagesArea = styled.div`
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem 1rem 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  font-size: 15px;
-
-  &::-webkit-scrollbar { width: 0; }
-  scrollbar-width: none;
-`;
-
-const Bubble = styled.div<{ $role: "ai" | "user" }>`
-  max-width: 85%;
-  padding: 0.75rem 1rem;
-  border-radius: 18px;
-  font-size: ${tokens.typography.fontSize.base};
-  line-height: ${tokens.typography.lineHeight.relaxed};
-  align-self: ${({ $role }) => ($role === "user" ? "flex-end" : "flex-start")};
-  animation: ${fadeInUp} 0.25s ease-out both;
-
-  ${({ $role }) =>
-		$role === "user"
-			? `
-    background: ${tokens.colors.primaryContainer}14;
-    border: 1px solid ${tokens.colors.primaryContainer}20;
-    color: ${tokens.colors.onSurface};
-    border-bottom-right-radius: 4px;
-  `
-			: `
-    background: ${tokens.colors.surfaceContainerHigh};
-    border: 1px solid ${tokens.colors.outlineVariant}30;
-    color: ${tokens.colors.onSurfaceVariant};
-    border-bottom-left-radius: 4px;
-  `}
-`;
-
-const BubbleLabel = styled.span<{ $role: "ai" | "user" }>`
-  display: block;
-  font-size: ${tokens.typography.fontSize.xs};
-  font-weight: ${tokens.typography.fontWeight.semibold};
-  letter-spacing: ${tokens.typography.letterSpacing.wide};
-  margin-bottom: 0.25rem;
-  color: ${({ $role }) =>
-		$role === "ai" ? tokens.colors.primary : tokens.colors.onSurfaceVariant};
-`;
-
-const BubbleBody = styled.div`
-  word-break: break-word;
-  user-select: text;
-  -webkit-user-select: text;
-`;
-
-/* ── Markdown Styles ── */
-
-const TextLine = styled.span`
-  display: block;
-  margin-bottom: 0.125rem;
-`;
-
-const Bold = styled.strong`
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
-`;
-
-const Italic = styled.em`
-  font-style: italic;
-`;
-
-const InlineCode = styled.code`
-  font-family: ${tokens.typography.fontFamily.mono};
-  font-size: 0.8em;
-  background: ${tokens.colors.surfaceContainerHighest};
-  padding: 0.125rem 0.375rem;
-  border-radius: ${tokens.borderRadius.sm};
-  color: ${tokens.colors.primary};
-`;
-
-const Heading = styled.span<{ $level: number }>`
-  display: block;
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
-  margin-top: 0.5rem;
-  margin-bottom: 0.25rem;
-  font-size: ${({ $level }) =>
-		$level === 1 ? "1.25em" : $level === 2 ? "1.1em" : "1em"};
-`;
-
-const ListItem = styled.span`
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.125rem;
-  align-items: baseline;
-`;
-
-const Bullet = styled.span`
-  color: ${tokens.colors.primary};
-  flex-shrink: 0;
-  font-weight: ${tokens.typography.fontWeight.bold};
-`;
-
-const CodeBlock = styled.div`
-  position: relative;
-  margin: 0.5rem 0;
-  background: ${tokens.colors.surfaceContainerLowest};
-  border-radius: ${tokens.borderRadius.lg};
-  overflow: hidden;
-`;
-
-const CodeLang = styled.span`
-  display: block;
-  padding: 0.375rem 0.75rem;
-  font-size: ${tokens.typography.fontSize.xs};
-  font-weight: ${tokens.typography.fontWeight.medium};
-  color: ${tokens.colors.onSurfaceVariant};
-  background: ${tokens.colors.surfaceContainerHigh};
-`;
-
-const CopyBtn = styled.button<{ $copied?: boolean }>`
-  position: absolute;
-  top: 0.375rem;
-  right: 0.5rem;
-  background: ${({ $copied }) => ($copied ? tokens.colors.secondary + "18" : tokens.colors.surfaceContainerHigh)};
-  border: none;
-  border-radius: ${tokens.borderRadius.sm};
-  padding: 0.25rem 0.375rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  color: ${tokens.colors.onSurfaceVariant};
-  transition: all ${tokens.transitions.fast};
-
-  &:hover { color: ${tokens.colors.primary}; background: ${tokens.colors.surfaceBright}; }
-  &:active { transform: scale(0.9); }
-`;
-
-const CodePre = styled.pre`
-  font-family: ${tokens.typography.fontFamily.mono};
-  font-size: 0.8rem;
-  line-height: 1.5;
-  padding: 0.75rem;
-  margin: 0;
-  overflow-x: auto;
-  color: ${tokens.colors.onSurface};
-  white-space: pre;
-
-  &::-webkit-scrollbar { height: 0; }
-  scrollbar-width: none;
-`;
-
-/* ── Message Actions ── */
-
-const MessageActions = styled.div<{ $visible: boolean }>`
-  display: flex;
-  gap: 0.25rem;
-  margin-top: 0.375rem;
-  opacity: ${({ $visible }) => $visible ? 1 : 0};
-  max-height: ${({ $visible }) => $visible ? "40px" : "0"};
-  overflow: hidden;
-  transition: all 0.15s ease;
-`;
-
-const BubbleWrap = styled.div`
-  display: flex;
-  flex-direction: column;
-`;
-
-const MsgActionBtn = styled.button<{ $copied?: boolean }>`
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  min-height: 36px;
-  padding: 0.5rem 0.75rem;
-  background: ${({ $copied }) => $copied ? tokens.colors.secondary + "18" : tokens.colors.surfaceContainerHigh};
-  border: none;
-  border-radius: ${tokens.borderRadius.md};
-  cursor: pointer;
-  font-size: ${tokens.typography.fontSize.xs};
-  font-weight: ${tokens.typography.fontWeight.medium};
-  color: ${({ $copied }) => $copied ? tokens.colors.secondary : tokens.colors.onSurfaceVariant};
-  transition: all ${tokens.transitions.fast};
-
-  &:hover { background: ${tokens.colors.surfaceContainerHighest}; }
-  &:active { transform: scale(0.9); }
-`;
-
-/* ── Typing Indicator ── */
-
-const TypingDots = styled.div`
-  display: flex;
-  gap: 4px;
-  align-self: flex-start;
-  padding: 0.75rem 1rem;
-  animation: ${fadeInUp} 0.2s ease-out both;
-
-  span {
-    width: 6px;
-    height: 6px;
-    border-radius: ${tokens.borderRadius.circle};
-    background: ${tokens.colors.primary};
-    animation: ${dotPulse} 1.2s ease-in-out infinite;
-
-    &:nth-child(2) { animation-delay: 0.2s; }
-    &:nth-child(3) { animation-delay: 0.4s; }
-  }
-`;
-
-/* ── Input Bar ── */
-
-const InputBar = styled.div`
-  flex-shrink: 0;
-  padding: 0.5rem 0.75rem 0.625rem;
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  background: ${tokens.colors.surfaceContainer};
-  border-top: 1px solid ${tokens.colors.outlineVariant}30;
-  position: relative;
-`;
-
-const CharCounter = styled.span<{ $over: boolean }>`
-  position: absolute;
-  top: -1.25rem;
-  right: 0.75rem;
-  font-size: 11px;
-  font-family: ${tokens.typography.fontFamily.mono};
-  color: ${({ $over }) => ($over ? tokens.colors.error : tokens.colors.onSurfaceVariant)};
-  background: ${tokens.colors.surfaceContainer};
-  padding: 0.125rem 0.375rem;
-  border-radius: ${tokens.borderRadius.sm};
-  pointer-events: none;
-`;
-
-const TextInput = styled.textarea`
-  flex: 1;
-  min-height: 40px;
-  max-height: 120px;
-  padding: 0.625rem 0.875rem;
-  background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${tokens.colors.outlineVariant}30;
-  border-radius: 20px;
-  font-size: ${tokens.typography.fontSize.base};
-  font-family: ${tokens.typography.fontFamily.body};
-  color: ${tokens.colors.onSurface};
-  resize: none;
-  outline: none;
-  line-height: 1.4;
-  /* Android WebView reserves a scrollbar gutter on textarea even when
-     content fits, drawing a thin vertical track on the right edge. Match
-     the rest of the app's scrollable surfaces and hide it. The textarea
-     stays scrollable past max-height — only the visual is suppressed. */
-  &::-webkit-scrollbar { width: 0; height: 0; }
-  scrollbar-width: none;
-
-  &::placeholder { color: ${tokens.colors.outline}; }
-  &:focus { border-color: ${tokens.colors.primary}40; }
-`;
-
-const SendBtn = styled.button<{ $hasText: boolean }>`
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all ${tokens.transitions.fast};
-
-  ${({ $hasText }) =>
-		$hasText
-			? `background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});`
-			: `background: ${tokens.colors.surfaceContainerHigh}; border: 1px solid ${tokens.colors.outlineVariant}30;`}
-
-  &:hover { opacity: 0.85; }
-  &:active { transform: scale(0.9); }
-`;
-
-const StopBtn = styled.button`
-  width: 40px;
-  height: 40px;
-  border-radius: 20px;
-  border: 1.5px solid ${tokens.colors.error}60;
-  background: ${tokens.colors.error}12;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all ${tokens.transitions.fast};
-
-  &:active { transform: scale(0.9); }
-`;
-
-/* ── Top Bar Right ── */
-
-const TopBarRight = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-`;
-
-const TopBarBtn = styled.button`
-  width: 40px;
-  height: 40px;
-  border-radius: ${tokens.borderRadius.lg};
-  border: none;
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background ${tokens.transitions.fast};
-  -webkit-tap-highlight-color: transparent;
-
-  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
-  &:active { transform: scale(0.9); }
-`;
-
-/* ── Header pill (character + model)
-
-   This is the primary identity element for the chat page — it replaces the
-   redundant "Chat" title, since the bottom nav already labels the section.
-   The chip behaves like a model selector at the top of ChatGPT/Claude:
-   one tap target that surfaces character name on top, model name below. ── */
-
-const HeaderPill = styled.button<{ $accent: string }>`
-  display: inline-flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.375rem 0.5rem 0.375rem 0.375rem;
-  background: transparent;
-  border: none;
-  border-radius: ${tokens.borderRadius.lg};
-  color: ${tokens.colors.onSurface};
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background ${tokens.transitions.fast};
-  max-width: 100%;
-  min-width: 0;
-  text-align: left;
-
-  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
-  &:active { background: ${tokens.colors.surfaceContainerHighest}; }
-`;
-
-const HeaderAvatar = styled.span<{ $accent: string }>`
-  width: 32px;
-  height: 32px;
-  border-radius: ${tokens.borderRadius.circle};
-  background: ${({ $accent }) => $accent}1f;
-  border: 1px solid ${({ $accent }) => $accent}40;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-`;
-
-const HeaderTextStack = styled.span`
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  gap: 1px;
-`;
-
-const HeaderCharName = styled.span`
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.base};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  line-height: 1.1;
-  color: ${tokens.colors.onSurface};
-  min-width: 0;
-`;
-
-const HeaderCharNameText = styled.span`
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 9rem;
-`;
-
-const HeaderModelLine = styled.span`
-  font-size: 11px;
-  font-weight: ${tokens.typography.fontWeight.medium};
-  color: ${tokens.colors.onSurfaceVariant};
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 14rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-`;
-
-const ModelDot = styled.span<{ $on: boolean }>`
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: ${({ $on }) => ($on ? tokens.colors.secondary : tokens.colors.outline)};
-  box-shadow: ${({ $on }) =>
-		$on ? `0 0 6px ${tokens.colors.secondary}80` : "none"};
-`;
-
-const HeaderEmpty = styled.span`
-  color: ${tokens.colors.onSurfaceVariant};
-  font-weight: ${tokens.typography.fontWeight.medium};
-`;
-
-/* ── First-run coachmark — points at the subtitle so the character switcher
-   doesn't go undiscovered on devices that don't show hover tooltips. ─ */
-
-const coachIn = keyframes`
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-`;
-
-const Coachmark = styled.div`
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 64px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: ${tokens.zIndex.toast};
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.875rem;
-  background: ${tokens.colors.surfaceContainerHighest};
-  color: ${tokens.colors.onSurface};
-  border: 1px solid ${tokens.colors.primary}40;
-  border-radius: ${tokens.borderRadius.lg};
-  font-size: ${tokens.typography.fontSize.xs};
-  box-shadow: ${tokens.shadows.elevated};
-  animation: ${coachIn} 0.25s ease-out;
-  max-width: calc(100vw - 2rem);
-
-  &::before {
-    content: "";
-    position: absolute;
-    top: -6px;
-    left: 50%;
-    transform: translateX(-50%) rotate(45deg);
-    width: 10px;
-    height: 10px;
-    background: ${tokens.colors.surfaceContainerHighest};
-    border-left: 1px solid ${tokens.colors.primary}40;
-    border-top: 1px solid ${tokens.colors.primary}40;
-  }
-`;
-
-const CoachClose = styled.button`
-  border: none;
-  background: transparent;
-  color: ${tokens.colors.onSurfaceVariant};
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  margin-left: 0.25rem;
-`;
-
-/* ── Loading Overlay ── */
-
-const loadingSpin = keyframes`
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-`;
-
-const loadingPulse = keyframes`
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
-`;
-
-const LoadingOverlay = styled.div`
-  position: fixed;
-  inset: 0;
-  z-index: 999;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.5rem;
-  background: ${tokens.colors.background}f2;
-  padding:
-    calc(env(safe-area-inset-top, 0px) + 2rem)
-    calc(env(safe-area-inset-right, 0px) + 2rem)
-    calc(env(safe-area-inset-bottom, 0px) + 2rem)
-    calc(env(safe-area-inset-left, 0px) + 2rem);
-`;
-
-const Spinner = styled.div`
-  width: 48px;
-  height: 48px;
-  border: 3px solid ${tokens.colors.surfaceContainerHighest};
-  border-top-color: ${tokens.colors.primary};
-  border-radius: 50%;
-  animation: ${loadingSpin} 0.8s linear infinite;
-`;
-
-const LoadingTitle = styled.h2`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.xl};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
-  text-align: center;
-`;
-
-const LoadingSubtitle = styled.p`
-  font-size: ${tokens.typography.fontSize.base};
-  color: ${tokens.colors.onSurfaceVariant};
-  text-align: center;
-  animation: ${loadingPulse} 2s ease-in-out infinite;
-`;
-
-const LoadErrorActions = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 100%;
-  max-width: 280px;
-  margin-top: 0.5rem;
-`;
-
-const RetryLoadBtn = styled.button`
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
-  border-radius: ${tokens.borderRadius.lg};
-  background: ${tokens.colors.primary};
-  color: ${tokens.colors.onPrimary};
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  border: none;
-  cursor: pointer;
-
-  &:active { transform: scale(0.96); }
-`;
-
-const DismissLoadBtn = styled.button`
-  padding: 0.75rem 1.25rem;
-  border-radius: ${tokens.borderRadius.lg};
-  background: transparent;
-  color: ${tokens.colors.onSurface};
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.medium};
-  border: 1px solid ${tokens.colors.outlineVariant};
-  cursor: pointer;
-
-  &:active { transform: scale(0.96); }
-`;
-
-/* ── Speed Badge ── */
-
-const SpeedBadge = styled.span`
-  font-size: 10px;
-  font-family: ${tokens.typography.fontFamily.mono};
-  color: ${tokens.colors.onSurfaceVariant};
-  padding: 0.125rem 0.375rem;
-  background: ${tokens.colors.surfaceContainerHighest};
-  border-radius: ${tokens.borderRadius.sm};
-  margin-top: 0.25rem;
-  display: inline-block;
-`;
-
-/* ── Conversation Starters ── */
-
-const StartersWrap = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  align-items: center;
-  margin-top: 1rem;
-  padding: 0 0.5rem;
-`;
-
-const StartersLabel = styled.span`
-  font-size: ${tokens.typography.fontSize.xs};
-  color: ${tokens.colors.onSurfaceVariant};
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: ${tokens.typography.fontWeight.semibold};
-`;
-
-const StartersGrid = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 100%;
-  max-width: 22rem;
-`;
-
-const StarterChip = styled.button<{ $accent: string }>`
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.875rem;
-  background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${tokens.colors.outlineVariant}40;
-  border-radius: ${tokens.borderRadius.lg};
-  color: ${tokens.colors.onSurface};
-  font-size: ${tokens.typography.fontSize.sm};
-  font-family: ${tokens.typography.fontFamily.body};
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: transform ${tokens.transitions.fast}, background ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
-  animation: ${fadeInUp} 0.3s ease-out both;
-
-  &:hover { border-color: ${({ $accent }) => $accent}60; }
-  &:active { transform: scale(0.98); background: ${tokens.colors.surfaceContainerHighest}; }
-`;
-
-const StarterArrow = styled.span<{ $accent: string }>`
-  margin-left: auto;
-  color: ${({ $accent }) => $accent};
-  display: inline-flex;
-  flex-shrink: 0;
-`;
-
-/* ── Context Notice ── */
-
-const ContextNotice = styled.div`
-  align-self: center;
-  font-size: ${tokens.typography.fontSize.sm};
-  color: ${tokens.colors.onSurfaceVariant};
-  background: ${tokens.colors.surfaceContainerHigh};
-  padding: 0.375rem 0.75rem;
-  border-radius: ${tokens.borderRadius.lg};
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  animation: ${fadeInUp} 0.25s ease-out both;
-`;
-
-/* ── Message Copy Button ── */
-
-function MessageCopyBtn({ text }: { text: string }) {
-	const [copied, setCopied] = useState(false);
-
-	const handleCopy = () => {
-		navigator.clipboard.writeText(text);
-		if (navigator.vibrate) navigator.vibrate(5);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
-	};
-
-	return (
-		<MsgActionBtn onClick={handleCopy} $copied={copied}>
-			<Icon
-				name={copied ? "check" : "content_copy"}
-				size={12}
-				color={copied ? tokens.colors.secondary : undefined}
-			/>
+		<MsgActionBtn type="button" onClick={handleCopy} $active={copied}>
+			<Icon name={copied ? "check" : "content_copy"} size={14} />
 			{copied ? "Copied" : "Copy"}
 		</MsgActionBtn>
 	);
 }
 
-/* ── Memoized AI body so we don't re-parse markdown on every keystroke/token ── */
+function readDraft(): string {
+	try {
+		return localStorage.getItem(DRAFT_KEY) ?? "";
+	} catch {
+		return "";
+	}
+}
 
-const AiMessageBody = memo(function AiMessageBody({ text }: { text: string }) {
-	return <>{renderMarkdown(text)}</>;
-});
+function writeDraft(text: string) {
+	try {
+		if (text) localStorage.setItem(DRAFT_KEY, text);
+		else localStorage.removeItem(DRAFT_KEY);
+	} catch {
+		// Storage unavailable: the draft just won't survive leaving the page.
+	}
+}
+
+type LoadProblem = { kind: "failed"; message: string } | { kind: "no-models" };
+
+interface RunOptions {
+	prompt: string;
+	/** Conversation up to, but not including, the prompt being answered. */
+	context: Message[];
+	/** Existing reply text to extend (the "Continue" action). */
+	prefix?: string;
+}
 
 /* ── Component ── */
 
 export function ChatPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const { activeModel, settings, refreshActiveModel } = useAppContext();
-	const { activeCharacter } = useCharacters();
+	const { activeModel, activeModelId, settings, loadModel } = useAppContext();
+	const { activeCharacter, allCharacters, setActiveCharacter, loaded: charactersLoaded } = useCharacters();
 	const { showToast } = useToast();
+
 	const [messages, setMessages] = useState<Message[]>([]);
-	const [input, setInput] = useState("");
+	const [input, setInput] = useState(readDraft);
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isLoadingModel, setIsLoadingModel] = useState(false);
-	const [loadModelError, setLoadModelError] = useState<string | null>(null);
+	const [loadProblem, setLoadProblem] = useState<LoadProblem | null>(null);
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [showCoach, setShowCoach] = useState(false);
 	const [streamedText, setStreamedText] = useState("");
 	const [tokensPerSecond, setTokensPerSecond] = useState(0);
-	const [conversationId, setConversationId] = useState<string | null>(null);
-	const messagesEndRef = useRef<HTMLDivElement>(null);
-	const textareaRef = useRef<HTMLTextAreaElement>(null);
-	const [activeMessageIdx, setActiveMessageIdx] = useState<number | null>(null);
+	const [openActionsId, setOpenActionsId] = useState<string | null>(null);
 	const [contextNotice, setContextNotice] = useState<string | null>(null);
+	const [following, setFollowing] = useState(true);
+
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-	// Refs to track latest state for cleanup (closures capture stale values)
-	const streamedTextRef = useRef("");
-	const isGeneratingRef = useRef(false);
-	const messagesRef = useRef<Message[]>([]);
-	const activeModelRef = useRef(activeModel);
+	const followingRef = useRef(true);
 
-	// Keep refs in sync with state
-	useEffect(() => { streamedTextRef.current = streamedText; }, [streamedText]);
-	useEffect(() => { isGeneratingRef.current = isGenerating; }, [isGenerating]);
-	useEffect(() => { messagesRef.current = messages; }, [messages]);
-	useEffect(() => { activeModelRef.current = activeModel; }, [activeModel]);
+	// Long-lived callbacks (inference events, unmount cleanup) outlive the
+	// render that created them. Everything they need is read through this
+	// ref so they always see current values instead of a stale snapshot.
+	const live = useRef({
+		messages,
+		conversationId: null as string | null,
+		activeModel,
+		activeModelId,
+		saveHistory: settings?.save_history ?? false,
+		character: activeCharacter,
+		isGenerating,
+	});
+	live.current.activeModel = activeModel;
+	live.current.activeModelId = activeModelId;
+	live.current.saveHistory = settings?.save_history ?? false;
+	live.current.character = activeCharacter;
 
-	const activeCharacterRef = useRef(activeCharacter);
-	useEffect(() => { activeCharacterRef.current = activeCharacter; }, [activeCharacter]);
+	// Identifies the current generation. Events from an older run (one that
+	// was stopped by "New chat", or superseded) are ignored.
+	const runIdRef = useRef(0);
+	// Tokens arrive faster than the screen refreshes; they are buffered here
+	// and flushed to state once per animation frame.
+	const streamRef = useRef({ text: "", prefix: "", frame: 0 });
 
-	// First-run coachmark for the character/model subtitle. Stored in
-	// localStorage with a versioned key so we can re-tutorial the bar if a
-	// future redesign shifts what tapping it does.
+	const characterName = activeCharacter?.name ?? "Neurix";
+	const accent = accentOf(activeCharacter);
+
+	/* ── Persistence ── */
+
+	const persist = useCallback((msgs: Message[]) => {
+		const s = live.current;
+		const toSave = persistable(msgs);
+		if (!s.saveHistory || toSave.length < 2 || !s.activeModelId || !s.activeModel) return;
+		if (!s.conversationId) s.conversationId = crypto.randomUUID();
+		historyService
+			.saveConversation(
+				toConversation(toSave, {
+					id: s.conversationId,
+					modelId: s.activeModelId,
+					modelName: s.activeModel,
+					characterId: s.character?.id,
+					characterName: s.character?.name,
+				}),
+			)
+			.catch(() => {
+				showToast("Couldn't save this conversation", "error");
+			});
+	}, [showToast]);
+
+	/** Update the visible list (and the copy long-lived callbacks read). */
+	const show = useCallback((next: Message[]) => {
+		live.current.messages = next;
+		setMessages(next);
+	}, []);
+
+	/** Update the list and save it. */
+	const commit = useCallback((next: Message[]) => {
+		show(next);
+		persist(next);
+	}, [show, persist]);
+
+	const setGenerating = useCallback((value: boolean) => {
+		live.current.isGenerating = value;
+		setIsGenerating(value);
+	}, []);
+
+	/* ── Scrolling ── */
+
+	const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+		const el = scrollRef.current;
+		if (el) el.scrollTo({ top: el.scrollHeight, behavior });
+	}, []);
+
+	const handleScroll = () => {
+		const el = scrollRef.current;
+		if (!el) return;
+		const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_THRESHOLD;
+		followingRef.current = atBottom;
+		setFollowing(atBottom);
+	};
+
+	// Follow new content only while the reader is already at the bottom, so
+	// scrolling up to re-read is never yanked back down by the stream.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: must re-run whenever the rendered content grows
 	useEffect(() => {
-		const KEY = "neurix.coach.subtitle.v1";
+		if (followingRef.current) scrollToBottom();
+	}, [messages.length, streamedText, isGenerating, scrollToBottom]);
+
+	// Keep the latest message visible when the on-screen keyboard opens.
+	useEffect(() => {
+		const vv = window.visualViewport;
+		if (!vv) return;
+		const onResize = () => {
+			if (followingRef.current) scrollToBottom();
+		};
+		vv.addEventListener("resize", onResize);
+		return () => vv.removeEventListener("resize", onResize);
+	}, [scrollToBottom]);
+
+	const autoResize = useCallback(() => {
+		const el = textareaRef.current;
+		if (!el) return;
+		el.style.height = "auto";
+		el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
+	}, []);
+
+	// Size the box for a restored draft.
+	useEffect(() => {
+		autoResize();
+	}, [autoResize]);
+
+	/* ── First-run coachmark ── */
+
+	useEffect(() => {
 		try {
-			if (localStorage.getItem(KEY)) return;
+			if (localStorage.getItem(COACH_KEY)) return;
 		} catch {
-			return; // Private mode / disabled storage — skip silently.
+			return;
 		}
 		const t = setTimeout(() => setShowCoach(true), 800);
 		return () => clearTimeout(t);
@@ -914,418 +276,332 @@ export function ChatPage() {
 	const dismissCoach = useCallback(() => {
 		setShowCoach(false);
 		try {
-			localStorage.setItem("neurix.coach.subtitle.v1", new Date().toISOString());
+			localStorage.setItem(COACH_KEY, new Date().toISOString());
 		} catch {
-			// Ignore — failing to persist just means the user sees it again
-			// next launch, which is harmless.
+			// Not persisted: the tip shows again next launch, which is harmless.
 		}
 	}, []);
 
-	// Auto-dismiss after 6 seconds so it never overstays.
 	useEffect(() => {
 		if (!showCoach) return;
 		const t = setTimeout(dismissCoach, 6000);
 		return () => clearTimeout(t);
 	}, [showCoach, dismissCoach]);
 
-	// Toast when the user swaps character mid-chat. Without this, switching
-	// happens silently and the new persona only becomes visible on the next
-	// reply — easy to miss in a 12-turn coding session.
-	const lastCharIdRef = useRef<string | null>(activeCharacter?.id ?? null);
+	/* ── Character change notice ── */
+
+	const lastCharIdRef = useRef<string | null>(null);
+	const suppressCharToastRef = useRef(false);
 	useEffect(() => {
 		const prev = lastCharIdRef.current;
 		const next = activeCharacter?.id ?? null;
-		if (prev && next && prev !== next && messagesRef.current.length > 0) {
+		lastCharIdRef.current = next;
+		if (suppressCharToastRef.current) {
+			suppressCharToastRef.current = false;
+			return;
+		}
+		if (prev && next && prev !== next && live.current.messages.length > 0) {
 			showToast(`Now using ${activeCharacter?.name}. The next reply will use this style.`, "info");
 		}
-		lastCharIdRef.current = next;
 	}, [activeCharacter?.id, activeCharacter?.name, showToast]);
 
-	// Stop inference and save partial AI response when navigating away mid-generation
-	useEffect(() => {
-		return () => {
-			if (isGeneratingRef.current) {
-				chatService.stopInference();
-				const partial = streamedTextRef.current.trim();
-				if (partial && messagesRef.current.length > 0) {
-					// Save partial response so it's not lost
-					const updated = [...messagesRef.current, { role: "ai" as const, text: partial }];
-					// Fire-and-forget save — component is unmounting
-					const title = updated[0]?.text.slice(0, 50) || "Chat";
-					historyService.saveConversation({
-						id: crypto.randomUUID(),
-						title,
-						model_id: activeModelRef.current || "",
-						model_name: activeModelRef.current || "",
-						character_id: activeCharacterRef.current?.id,
-						character_name: activeCharacterRef.current?.name,
-						created_at: new Date().toISOString(),
-						updated_at: new Date().toISOString(),
-						messages: updated.map((m) => ({
-							role: m.role === "user" ? "user" : "assistant",
-							content: m.text,
-							timestamp: new Date().toISOString(),
-						})),
-					}).catch(() => {});
-				}
-			}
-		};
-	}, []);
+	/* ── Loading a conversation ── */
 
-	// Load existing conversation if navigated from history
+	const openedRef = useRef(false);
 	useEffect(() => {
+		// Wait for characters so a conversation's character can be restored.
+		if (openedRef.current || !charactersLoaded) return;
+		openedRef.current = true;
+
 		const state = location.state as { conversationId?: string; freshChat?: boolean } | null;
-		// freshChat=true means user clicked "Use Model" / "Engage" — start a clean chat
 		if (state?.freshChat) return;
-		if (state?.conversationId) {
-			historyService.loadConversation(state.conversationId).then((conv) => {
-				if (conv) {
-					setConversationId(conv.id);
-					setMessages(
-						conv.messages.map((m) => ({
-							role: m.role === "user" ? "user" : "ai",
-							text: m.content,
-						})),
-					);
-				}
-			});
-		}
-	}, [location.state]);
 
-	// On mount: if no conversation loaded from history, load the most recent one
-	useEffect(() => {
-		const state = location.state as { conversationId?: string; freshChat?: boolean } | null;
-		if (state?.conversationId || state?.freshChat) return; // Already handled or fresh chat requested
-		historyService.getConversations().then((convos) => {
-			if (convos.length > 0) {
-				// Load the most recent conversation
-				historyService.loadConversation(convos[0].id).then((conv) => {
-					if (conv) {
-						setConversationId(conv.id);
-						setMessages(
-							conv.messages.map((m) => ({
-								role: m.role === "user" ? "user" : "ai",
-								text: m.content,
-							})),
-						);
-					}
-				});
-			}
-		});
-	}, []);
-
-	// Wraps modelService.loadModel with a hard timeout so a hanging Rust load
-	// (corrupt GGUF, OOM, etc.) doesn't leave the UI stuck on a spinner.
-	const LOAD_TIMEOUT_MS = 60_000;
-	const loadWithTimeout = async (modelId: string) => {
-		const timeoutPromise = new Promise<never>((_, reject) => {
-			setTimeout(
-				() => reject(new Error("Model load timed out. The file may be corrupt or too large for this device.")),
-				LOAD_TIMEOUT_MS,
-			);
-		});
-		await Promise.race([modelService.loadModel(modelId), timeoutPromise]);
-	};
-
-	// Auto-load last used model if none is active
-	const ensureModelLoaded = async (): Promise<boolean> => {
-		if (activeModel) return true;
-
-		const tryLoad = async (modelId: string): Promise<boolean> => {
-			setIsLoadingModel(true);
-			setLoadModelError(null);
+		(async () => {
 			try {
-				await loadWithTimeout(modelId);
-				await refreshActiveModel();
-				return true;
-			} catch (err) {
-				const msg = err instanceof Error ? err.message : String(err);
-				setLoadModelError(msg);
-				return false;
-			} finally {
-				setIsLoadingModel(false);
-			}
-		};
+				// Open the requested conversation, or pick up the most recent one.
+				const id = state?.conversationId ?? (await historyService.getConversations())[0]?.id;
+				if (!id) return;
+				const conv = await historyService.loadConversation(id);
+				// Don't overwrite a conversation the user already started here.
+				if (!conv || live.current.messages.length > 0) return;
 
-		try {
-			const currentSettings = await settingsService.getSettings();
-			if (currentSettings.last_model_id) {
-				if (await tryLoad(currentSettings.last_model_id)) return true;
-			}
-		} catch {
-			// fall through to downloaded-list path
-		}
+				live.current.conversationId = conv.id;
+				show(fromStored(conv.messages));
 
-		try {
-			const models = await modelService.getDownloadedModels();
-			if (models.length > 0) {
-				if (await tryLoad(models[0].id)) return true;
-			}
-		} catch {
-			// no models available
-		}
-
-		return false;
-	};
-
-	const generateTitle = (msgs: Message[]): string => {
-		// Find the first user message for context
-		const firstUser = msgs.find((m) => m.role === "user");
-		if (!firstUser) return "Chat";
-
-		const text = firstUser.text.trim();
-
-		// If it's a question, use it directly (cleaned up)
-		if (text.length <= 50) return text;
-
-		// Extract first sentence or clause
-		const sentenceEnd = text.search(/[.!?\n]/);
-		if (sentenceEnd > 0 && sentenceEnd <= 60) {
-			return text.slice(0, sentenceEnd + 1);
-		}
-
-		// Break at last word boundary within 50 chars
-		const truncated = text.slice(0, 50);
-		const lastSpace = truncated.lastIndexOf(" ");
-		return (lastSpace > 20 ? truncated.slice(0, lastSpace) : truncated) + "...";
-	};
-
-	// Auto-save conversation after each completed exchange
-	const saveChat = useCallback(
-		async (msgs: Message[]) => {
-			if (!settings?.save_history || msgs.length < 2 || !activeModel) return;
-			const id = conversationId || crypto.randomUUID();
-			if (!conversationId) setConversationId(id);
-
-			const title = generateTitle(msgs);
-			const conv: Conversation = {
-				id,
-				title,
-				model_id: "",
-				model_name: activeModel,
-				character_id: activeCharacter?.id,
-				character_name: activeCharacter?.name,
-				created_at: new Date().toISOString(),
-				updated_at: new Date().toISOString(),
-				messages: msgs.map((m) => ({
-					role: m.role === "ai" ? "assistant" : "user",
-					content: m.text,
-					timestamp: new Date().toISOString(),
-				})),
-			};
-			await historyService.saveConversation(conv).catch(() => {});
-		},
-		[conversationId, activeModel, settings?.save_history, activeCharacter?.id, activeCharacter?.name],
-	);
-
-	const autoResize = useCallback(() => {
-		const el = textareaRef.current;
-		if (!el) return;
-		el.style.height = "auto";
-		el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-	}, []);
-
-	// Smooth scroll only when a new message is added or generation toggles.
-	// During streaming, individual tokens use `auto` to avoid 60Hz scroll jank.
-	useEffect(() => {
-		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages.length, isGenerating]);
-
-	useEffect(() => {
-		if (!streamedText) return;
-		messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
-	}, [streamedText]);
-
-	// Scroll to bottom when keyboard opens (viewport resizes).
-	// Without this, messages stay at their stale scroll position and the latest
-	// message gets hidden behind the keyboard — unlike WhatsApp which auto-scrolls.
-	useEffect(() => {
-		const vv = window.visualViewport;
-		if (!vv) return;
-
-		const onResize = () => {
-			messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-		};
-
-		vv.addEventListener("resize", onResize);
-		return () => vv.removeEventListener("resize", onResize);
-	}, []);
-
-	const handleEvent = useCallback((event: InferenceEvent) => {
-		const data = event.data;
-		switch (event.event) {
-			case "TokenGenerated": {
-				const d = data as { token: string; tokens_per_second: number };
-				setStreamedText((prev) => prev + d.token);
-				setTokensPerSecond(d.tokens_per_second);
-				break;
-			}
-			case "GenerationComplete": {
-				// Add message FIRST, then clear stream + generating flag in the same
-				// React batch so there's no 1-frame gap (flicker) between the streaming
-				// bubble disappearing and the permanent bubble appearing.
-				setStreamedText((finalText) => {
-					const cleaned = cleanResponse(finalText);
-					if (cleaned) {
-						setMessages((prev) => {
-							const updated = [...prev, { role: "ai" as const, text: cleaned }];
-							saveChat(updated);
-							return updated;
-						});
-					}
-					setIsGenerating(false);
-					return "";
-				});
-				const d = data as { total_tokens: number; duration_ms: number };
-				if (d.duration_ms > 0) {
-					setTokensPerSecond(d.total_tokens / (d.duration_ms / 1000));
+				// A conversation continues with the character it was held with.
+				const convCharacter = conv.character_id;
+				if (
+					convCharacter &&
+					convCharacter !== live.current.character?.id &&
+					allCharacters.some((c) => c.id === convCharacter)
+				) {
+					suppressCharToastRef.current = true;
+					await setActiveCharacter(convCharacter).catch(() => {
+						suppressCharToastRef.current = false;
+					});
 				}
-				break;
+			} catch {
+				if (state?.conversationId) showToast("Couldn't open that conversation", "error");
 			}
-			case "ContextTrimmed": {
-				const d = data as { pairs_dropped: number };
-				setContextNotice(`Using recent messages only (${d.pairs_dropped} older messages excluded from context)`);
-				// Auto-dismiss after 4 seconds
-				setTimeout(() => setContextNotice(null), 4000);
-				break;
-			}
-			case "Error": {
-				setIsGenerating(false);
-				const d = data as { message: string };
-				setMessages((prev) => [
-					...prev,
-					{ role: "ai", text: `**Error:** ${d.message}` },
-				]);
-				setStreamedText("");
-				break;
-			}
-		}
+		})();
+	}, [charactersLoaded, location.state, allCharacters, setActiveCharacter, showToast, show]);
+
+	/* ── Inference ── */
+
+	const flushStream = useCallback(() => {
+		const s = streamRef.current;
+		s.frame = 0;
+		setStreamedText(s.prefix + s.text);
 	}, []);
 
-	const buildHistory = (msgs: Message[]): ChatHistoryEntry[] => {
-		const pairs: ChatHistoryEntry[] = [];
-		for (let i = 0; i < msgs.length - 1; i += 2) {
-			if (msgs[i]?.role === "user" && msgs[i + 1]?.role === "ai") {
-				pairs.push({ user: msgs[i].text, assistant: msgs[i + 1].text });
+	const resetStream = useCallback(() => {
+		if (streamRef.current.frame) cancelAnimationFrame(streamRef.current.frame);
+		streamRef.current = { text: "", prefix: "", frame: 0 };
+		setStreamedText("");
+	}, []);
+
+	const run = useCallback(async ({ prompt, context, prefix = "" }: RunOptions) => {
+		const character = live.current.character;
+		const runId = ++runIdRef.current;
+		const isCurrent = () => runIdRef.current === runId;
+
+		resetStream();
+		streamRef.current.prefix = prefix;
+		if (prefix) setStreamedText(prefix);
+		setGenerating(true);
+		setTokensPerSecond(0);
+		followingRef.current = true;
+		setFollowing(true);
+
+		const finish = (extra: Message[]) => {
+			resetStream();
+			setGenerating(false);
+			if (extra.length > 0) commit([...live.current.messages, ...extra]);
+		};
+
+		const handleEvent = (event: InferenceEvent) => {
+			if (!isCurrent()) return;
+			switch (event.event) {
+				case "TokenGenerated": {
+					const s = streamRef.current;
+					s.text += event.data.token;
+					if (!s.frame) s.frame = requestAnimationFrame(flushStream);
+					setTokensPerSecond(event.data.tokens_per_second);
+					break;
+				}
+				case "GenerationComplete": {
+					const { total_tokens, duration_ms, stop_reason } = event.data;
+					const cleaned = cleanResponse(streamRef.current.prefix + streamRef.current.text);
+					if (duration_ms > 0) setTokensPerSecond(total_tokens / (duration_ms / 1000));
+					finish(cleaned ? [createMessage("ai", cleaned, { stopReason: stop_reason })] : []);
+					break;
+				}
+				case "ContextTrimmed": {
+					const n = event.data.pairs_dropped;
+					setContextNotice(
+						`Long chat: the ${n} oldest exchange${n === 1 ? "" : "s"} no longer fit in the model's memory.`,
+					);
+					setTimeout(() => setContextNotice(null), 5000);
+					break;
+				}
+				case "Error":
+					finish([createMessage("error", event.data.message)]);
+					break;
 			}
+		};
+
+		try {
+			await chatService.runInference(
+				{
+					prompt,
+					systemPrompt: character?.system_prompt ?? settings?.system_prompt ?? "",
+					history: buildHistory(context),
+					temperature: character?.temperature ?? settings?.temperature ?? 0.7,
+					topP: character?.top_p ?? settings?.top_p ?? 0.9,
+					maxTokens: character?.max_tokens ?? settings?.max_tokens ?? 512,
+					assistantPrefix: prefix || undefined,
+				},
+				handleEvent,
+			);
+		} catch (err) {
+			if (!isCurrent()) return;
+			// Keep whatever had streamed before the failure.
+			const partial = cleanResponse(streamRef.current.prefix + streamRef.current.text);
+			const message = err instanceof Error ? err.message : String(err);
+			finish([
+				...(partial ? [createMessage("ai", partial)] : []),
+				createMessage("error", message),
+			]);
 		}
-		// Send ALL history — backend does token-aware truncation with the actual tokenizer
-		return pairs;
-	};
+	}, [commit, flushStream, resetStream, setGenerating, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
+
+	/** Make sure a model is loaded, loading the last-used one if needed. */
+	const ensureModel = useCallback(async (): Promise<boolean> => {
+		if (live.current.activeModelId) return true;
+		setLoadProblem(null);
+		setIsLoadingModel(true);
+		try {
+			const installed = await modelService.getDownloadedModels();
+			if (installed.length === 0) {
+				setLoadProblem({ kind: "no-models" });
+				return false;
+			}
+			const preferred = installed.find((m) => m.id === settings?.last_model_id) ?? installed[0];
+			await loadModel(preferred.id);
+			live.current.activeModelId = preferred.id;
+			live.current.activeModel = preferred.name;
+			return true;
+		} catch (err) {
+			setLoadProblem({ kind: "failed", message: err instanceof Error ? err.message : String(err) });
+			return false;
+		} finally {
+			setIsLoadingModel(false);
+		}
+	}, [loadModel, settings?.last_model_id]);
 
 	const sendingRef = useRef(false);
 
 	const handleSend = async () => {
 		const text = input.trim();
 		if (!text || isGenerating || isLoadingModel || sendingRef.current) return;
-		if (text.length > MAX_PROMPT_LENGTH) {
-			setMessages((prev) => [
-				...prev,
-				{
-					role: "ai",
-					text: `**Error:** Prompt is too long (${text.length.toLocaleString()} chars). Maximum is ${MAX_PROMPT_LENGTH.toLocaleString()}.`,
-				},
-			]);
-			return;
-		}
 		sendingRef.current = true;
-
-		// Haptic feedback
-		if (navigator.vibrate) navigator.vibrate(10);
-
-		// Auto-load model if none is active
-		if (!activeModel) {
-			const loaded = await ensureModelLoaded();
-			if (!loaded) {
-				sendingRef.current = false;
-				navigate("/models");
-				return;
-			}
-		}
-
-		setMessages((prev) => [...prev, { role: "user", text }]);
-		setInput("");
-		setIsGenerating(true);
-		setStreamedText("");
-		setTokensPerSecond(0);
-		if (textareaRef.current) textareaRef.current.style.height = "auto";
-
-		const history = buildHistory(messages);
-
 		try {
-			await chatService.runInference(
-				text,
-				activeCharacter?.system_prompt ?? settings?.system_prompt ?? "",
-				history,
-				activeCharacter?.temperature ?? settings?.temperature ?? 0.4,
-				activeCharacter?.top_p ?? settings?.top_p ?? 0.9,
-				activeCharacter?.max_tokens ?? settings?.max_tokens ?? 512,
-				handleEvent,
-			);
-		} catch (err) {
-			setIsGenerating(false);
-			setStreamedText("");
-			setMessages((prev) => [
-				...prev,
-				{ role: "ai", text: `**Error:** ${String(err)}` },
-			]);
+			vibrate(10);
+			// On failure the typed message stays in the box and the reason is
+			// shown in place, with a retry.
+			if (!(await ensureModel())) return;
+
+			const context = live.current.messages;
+			show([...context, createMessage("user", text)]);
+			setInput("");
+			writeDraft("");
+			setOpenActionsId(null);
+			if (textareaRef.current) textareaRef.current.style.height = "auto";
+
+			await run({ prompt: text, context });
 		} finally {
 			sendingRef.current = false;
 		}
 	};
 
 	const handleStop = () => {
-		if (navigator.vibrate) navigator.vibrate(12);
-		chatService.stopInference();
+		vibrate(12);
+		chatService.stopInference().catch(() => {});
 	};
 
-	const handleRegenerate = async () => {
-		if (isGenerating || !activeModel || messages.length < 2) return;
+	/** The last AI reply and the user message it answers, if the chat ends with one. */
+	const lastExchange = () => {
+		const msgs = live.current.messages;
+		const aiIdx = msgs.length - 1;
+		if (aiIdx < 1 || msgs[aiIdx].role !== "ai") return null;
+		for (let i = aiIdx - 1; i >= 0; i--) {
+			if (msgs[i].role === "user") return { msgs, userIdx: i, aiIdx };
+		}
+		return null;
+	};
 
-		// Find the last user message
-		let lastUserIdx = -1;
-		for (let i = messages.length - 1; i >= 0; i--) {
-			if (messages[i].role === "user") {
-				lastUserIdx = i;
-				break;
+	/** Re-answer the last prompt; with `extend`, keep the reply and continue it. */
+	const redoLast = async (extend: boolean) => {
+		if (isGenerating) return;
+		const ex = lastExchange();
+		if (!ex || !(await ensureModel())) return;
+		const { msgs, userIdx, aiIdx } = ex;
+		show(msgs.slice(0, aiIdx));
+		setOpenActionsId(null);
+		await run({
+			prompt: msgs[userIdx].text,
+			context: msgs.slice(0, userIdx),
+			prefix: extend ? msgs[aiIdx].text : undefined,
+		});
+	};
+
+	const handleDeleteMessage = (id: string) => {
+		const before = live.current.messages;
+		const target = before.find((m) => m.id === id);
+		commit(before.filter((m) => m.id !== id));
+		setOpenActionsId(null);
+		if (target && target.role !== "error") {
+			showToast("Message deleted", "info", { label: "Undo", onAction: () => commit(before) });
+		}
+	};
+
+	/**
+	 * Edit-and-resend a user message: drops it and everything after it, and
+	 * puts its text back in the input. Editing a turn invalidates every
+	 * reply that depended on it.
+	 */
+	const handleEditMessage = (id: string) => {
+		if (isGenerating) return;
+		const msgs = live.current.messages;
+		const idx = msgs.findIndex((m) => m.id === id);
+		if (idx < 0 || msgs[idx].role !== "user") return;
+		setOpenActionsId(null);
+		commit(msgs.slice(0, idx));
+		fillInput(msgs[idx].text);
+	};
+
+	const handleShareChat = async () => {
+		const text = persistable(messages)
+			.map((m) => `${m.role === "user" ? "You" : characterName}: ${m.text}`)
+			.join("\n\n");
+		if (!text) return;
+
+		if (navigator.share) {
+			try {
+				await navigator.share({ title: "Neurix chat", text });
+				return;
+			} catch (err) {
+				// Dismissing the share sheet is not an error worth a fallback.
+				if (err instanceof Error && err.name === "AbortError") return;
 			}
 		}
-		if (lastUserIdx === -1) return;
+		if (await copyText(text)) showToast("Conversation copied to the clipboard", "success");
+		else showToast("Couldn't copy the conversation", "error");
+	};
 
-		const userText = messages[lastUserIdx].text;
-		// Remove the last AI response (and keep everything before it)
-		const trimmed = messages.slice(0, lastUserIdx + 1);
-		setMessages(trimmed);
-		setIsGenerating(true);
-		setStreamedText("");
-		setTokensPerSecond(0);
+	const handleNewChat = () => {
+		// Invalidate the running generation first so its completion event
+		// cannot land in the new, empty conversation.
+		runIdRef.current += 1;
+		if (isGenerating) chatService.stopInference().catch(() => {});
+		resetStream();
+		setGenerating(false);
+		live.current.conversationId = null;
+		show([]);
+		setOpenActionsId(null);
+		setContextNotice(null);
+		textareaRef.current?.focus();
+	};
 
-		const history = buildHistory(trimmed);
+	// Leaving mid-generation: stop the model and keep what it wrote so far
+	// in the same conversation (if history is on).
+	useEffect(() => {
+		return () => {
+			if (!live.current.isGenerating) return;
+			runIdRef.current += 1;
+			chatService.stopInference().catch(() => {});
+			const s = streamRef.current;
+			const partial = cleanResponse(s.prefix + s.text);
+			if (partial) persist([...live.current.messages, createMessage("ai", partial)]);
+		};
+	}, [persist]);
 
-		try {
-			await chatService.runInference(
-				userText,
-				activeCharacter?.system_prompt ?? settings?.system_prompt ?? "",
-				history,
-				activeCharacter?.temperature ?? settings?.temperature ?? 0.4,
-				activeCharacter?.top_p ?? settings?.top_p ?? 0.9,
-				activeCharacter?.max_tokens ?? settings?.max_tokens ?? 512,
-				handleEvent,
-			);
-		} catch (err) {
-			setIsGenerating(false);
-			setStreamedText("");
-			setMessages((prev) => [
-				...prev,
-				{ role: "ai", text: `**Error:** ${String(err)}` },
-			]);
+	/* ── Input handling ── */
+
+	const handleKeyDown = (e: React.KeyboardEvent) => {
+		// With a hardware keyboard, Enter sends and Shift+Enter breaks the
+		// line. On touch keyboards Enter is the only way to add a line, so it
+		// inserts one and the send button sends.
+		if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !isTouchPrimary()) {
+			e.preventDefault();
+			handleSend();
 		}
 	};
 
-	const handleLongPressStart = (idx: number) => {
+	const handleLongPressStart = (id: string) => {
 		longPressRef.current = setTimeout(() => {
-			if (navigator.vibrate) navigator.vibrate(15);
-			setActiveMessageIdx((prev) => prev === idx ? null : idx);
+			vibrate(15);
+			setOpenActionsId((prev) => (prev === id ? null : id));
 		}, 400);
 	};
 
@@ -1336,347 +612,296 @@ export function ChatPage() {
 		}
 	};
 
-	const handleDeleteMessage = (idx: number) => {
-		setMessages((prev) => {
-			const next = prev.filter((_, i) => i !== idx);
-			// Persist the deletion. Without this, the trimmed message comes back
-			// the next time the conversation is reopened, since saveChat only
-			// fires on GenerationComplete.
-			if (next.length >= 2) {
-				saveChat(next);
-			}
-			return next;
-		});
-		setActiveMessageIdx(null);
-	};
-
-	/**
-	 * Edit-and-resend a user message. Drops the target message plus everything
-	 * after it from the visible history, reseeds the input box with that text,
-	 * and lets the user tap Send to regenerate. Mirrors the ChatGPT/Claude
-	 * pattern: editing a turn invalidates every reply that depended on it.
-	 */
-	const handleEditMessage = (idx: number) => {
-		if (isGenerating) return;
-		const target = messages[idx];
-		if (!target || target.role !== "user") return;
-		setActiveMessageIdx(null);
-		const trimmed = messages.slice(0, idx);
-		setMessages(trimmed);
-		setInput(target.text);
-		// Persist the truncation immediately so a navigation away doesn't lose it.
-		if (trimmed.length >= 2) saveChat(trimmed);
-		// Defer focus + autosize until the input value has applied.
+	const fillInput = (text: string) => {
+		setInput(text);
+		writeDraft(text);
 		requestAnimationFrame(() => {
 			textareaRef.current?.focus();
 			autoResize();
 		});
 	};
 
-	const handleShareChat = async () => {
-		if (messages.length === 0) return;
-		const text = messages
-			.map((m) => `${m.role === "user" ? "You" : "Neurix"}: ${m.text}`)
-			.join("\n\n");
-
-		// Try native share first (Android), fall back to clipboard
-		if (navigator.share) {
-			try {
-				await navigator.share({ title: "Neurix Chat", text });
-				return;
-			} catch {
-				// User cancelled or share failed — fall back to clipboard
-			}
-		}
-		await navigator.clipboard.writeText(text);
-	};
-
-	const handleNewChat = () => {
-		if (isGenerating) chatService.stopInference();
-		setMessages([]);
-		setInput("");
-		setStreamedText("");
-		setIsGenerating(false);
-		setConversationId(crypto.randomUUID());
-	};
-
-	const handleKeyDown = (e: React.KeyboardEvent) => {
-		if (e.key === "Enter" && !e.shiftKey) {
-			e.preventDefault();
-			handleSend();
-		}
-	};
+	const lastId = messages[messages.length - 1]?.id;
+	const hasText = input.trim().length > 0;
+	const showStream = isGenerating || streamedText.length > 0;
+	const starters = activeCharacter?.conversation_starters?.slice(0, 4) ?? [];
 
 	return (
 		<>
-		{isLoadingModel && (
-			<LoadingOverlay>
-				<Spinner />
-				<LoadingTitle>Loading Model</LoadingTitle>
-				<LoadingSubtitle>This may take a moment...</LoadingSubtitle>
-			</LoadingOverlay>
-		)}
-		{!isLoadingModel && loadModelError && (
-			<LoadingOverlay>
-				<Icon name="error_outline" size={40} color={tokens.colors.error} />
-				<LoadingTitle>Couldn't load model</LoadingTitle>
-				<LoadingSubtitle>{loadModelError}</LoadingSubtitle>
-				<LoadErrorActions>
-					<RetryLoadBtn onClick={() => { setLoadModelError(null); ensureModelLoaded(); }}>
-						<Icon name="refresh" size={16} color={tokens.colors.onPrimary} />
-						Retry
-					</RetryLoadBtn>
-					<DismissLoadBtn onClick={() => { setLoadModelError(null); navigate("/models"); }}>
-						Choose another model
-					</DismissLoadBtn>
-				</LoadErrorActions>
-			</LoadingOverlay>
-		)}
-		<AppLayout
-			hideLogo
-			subtitle={
-				<HeaderPill
-					type="button"
-					$accent={accentOf(activeCharacter ?? null)}
-					onClick={() => {
-						dismissCoach();
-						if (!activeModel && !isLoadingModel) {
-							navigate("/models");
-						} else {
-							setPickerOpen(true);
-						}
-					}}
-					aria-label={
-						activeCharacter
-							? `Character: ${activeCharacter.name}. Model: ${activeModel ?? "none"}. Tap to change.`
-							: "Choose character"
-					}
-					title={activeCharacter?.description || activeCharacter?.name}
+			{isLoadingModel && (
+				<LoadingOverlay title="Loading model" subtitle="This can take a few seconds…" />
+			)}
+			{!isLoadingModel && loadProblem?.kind === "failed" && (
+				<LoadingOverlay
+					title="Couldn't load the model"
+					subtitle={loadProblem.message}
+					icon={<Icon name="error_outline" size={40} color={tokens.colors.error} />}
 				>
-					<HeaderAvatar $accent={accentOf(activeCharacter ?? null)}>
-						<Icon
-							name={activeCharacter?.icon || "auto_awesome"}
-							size={16}
-							color={accentOf(activeCharacter ?? null)}
-						/>
-					</HeaderAvatar>
-					<HeaderTextStack>
-						<HeaderCharName>
-							{activeCharacter ? (
-								<HeaderCharNameText>{activeCharacter.name}</HeaderCharNameText>
-							) : (
-								<HeaderEmpty>Choose character</HeaderEmpty>
-							)}
-							<Icon name="expand_more" size={14} color={tokens.colors.onSurfaceVariant} />
-						</HeaderCharName>
-						<HeaderModelLine>
-							<ModelDot $on={!!activeModel && !isLoadingModel} />
-							{activeModel ?? (isLoadingModel ? "Loading model…" : "No model loaded")}
-						</HeaderModelLine>
-					</HeaderTextStack>
-				</HeaderPill>
-			}
-			rightActions={
-				<TopBarRight>
-					{messages.length > 0 && (
-						<TopBarBtn onClick={handleShareChat} aria-label="Share chat">
-							<Icon
-								name="share"
-								size={18}
-								color={tokens.colors.onSurfaceVariant}
-							/>
-						</TopBarBtn>
-					)}
-					<TopBarBtn onClick={handleNewChat} aria-label="New chat">
-						<Icon
-							name="edit_square"
-							size={18}
-							color={tokens.colors.onSurfaceVariant}
-						/>
-					</TopBarBtn>
-					<TopBarBtn onClick={() => navigate("/chat/history")} aria-label="Chat history">
-						<Icon
-							name="history"
-							size={18}
-							color={tokens.colors.onSurfaceVariant}
-						/>
-					</TopBarBtn>
-				</TopBarRight>
-			}
-		>
-			<ChatContainer>
-				<MessagesArea>
-					{messages.length === 0 && !isGenerating && !streamedText && (
-						<>
-							{activeCharacter?.greeting ? (
-								// Pure-UI greeting bubble. Never sent to inference, so it
-								// never burns tokens or skews the context window — but it
-								// does set the tone the way Character.AI / Replika do.
-								<Bubble $role="ai" aria-label="Greeting">
-									<BubbleLabel $role="ai">{activeCharacter.name}</BubbleLabel>
-									<BubbleBody>{activeCharacter.greeting}</BubbleBody>
-								</Bubble>
-							) : (
-								<EmptyState
-									icon={activeCharacter?.icon ?? "chat_bubble"}
-									message={
-										activeCharacter
-											? `Chat with ${activeCharacter.name}`
-											: "What's on your mind?"
-									}
-									subtitle={
-										activeCharacter?.description ||
-										"Type a message to start chatting with your AI."
-									}
-								/>
-							)}
-							{activeCharacter?.conversation_starters &&
-								activeCharacter.conversation_starters.length > 0 && (
-									<StartersWrap>
-										<StartersLabel>Try asking</StartersLabel>
-										<StartersGrid>
-											{activeCharacter.conversation_starters
-												.slice(0, 4)
-												.map((starter, idx) => (
-													<StarterChip
-														key={`${starter}-${idx}`}
-														type="button"
-														$accent={accentOf(activeCharacter)}
-														onClick={() => {
-															setInput(starter);
-															// Focus + autosize once the value has been applied.
-															requestAnimationFrame(() => {
-																textareaRef.current?.focus();
-																autoResize();
-															});
-														}}
-													>
-														<span>{starter}</span>
-														<StarterArrow $accent={accentOf(activeCharacter)}>
-															<Icon name="arrow_outward" size={14} />
-														</StarterArrow>
-													</StarterChip>
-												))}
-										</StartersGrid>
-									</StartersWrap>
-								)}
-						</>
-					)}
-					{contextNotice && (
-						<ContextNotice>
-							<Icon name="info" size={14} color={tokens.colors.onSurfaceVariant} />
-							{contextNotice}
-						</ContextNotice>
-					)}
-					{messages.map((msg, i) => (
-						<BubbleWrap key={`msg-${i}-${msg.role}`}>
-							<Bubble
-								$role={msg.role}
-								onTouchStart={() => handleLongPressStart(i)}
-								onTouchEnd={handleLongPressEnd}
-								onTouchCancel={handleLongPressEnd}
-							>
-								<BubbleLabel $role={msg.role}>
-									{msg.role === "ai" ? "Neurix" : "You"}
-								</BubbleLabel>
-								<BubbleBody>
-									{msg.role === "ai" ? <AiMessageBody text={msg.text} /> : msg.text}
-								</BubbleBody>
-							</Bubble>
-							<MessageActions $visible={activeMessageIdx === i && !isGenerating}>
-								<MessageCopyBtn text={msg.text} />
-								{msg.role === "user" && (
-									<MsgActionBtn onClick={() => handleEditMessage(i)} aria-label="Edit and resend">
-										<Icon name="edit" size={14} />
-										Edit
-									</MsgActionBtn>
-								)}
-								<MsgActionBtn onClick={() => handleDeleteMessage(i)}>
-									<Icon name="delete" size={14} />
-									Delete
-								</MsgActionBtn>
-								{msg.role === "ai" && i === messages.length - 1 && (
-									<MsgActionBtn onClick={handleRegenerate}>
-										<Icon name="refresh" size={14} />
-										Retry
-									</MsgActionBtn>
-								)}
-							</MessageActions>
-						</BubbleWrap>
-					))}
-					{(isGenerating || streamedText) && (
-						<Bubble $role="ai">
-							<BubbleLabel $role="ai">Neurix</BubbleLabel>
-							<BubbleBody>
-								{streamedText ? <AiMessageBody text={streamedText} /> : (
-									<TypingDots role="status" aria-live="polite" aria-label="Generating response">
-										<span />
-										<span />
-										<span />
-									</TypingDots>
-								)}
-							</BubbleBody>
-							{settings?.show_speed && tokensPerSecond > 0 && (
-								<SpeedBadge>{tokensPerSecond.toFixed(1)} tok/s</SpeedBadge>
-							)}
-						</Bubble>
-					)}
-					<div ref={messagesEndRef} />
-				</MessagesArea>
-
-				<InputBar>
-					<TextInput
-						ref={textareaRef}
-						value={input}
-						onChange={(e) => {
-							setInput(e.target.value);
-							autoResize();
+					<PrimaryCta
+						type="button"
+						onClick={() => {
+							setLoadProblem(null);
+							handleSend();
 						}}
-						onKeyDown={handleKeyDown}
-						placeholder="Message Neurix..."
-						rows={1}
-						maxLength={MAX_PROMPT_LENGTH}
-						disabled={isGenerating || isLoadingModel}
-					/>
-					{input.length > MAX_PROMPT_LENGTH * 0.9 && (
-						<CharCounter $over={input.length >= MAX_PROMPT_LENGTH}>
-							{input.length.toLocaleString()} / {MAX_PROMPT_LENGTH.toLocaleString()}
-						</CharCounter>
-					)}
-					{isGenerating ? (
-						<StopBtn onClick={handleStop} aria-label="Stop generating">
-							<Icon name="stop_circle" size={22} fill color={tokens.colors.error} />
-						</StopBtn>
-					) : (
-						<SendBtn $hasText={input.trim().length > 0} onClick={handleSend} aria-label="Send message">
-							<Icon
-								name="arrow_upward"
-								size={20}
-								color={
-									input.trim()
-										? tokens.colors.onPrimaryFixed
-										: tokens.colors.onSurfaceVariant
-								}
-							/>
-						</SendBtn>
-					)}
-				</InputBar>
-			</ChatContainer>
-		</AppLayout>
-		<CharacterPicker open={pickerOpen} onClose={() => setPickerOpen(false)} />
-		{showCoach && !pickerOpen && (
-			<Coachmark role="status" onClick={dismissCoach}>
-				<Icon name="touch_app" size={14} color={tokens.colors.primary} />
-				<span>Tap here to switch character or model</span>
-				<CoachClose
-					type="button"
-					onClick={(e) => { e.stopPropagation(); dismissCoach(); }}
-					aria-label="Dismiss tip"
+					>
+						<Icon name="refresh" size={16} />
+						Try again
+					</PrimaryCta>
+					<SecondaryCta type="button" onClick={() => navigate("/models")}>
+						Choose another model
+					</SecondaryCta>
+					<SecondaryCta type="button" onClick={() => setLoadProblem(null)}>
+						Dismiss
+					</SecondaryCta>
+				</LoadingOverlay>
+			)}
+			{!isLoadingModel && loadProblem?.kind === "no-models" && (
+				<LoadingOverlay
+					title="No model installed yet"
+					subtitle="Neurix needs a model on this device to reply. Your message is kept — download a model and come back."
+					icon={<Icon name="deployed_code" size={40} color={tokens.colors.primary} />}
 				>
-					<Icon name="close" size={14} />
-				</CoachClose>
-			</Coachmark>
-		)}
+					<PrimaryCta type="button" onClick={() => navigate("/store")}>
+						<Icon name="download" size={16} />
+						Browse models
+					</PrimaryCta>
+					<SecondaryCta type="button" onClick={() => setLoadProblem(null)}>
+						Not now
+					</SecondaryCta>
+				</LoadingOverlay>
+			)}
+
+			<AppLayout
+				hideLogo
+				subtitle={
+					<HeaderPill
+						type="button"
+						onClick={() => {
+							dismissCoach();
+							setPickerOpen(true);
+						}}
+						aria-label={`Character: ${characterName}. Model: ${activeModel ?? "none loaded"}. Change character or model.`}
+					>
+						<HeaderAvatar $accent={accent}>
+							<Icon name={activeCharacter?.icon || "auto_awesome"} size={17} />
+						</HeaderAvatar>
+						<HeaderTextStack>
+							<HeaderCharName>
+								<span>{characterName}</span>
+								<Icon name="expand_more" size={14} color={tokens.colors.onSurfaceVariant} />
+							</HeaderCharName>
+							<HeaderModelLine>
+								<ModelDot $on={!!activeModel && !isLoadingModel} />
+								{isLoadingModel ? "Loading model…" : (activeModel ?? "No model loaded")}
+							</HeaderModelLine>
+						</HeaderTextStack>
+					</HeaderPill>
+				}
+				rightActions={
+					<>
+						{messages.length > 0 && (
+							<TopBarBtn type="button" onClick={handleShareChat} aria-label="Share chat">
+								<Icon name="share" size={18} />
+							</TopBarBtn>
+						)}
+						<TopBarBtn type="button" onClick={handleNewChat} aria-label="New chat">
+							<Icon name="edit_square" size={18} />
+						</TopBarBtn>
+						<TopBarBtn type="button" onClick={() => navigate("/chat/history")} aria-label="Chat history">
+							<Icon name="history" size={18} />
+						</TopBarBtn>
+					</>
+				}
+			>
+				<ChatContainer>
+					<MessagesArea ref={scrollRef} onScroll={handleScroll}>
+						{messages.length === 0 && !showStream && (
+							<Welcome>
+								<ChatScene accent={accent} icon={activeCharacter?.icon ?? "auto_awesome"} />
+								<WelcomeTitle>{activeCharacter?.greeting || `Chat with ${characterName}`}</WelcomeTitle>
+								<WelcomeText>
+									{activeCharacter?.description
+										? `${activeCharacter.description}. Everything stays on this device.`
+										: "Ask anything. Everything stays on this device."}
+								</WelcomeText>
+								{starters.length > 0 && (
+									<StartersGrid>
+										{starters.map((starter) => (
+											<StarterChip
+												key={starter}
+												type="button"
+												$accent={accent}
+												onClick={() => fillInput(starter)}
+											>
+												<span>{starter}</span>
+												<Icon name="arrow_outward" size={14} />
+											</StarterChip>
+										))}
+									</StartersGrid>
+								)}
+							</Welcome>
+						)}
+
+						{contextNotice && (
+							<ContextNotice role="status">
+								<Icon name="info" size={14} />
+								{contextNotice}
+							</ContextNotice>
+						)}
+
+						{messages.map((msg) => {
+							const isLast = msg.id === lastId;
+							const labelColor =
+								msg.role === "ai"
+									? accent
+									: msg.role === "error"
+										? tokens.colors.error
+										: tokens.colors.onSurfaceVariant;
+							const label =
+								msg.role === "ai" ? characterName : msg.role === "error" ? "Something went wrong" : "You";
+							return (
+								<BubbleWrap key={msg.id} $role={msg.role}>
+									<Bubble
+										$role={msg.role}
+										onTouchStart={() => handleLongPressStart(msg.id)}
+										onTouchEnd={handleLongPressEnd}
+										onTouchMove={handleLongPressEnd}
+										onTouchCancel={handleLongPressEnd}
+									>
+										<BubbleLabel $color={labelColor}>
+											{msg.role === "error" && <Icon name="error_outline" size={12} />}
+											{label}
+										</BubbleLabel>
+										<BubbleBody>
+											{msg.role === "ai" ? <Markdown text={msg.text} /> : <UserText>{msg.text}</UserText>}
+										</BubbleBody>
+									</Bubble>
+
+									{msg.role === "ai" && isLast && !isGenerating && wasCutShort(msg.stopReason) && (
+										<CutShort>
+											<span>{cutShortLabel(msg.stopReason)}</span>
+											<ContinueBtn type="button" onClick={() => redoLast(true)}>
+												<Icon name="play_arrow" size={12} />
+												Continue
+											</ContinueBtn>
+										</CutShort>
+									)}
+
+									{!isGenerating && (
+										<MessageActions $open={openActionsId === msg.id}>
+											{msg.role !== "error" && <CopyAction text={msg.text} />}
+											{msg.role === "user" && (
+												<MsgActionBtn type="button" onClick={() => handleEditMessage(msg.id)}>
+													<Icon name="edit" size={14} />
+													Edit
+												</MsgActionBtn>
+											)}
+											{msg.role === "ai" && isLast && (
+												<MsgActionBtn type="button" onClick={() => redoLast(false)}>
+													<Icon name="refresh" size={14} />
+													Retry
+												</MsgActionBtn>
+											)}
+											<MsgActionBtn type="button" onClick={() => handleDeleteMessage(msg.id)}>
+												<Icon name="delete" size={14} />
+												{msg.role === "error" ? "Dismiss" : "Delete"}
+											</MsgActionBtn>
+										</MessageActions>
+									)}
+								</BubbleWrap>
+							);
+						})}
+
+						{showStream && (
+							<BubbleWrap $role="ai">
+								<Bubble $role="ai">
+									<BubbleLabel $color={accent}>{characterName}</BubbleLabel>
+									<BubbleBody>
+										{streamedText ? (
+											<Markdown text={streamedText} />
+										) : (
+											<TypingDots role="status" aria-label="Generating a reply">
+												<span />
+												<span />
+												<span />
+											</TypingDots>
+										)}
+									</BubbleBody>
+									{settings?.show_speed && tokensPerSecond > 0 && (
+										<SpeedBadge>{tokensPerSecond.toFixed(1)} tok/s</SpeedBadge>
+									)}
+								</Bubble>
+							</BubbleWrap>
+						)}
+					</MessagesArea>
+
+					{!following && (messages.length > 0 || showStream) && (
+						<JumpBtn
+							type="button"
+							onClick={() => {
+								followingRef.current = true;
+								setFollowing(true);
+								scrollToBottom("smooth");
+							}}
+						>
+							<Icon name="arrow_downward" size={14} />
+							{isGenerating ? "Follow reply" : "Latest"}
+						</JumpBtn>
+					)}
+
+					<InputBar>
+						<InputRow>
+							<TextInput
+								ref={textareaRef}
+								value={input}
+								onChange={(e) => {
+									setInput(e.target.value);
+									writeDraft(e.target.value);
+									autoResize();
+								}}
+								onKeyDown={handleKeyDown}
+								placeholder={`Message ${characterName}…`}
+								aria-label="Message"
+								rows={1}
+								maxLength={MAX_PROMPT_LENGTH}
+								enterKeyHint={isTouchPrimary() ? "enter" : "send"}
+							/>
+							{input.length > MAX_PROMPT_LENGTH * 0.9 && (
+								<CharCounter $over={input.length >= MAX_PROMPT_LENGTH}>
+									{input.length.toLocaleString()} / {MAX_PROMPT_LENGTH.toLocaleString()}
+								</CharCounter>
+							)}
+							{isGenerating ? (
+								<RoundBtn type="button" $variant="stop" onClick={handleStop} aria-label="Stop generating">
+									<Icon name="stop_circle" size={22} fill />
+								</RoundBtn>
+							) : (
+								<RoundBtn
+									type="button"
+									$variant={hasText ? "send" : "idle"}
+									onClick={handleSend}
+									disabled={!hasText || isLoadingModel}
+									aria-label="Send message"
+								>
+									<Icon name="arrow_upward" size={20} />
+								</RoundBtn>
+							)}
+						</InputRow>
+					</InputBar>
+				</ChatContainer>
+			</AppLayout>
+
+			<CharacterPicker open={pickerOpen} onClose={() => setPickerOpen(false)} showModels />
+
+			{showCoach && !pickerOpen && (
+				<Coachmark role="status">
+					<Icon name="touch_app" size={14} color={tokens.colors.primary} />
+					<span>Tap the name above to switch character or model</span>
+					<CoachClose type="button" onClick={dismissCoach} aria-label="Dismiss tip">
+						<Icon name="close" size={14} />
+					</CoachClose>
+				</Coachmark>
+			)}
 		</>
 	);
 }

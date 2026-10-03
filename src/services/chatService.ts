@@ -1,4 +1,4 @@
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import type { InferenceEvent } from "./types";
 
 export interface ChatHistoryEntry {
@@ -6,24 +6,29 @@ export interface ChatHistoryEntry {
 	assistant: string;
 }
 
+export interface InferenceRequest {
+	prompt: string;
+	systemPrompt: string;
+	history: ChatHistoryEntry[];
+	temperature: number;
+	topP: number;
+	maxTokens: number;
+	/**
+	 * Text the assistant already produced for this turn. When set, the model
+	 * continues that reply instead of starting a new one.
+	 */
+	assistantPrefix?: string;
+}
+
 export async function runInference(
-	prompt: string,
-	systemPrompt: string,
-	history: ChatHistoryEntry[],
-	temperature: number,
-	topP: number,
-	maxTokens: number,
+	request: InferenceRequest,
 	onEvent: (event: InferenceEvent) => void,
 ): Promise<void> {
 	const channel = new Channel<InferenceEvent>();
 	channel.onmessage = onEvent;
 	return invoke("run_inference", {
-		prompt,
-		systemPrompt,
-		history,
-		temperature,
-		topP,
-		maxTokens,
+		...request,
+		assistantPrefix: request.assistantPrefix ?? null,
 		onEvent: channel,
 	});
 }
