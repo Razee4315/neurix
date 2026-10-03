@@ -3,6 +3,14 @@
 All notable changes to Neurix. Finding IDs (F-, M-, D-, C-, O-) refer to
 [AUDIT_PROGRESS.md](AUDIT_PROGRESS.md).
 
+## v0.4.1 and v0.4.2
+
+No app changes. These releases repair the Android build in the release
+pipeline; v0.4.0 and v0.4.1 were published with Windows installers only.
+
+- Android SDK setup no longer requests the removed `tools` package (v0.4.1)
+- The two Tauri CLI copies used by the Android build are pinned to the same version (v0.4.2)
+
 ## v0.4.0
 
 A full pass over the app from a UX and code audit: chat reliability, honest

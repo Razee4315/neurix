@@ -298,9 +298,18 @@ jobs:
         if: steps.android-check.outputs.ready == 'true'
         run: npm ci
 
-      - name: Install Tauri CLI (cargo)
+      # Two copies of the Tauri CLI take part in an Android build: `npx tauri`
+      # starts it, and Gradle calls `cargo tauri android-studio-script` back
+      # into it. They must be the same version or the handshake fails
+      # ("failed to read .tauri/cli-options-server.json"). Install the cargo
+      # copy at exactly the version package-lock.json pins for the npm copy,
+      # instead of whatever is latest on the day.
+      - name: Install Tauri CLI (cargo, same version as the npm CLI)
         if: steps.android-check.outputs.ready == 'true'
-        run: cargo install tauri-cli --locked
+        run: |
+          CLI_VERSION=$(node -p "require('@tauri-apps/cli/package.json').version")
+          echo "Installing tauri-cli $CLI_VERSION"
+          cargo install tauri-cli --version "$CLI_VERSION" --locked
 
       # Decode keystore if secret is set — otherwise builds a debug APK
       - name: Setup Android signing keystore
