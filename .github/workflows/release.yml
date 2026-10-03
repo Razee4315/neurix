@@ -254,9 +254,16 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # The action's default package list is "tools platform-tools". "tools" is
+      # the long-obsolete SDK Tools package and is no longer in Google's
+      # repository, so asking for it fails the step ("Failed to find package
+      # 'tools'"). Nothing in the build uses it: the NDK is installed below and
+      # Gradle fetches the platform and build-tools it needs.
       - name: Setup Android SDK
         if: steps.android-check.outputs.ready == 'true'
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android NDK 29
         if: steps.android-check.outputs.ready == 'true'
