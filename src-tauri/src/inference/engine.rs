@@ -129,6 +129,21 @@ struct Session {
 struct TrimState {
     conversation: u64,
     dropped: usize,
+    /// How many exchanges the conversation had when the cut was made.
+    seen: usize,
+}
+
+impl TrimState {
+    /// The cut to start from for a request, or 0 if it is not a later turn
+    /// of the same conversation. A conversation only grows, so a shorter
+    /// history means a different chat that happens to open with the same
+    /// message (or one whose messages were deleted): start over.
+    fn carried(state: Option<&TrimState>, conversation: u64, history_len: usize) -> usize {
+        match state {
+            Some(s) if s.conversation == conversation && history_len >= s.seen => s.dropped,
+            _ => 0,
+        }
+    }
 }
 
 /// A snapshot of the model's running state after `pos` tokens.
@@ -394,10 +409,7 @@ impl LoadedModel {
         let key = conversation_key(&request.history, &request.user_message);
 
         // Start from the cut made on an earlier turn of this conversation.
-        let mut dropped = match &self.trim {
-            Some(state) if state.conversation == key => state.dropped.min(request.history.len()),
-            _ => 0,
-        };
+        let mut dropped = TrimState::carried(self.trim.as_ref(), key, request.history.len());
 
         let mut prompt = self.prompt_for(request, &request.history[dropped..])?;
         if prompt.tokens.len() > budget {
@@ -423,7 +435,7 @@ impl LoadedModel {
             );
         }
 
-        self.trim = Some(TrimState { conversation: key, dropped });
+        self.trim = Some(TrimState { conversation: key, dropped, seen: request.history.len() });
         Ok((prompt, dropped))
     }
 
@@ -719,6 +731,8 @@ mod tests {
         answer: String,
         reasoning: String,
         stop: Option<StopReason>,
+        /// Exchanges dropped to fit the context, if any were.
+        trimmed: usize,
     }
 
     fn run(model: &mut LoadedModel, request: &GenerationRequest) -> (Transcript, GenerationStats) {
@@ -734,6 +748,9 @@ mod tests {
                     }
                     InferenceEvent::GenerationComplete { stop_reason, .. } => {
                         transcript.stop = Some(stop_reason)
+                    }
+                    InferenceEvent::ContextTrimmed { pairs_dropped } => {
+                        transcript.trimmed = pairs_dropped
                     }
                     _ => {}
                 },
@@ -822,6 +839,41 @@ mod tests {
             request.enable_thinking = false;
         }
 
+        // A conversation longer than the context is trimmed from the front,
+        // and the cut stays where it is on the next turn so the cache holds.
+        let mut long = GenerationRequest {
+            system_prompt: "You are a helpful assistant.".into(),
+            history: (0..70)
+                .map(|i| {
+                    (
+                        format!("Tell me fact number {i} about the ocean, in one sentence."),
+                        format!("Fact {i}: the ocean covers most of the planet and holds nearly all of its water."),
+                    )
+                })
+                .collect(),
+            user_message: "Reply with the single word: done".into(),
+            assistant_prefix: None,
+            max_tokens: 32,
+            temperature: 0.0,
+            top_p: 1.0,
+            enable_thinking: false,
+        };
+        let (trimmed, long_stats) = run(&mut model, &long);
+        println!("long chat -> {:?} | dropped {} | {long_stats:?}", trimmed.answer, trimmed.trimmed);
+        assert!(trimmed.trimmed > 0, "a 70-exchange chat fit in 2048 tokens?");
+        assert!(long_stats.prompt_tokens + 32 <= model.context_length);
+        assert!(!trimmed.answer.trim().is_empty());
+
+        long.history.push((long.user_message.clone(), trimmed.answer.clone()));
+        long.user_message = "Reply with the single word: again".into();
+        let (next, next_stats) = run(&mut model, &long);
+        println!("long chat, next turn -> {:?} | dropped {} | {next_stats:?}", next.answer, next.trimmed);
+        assert_eq!(next.trimmed, trimmed.trimmed, "the cut moved between turns");
+        assert!(
+            next_stats.cached_tokens * 2 > next_stats.prompt_tokens,
+            "a trimmed chat re-read everything on the next turn: {next_stats:?}"
+        );
+
         // A message that cannot fit is refused with an explanation.
         let mut huge = GenerationRequest {
             system_prompt: String::new(),
@@ -861,6 +913,20 @@ mod tests {
         let (after, _) = run(&mut model, &request);
         println!("after cancel -> {:?}", after.answer);
         assert!(!after.answer.trim().is_empty());
+    }
+
+    #[test]
+    fn a_cut_carries_over_only_within_one_growing_conversation() {
+        let state = TrimState { conversation: 7, dropped: 3, seen: 10 };
+        // The next turn, and a retry of the same turn, keep the cut.
+        assert_eq!(TrimState::carried(Some(&state), 7, 11), 3);
+        assert_eq!(TrimState::carried(Some(&state), 7, 10), 3);
+        // A different conversation starts uncut.
+        assert_eq!(TrimState::carried(Some(&state), 8, 11), 0);
+        // So does a new chat that opens with the same message.
+        assert_eq!(TrimState::carried(Some(&state), 7, 0), 0);
+        assert_eq!(TrimState::carried(Some(&state), 7, 4), 0);
+        assert_eq!(TrimState::carried(None, 7, 4), 0);
     }
 
     #[test]
