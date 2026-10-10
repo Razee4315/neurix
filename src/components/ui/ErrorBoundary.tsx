@@ -32,7 +32,7 @@ const Message = styled.p`
 const RestartBtn = styled.button`
   padding: 0.75rem 1.5rem;
   border-radius: ${tokens.borderRadius.xl};
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
   font-size: ${tokens.typography.fontSize.md};
   font-weight: ${tokens.typography.fontWeight.bold};
@@ -100,7 +100,7 @@ export class ErrorBoundary extends Component<Props, State> {
 				<Container>
 					<Title>Something went wrong</Title>
 					<Message>
-						The app encountered an unexpected error. Your data is safe — tap below to restart.
+						The app encountered an unexpected error. Your data is safe. Tap below to restart.
 					</Message>
 					<RestartBtn onClick={this.handleRestart}>
 						Restart Neurix

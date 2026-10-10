@@ -247,21 +247,21 @@ const preset = (
 });
 
 const PRESETS: Character[] = [
-	preset("default", "Default", "Helpful and balanced", "auto_awesome", "#8ff5ff", "Hi! What can I help you with?", [
+	preset("default", "Default", "Helpful and balanced", "neurix", "#8ff5ff", "Hi! What can I help you with?", [
 		"Summarize a topic I'm trying to learn",
 		"Help me draft a short message",
 		"Explain something simply",
 		"Brainstorm ideas with me",
 	]),
 	preset("friendly", "Friendly", "Warm and casual", "sentiment_satisfied", "#ffb86c", "Hey, good to see you! How's it going?", [
-		"Cheer me up — I had a rough day",
+		"Cheer me up, I had a rough day",
 		"Help me reply to a tricky text",
 	]),
 	preset("professional", "Professional", "Formal and precise", "business_center", "#65afff", "How can I assist you today?", [
 		"Draft a polite follow-up email",
 		"Outline a one-page proposal",
 	]),
-	preset("concise", "Concise", "Short and direct", "bolt", "#2ff801", "Ask away.", ["Define a term in one line"]),
+	preset("concise", "Concise", "Short and direct", "bolt", "#ffd95e", "Ask away.", ["Define a term in one line"]),
 	preset("tutor", "Tutor", "Explains step by step", "school", "#c792ea", "What would you like to learn today?", [
 		"Teach me something I'm curious about",
 		"Quiz me on what I just learned",

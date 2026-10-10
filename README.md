@@ -70,21 +70,21 @@ Neurix runs large language models entirely on your phone or desktop. No server, 
 
 ## Features
 
-- **On-device inference** — AI runs on your CPU through llama.cpp, no server involved
-- **Current small models** — Qwen 3.5, LFM 2.5 and Gemma 4, from 640 MB to 5.2 GB
-- **A pick for your device** — the store suggests a model from your device's memory and warns when one will not fit
-- **Reasoning models** — optional "Think" mode, with the model's reasoning shown separately from its answer
-- **Fast follow-ups** — the conversation stays in the model's memory, so a reply starts without re-reading the whole chat
-- **Offline after download** — use anywhere, anytime, no internet needed
-- **Private by design** — conversations never leave your device
-- **Model manager** — download, switch, unload and delete models; warns when a model is too large for the device
-- **Chat history** — auto-saved locally, searchable by title and message text
-- **Characters** — built-in and custom personas, each with its own instructions, creativity, word variety and reply length
-- **Themes** — four, each with its own typeface, shapes, texture and icon style: Obsidian (neon on black glass), Paper (serif ink on warm stock), Phosphor (green-screen terminal) and Dusk (soft and rounded). Four text sizes
-- **Resume downloads** — pause and continue where you left off; every download is checked against a SHA-256 checksum. On Android a download keeps going while the app is in the background
-- **Speed test** — measure tokens per second for any model on your own device
-- **Backup** — export chats and custom characters to a file and import them on another device
-- **Built with Rust** — lightweight, fast, minimal memory footprint
+- **On-device inference**: AI runs on your CPU through llama.cpp, no server involved
+- **Current small models**: Qwen 3.5, LFM 2.5 and Gemma 4, from 640 MB to 5.2 GB
+- **A pick for your device**: the store suggests a model from your device's memory and warns when one will not fit
+- **Reasoning models**: optional "Think" mode, with the model's reasoning shown separately from its answer
+- **Fast follow-ups**: the conversation stays in the model's memory, so a reply starts without re-reading the whole chat
+- **Offline after download**: use anywhere, anytime, no internet needed
+- **Private by design**: conversations never leave your device
+- **Model manager**: download, switch, unload and delete models; warns when a model is too large for the device
+- **Chat history**: auto-saved locally, searchable by title and message text
+- **Characters**: built-in and custom personas, each with its own instructions, creativity, word variety and reply length
+- **Themes**: four, each with its own typeface, shapes, texture and icon style: Obsidian (black glass, sharp cyan), Paper (serif ink on warm stock), Phosphor (amber terminal) and Dusk (soft and rounded). Four text sizes
+- **Resume downloads**: pause and continue where you left off; every download is checked against a SHA-256 checksum. On Android a download keeps going while the app is in the background
+- **Speed test**: measure tokens per second for any model on your own device
+- **Backup**: export chats and custom characters to a file and import them on another device
+- **Built with Rust**: lightweight, fast, minimal memory footprint
 
 > The screenshots above predate the current interface and will be refreshed.
 

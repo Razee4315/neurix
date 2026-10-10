@@ -110,14 +110,15 @@ export const tokens = {
 
 	shadows: {
 		none: "none",
-		ambient: "0 0 32px rgb(var(--c-primary) / calc(0.06 * var(--glow, 1)))",
+		ambient: "none",
 		elevated: "0 4px 20px rgba(0, 0, 0, 0.3)",
 		nav: "0 -4px 20px rgba(0, 0, 0, 0.5)",
 		glow: {
-			// Scaled by the theme: flat on paper, strong on a phosphor screen.
-			primary: "0 0 20px rgb(var(--c-primary) / calc(0.2 * var(--glow, 1)))",
-			primaryStrong: "0 0 40px rgb(var(--c-primary) / calc(0.15 * var(--glow, 1)))",
-			secondary: "0 0 20px rgb(var(--c-secondary) / calc(0.2 * var(--glow, 1)))",
+			// The interface is flat by design: nothing glows. These names are
+			// kept so call sites read the same; they all resolve to no shadow.
+			primary: "none",
+			primaryStrong: "none",
+			secondary: "none",
 		},
 	},
 

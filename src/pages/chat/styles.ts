@@ -298,7 +298,7 @@ export const PrimaryCta = styled.button`
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
   border-radius: ${tokens.borderRadius.xl};
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
@@ -389,7 +389,7 @@ export const RoundBtn = styled.button<{ $variant: "send" | "idle" | "stop" }>`
   ${({ $variant }) =>
 		$variant === "send"
 			? `border: none; color: ${tokens.colors.onPrimaryFixed};
-         background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});`
+         background: ${tokens.colors.primary};`
 			: $variant === "stop"
 				? `border: 1.5px solid ${alpha(tokens.colors.error, "99")}; color: ${tokens.colors.error};
            background: ${alpha(tokens.colors.error, "1f")};`
@@ -441,12 +441,13 @@ export const HeaderPill = styled.button`
   &:active { background: ${tokens.colors.surfaceContainerHighest}; }
 `;
 
+/* The character's face in the header: a flat disc in its accent color. */
 export const HeaderAvatar = styled.span<{ $accent: string }>`
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: ${tokens.borderRadius.circle};
-  background: ${({ $accent }) => alpha($accent, "1f")};
-  border: 1px solid ${({ $accent }) => alpha($accent, "55")};
+  background: ${({ $accent }) => alpha($accent, "24")};
+  border: 1.5px solid ${({ $accent }) => $accent};
   color: ${({ $accent }) => $accent};
   display: inline-flex;
   align-items: center;

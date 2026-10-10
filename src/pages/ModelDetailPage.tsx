@@ -120,7 +120,7 @@ const DownloadBtn = styled.button`
   width: 100%;
   padding: 0.875rem;
   border-radius: ${tokens.borderRadius.xl};
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
   font-family: ${tokens.typography.fontFamily.label};
   font-size: ${tokens.typography.fontSize.md};
@@ -317,7 +317,7 @@ export function ModelDetailPage() {
 
 				{isDownloaded ? (
 					<DownloadedBtn type="button" onClick={() => navigate("/models")}>
-						Installed — open My Models
+						Installed. Open My Models
 					</DownloadedBtn>
 				) : inProgress ? (
 					<DownloadBtn
@@ -327,10 +327,10 @@ export function ModelDetailPage() {
 						}
 					>
 						{dl.status === "paused"
-							? "Download paused — view"
+							? "Download paused. View it"
 							: dl.status === "failed"
-								? "Download failed — view"
-								: "Downloading — view progress"}
+								? "Download failed. View it"
+								: "Downloading. View progress"}
 					</DownloadBtn>
 				) : (
 					<>

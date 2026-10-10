@@ -1,5 +1,5 @@
-import { useIconWeights } from "@/theme/iconWeight";
-import type { Icon as PhosphorIcon } from "@phosphor-icons/react";
+import { NeurixGlyph } from "@/components/ui/NeurixGlyph";
+import { type IconWeight, useIconWeights } from "@/theme/iconWeight";
 import { AirplaneTilt } from "@phosphor-icons/react/dist/csr/AirplaneTilt";
 import { ArrowCounterClockwise } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
 import { ArrowDown } from "@phosphor-icons/react/dist/csr/ArrowDown";
@@ -78,6 +78,7 @@ import { Warning } from "@phosphor-icons/react/dist/csr/Warning";
 import { WarningCircle } from "@phosphor-icons/react/dist/csr/WarningCircle";
 import { WifiHigh } from "@phosphor-icons/react/dist/csr/WifiHigh";
 import { X } from "@phosphor-icons/react/dist/csr/X";
+import type { CSSProperties, ComponentType } from "react";
 
 /**
  * Icons are looked up by name. The names are the ones stored with user data
@@ -88,7 +89,20 @@ import { X } from "@phosphor-icons/react/dist/csr/X";
  * active theme chooses which one is drawn (see theme/themes.ts): two-tone
  * for Obsidian, fine line for Paper, heavy for Phosphor, filled for Dusk.
  */
-const ICONS = new Map<string, PhosphorIcon>(Object.entries({
+interface GlyphProps {
+	size?: number | string;
+	color?: string;
+	weight?: IconWeight;
+	className?: string;
+	style?: CSSProperties;
+}
+
+/** Icons are decoration: the text next to them carries the meaning. */
+const DECORATIVE: Record<string, string> = { "aria-hidden": "true", focusable: "false" };
+
+const ICONS = new Map<string, ComponentType<GlyphProps>>(Object.entries({
+	// The app's own mark: the default assistant's face.
+	neurix: NeurixGlyph,
 	add: Plus,
 	airplanemode_active: AirplaneTilt,
 	arrow_back: ArrowLeft,
@@ -197,9 +211,8 @@ export function Icon({ name, size = 24, fill = false, color, className }: IconPr
 			size={size}
 			color={color ?? "currentColor"}
 			weight={weight}
-			aria-hidden="true"
-			focusable="false"
 			style={{ flexShrink: 0 }}
+			{...DECORATIVE}
 		/>
 	);
 }

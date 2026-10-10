@@ -470,7 +470,7 @@ export function ChatPage() {
 					const contextWindow = live.current.modelInfo?.context_length ?? 0;
 					if (contextWindow > 0 && (prompt_tokens + total_tokens) / contextWindow >= CONTEXT_WARN_RATIO) {
 						setContextNotice(
-							"This chat has nearly filled the model's memory. Older messages will start to drop — a new chat keeps answers sharp.",
+							"This chat has nearly filled the model's memory. Older messages will start to drop. A new chat keeps answers sharp.",
 						);
 						setTimeout(() => setContextNotice(null), 8000);
 					}
@@ -755,7 +755,7 @@ export function ChatPage() {
 			{!isLoadingModel && loadProblem?.kind === "no-models" && (
 				<LoadingOverlay
 					title="No model installed yet"
-					subtitle="Neurix needs a model on this device to reply. Your message is kept — download a model and come back."
+					subtitle="Neurix needs a model on this device to reply. Your message is kept. Download a model and come back."
 					icon={<Icon name="deployed_code" size={40} color={tokens.colors.primary} />}
 				>
 					<PrimaryCta type="button" onClick={() => navigate("/store")}>
@@ -780,7 +780,7 @@ export function ChatPage() {
 						aria-label={`Character: ${characterName}. Model: ${activeModel ?? "none loaded"}. Change character or model.`}
 					>
 						<HeaderAvatar $accent={accent}>
-							<Icon name={activeCharacter?.icon || "auto_awesome"} size={17} />
+							<Icon name={activeCharacter?.icon || "neurix"} size={20} />
 						</HeaderAvatar>
 						<HeaderTextStack>
 							<HeaderCharName>
@@ -814,7 +814,7 @@ export function ChatPage() {
 					<MessagesArea ref={scrollRef} onScroll={handleScroll}>
 						{messages.length === 0 && !showStream && (
 							<Welcome>
-								<ChatScene accent={accent} icon={activeCharacter?.icon ?? "auto_awesome"} />
+								<ChatScene accent={accent} icon={activeCharacter?.icon ?? "neurix"} />
 								<WelcomeTitle>{activeCharacter?.greeting || `Chat with ${characterName}`}</WelcomeTitle>
 								<WelcomeText>
 									{activeCharacter?.description
@@ -973,7 +973,7 @@ export function ChatPage() {
 									<Icon name="psychology" size={14} />
 									Think
 								</ThinkChip>
-								{thinkOn && <ToolHint>Reasons first — slower, more careful</ToolHint>}
+								{thinkOn && <ToolHint>Reasons first: slower, more careful</ToolHint>}
 							</ComposerTools>
 						)}
 						<InputRow>

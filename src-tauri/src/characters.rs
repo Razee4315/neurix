@@ -8,7 +8,7 @@ pub struct Character {
     pub id: String,
     pub name: String,
     pub description: String,
-    /// Material Symbols icon name (e.g. "auto_awesome").
+    /// Icon name from the app's icon set (e.g. "school"); see `Icon.tsx`.
     pub icon: String,
     /// Hex color used to tint the character's icon bubble. Optional — the
     /// frontend falls back to the primary accent when missing.
@@ -47,7 +47,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             id: "preset:default".into(),
             name: "Default".into(),
             description: "Helpful and balanced".into(),
-            icon: "auto_awesome".into(),
+            icon: "neurix".into(),
             accent_color: Some("#8ff5ff".into()),
             system_prompt: "You are a helpful assistant. Give clear, concise answers. Do not repeat yourself.".into(),
             temperature: 0.7,
@@ -75,7 +75,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             top_p: 0.9,
             max_tokens: 512,
             conversation_starters: vec![
-                "Cheer me up — I had a rough day".into(),
+                "Cheer me up, I had a rough day".into(),
                 "Help me reply to a tricky text".into(),
                 "Give me a small win to try today".into(),
             ],
@@ -110,7 +110,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             name: "Concise".into(),
             description: "Short and direct".into(),
             icon: "bolt".into(),
-            accent_color: Some("#2ff801".into()),
+            accent_color: Some("#ffd95e".into()),
             system_prompt: "Reply as briefly as possible. One or two sentences. No filler, no preamble.".into(),
             temperature: 0.3,
             top_p: 0.85,

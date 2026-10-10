@@ -66,12 +66,7 @@ export const GlobalStyles = createGlobalStyle`
   }
   html[data-theme="paper"] a { text-decoration: underline; text-underline-offset: 2px; }
 
-  /* Phosphor: the glow of a CRT. Bright text blooms slightly. */
-  html[data-theme="phosphor"] h1,
-  html[data-theme="phosphor"] h2,
-  html[data-theme="phosphor"] h3 {
-    text-shadow: 0 0 10px rgb(var(--c-primary) / 0.45);
-  }
+  /* Phosphor: selected text inverts, as on a terminal. */
   html[data-theme="phosphor"] ::selection {
     background: rgb(var(--c-primary));
     color: rgb(var(--c-background));

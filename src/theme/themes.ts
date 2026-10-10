@@ -3,8 +3,9 @@
  *
  * A theme is more than a palette. Each one sets the colors, the typefaces,
  * how round the corners are, what sits behind the content, the texture laid
- * over it, how much things glow, and the weight of the icons — so switching
- * theme changes how the app feels, not only what color it is.
+ * over it and the weight of the icons, so switching theme changes how the
+ * app feels, not only what color it is. Surfaces are flat in every theme:
+ * solid fills, no glows.
  *
  * At runtime `applyTheme` writes all of that to `:root` as CSS variables.
  * Colors are stored as space-separated RGB triplets (`--c-primary: 143 245
@@ -57,8 +58,6 @@ export interface ThemeStyle {
 	/** A texture laid over the whole interface (grain, scanlines), or "none". */
 	overlay: string;
 	overlayOpacity: number;
-	/** Strength of glow shadows: 0 is flat, 1 is the default. */
-	glow: number;
 	/** Letter-spacing of headings. */
 	headlineTracking: string;
 	/** Icon stroke style, and the sturdier one used for small icons. */
@@ -100,11 +99,11 @@ export const DEFAULT_THEME_ID = "obsidian";
 
 export const THEMES: readonly ThemeDefinition[] = [
 	{
-		// Neon on black glass: the signature look. Geometric headlines, a
-		// faint dot grid and a wash of light from the top edge.
+		// Black glass with a sharp cyan accent: the signature look. Geometric
+		// headlines over a faint dot grid.
 		id: "obsidian",
 		name: "Obsidian",
-		tagline: "Neon on black glass",
+		tagline: "Black glass, sharp cyan",
 		mode: "dark",
 		colors: {
 			background: "#0e0e0f",
@@ -125,8 +124,8 @@ export const THEMES: readonly ThemeDefinition[] = [
 			onPrimary: "#005d63",
 			onPrimaryFixed: "#003f43",
 			onPrimaryContainer: "#005359",
-			secondary: "#2ff801",
-			secondaryContainer: "#106e00",
+			secondary: "#ffc46b",
+			secondaryContainer: "#5c3d00",
 			tertiary: "#65afff",
 			error: "#ff716c",
 			errorContainer: "#9f0519",
@@ -136,18 +135,16 @@ export const THEMES: readonly ThemeDefinition[] = [
 			fonts: { headline: GROTESK, body: SANS, label: SANS },
 			radius: { sm: "0.125rem", md: "0.25rem", lg: "0.5rem", xl: "0.75rem", pill: "9999px" },
 			backdrop:
-				"radial-gradient(ellipse 90% 42% at 50% -12%, rgb(var(--c-primary) / 0.11), transparent 70%) no-repeat, " +
-				"radial-gradient(circle at 1px 1px, rgb(var(--c-on-surface) / 0.055) 1px, transparent 1.5px) 0 0 / 22px 22px",
+				"radial-gradient(circle at 1px 1px, rgb(var(--c-on-surface) / 0.06) 1px, transparent 1.5px) 0 0 / 22px 22px",
 			overlay: "none",
 			overlayOpacity: 0,
-			glow: 1,
 			headlineTracking: "-0.01em",
 			icons: { regular: "duotone", small: "bold" },
 		},
 	},
 	{
-		// Ink on paper: a book. Serif text, warm stock with visible grain,
-		// crisp corners, no glow anywhere.
+		// Ink on paper: a book. Serif text, warm stock with visible grain and
+		// crisp corners.
 		id: "paper",
 		name: "Paper",
 		tagline: "Ink, serif and daylight",
@@ -171,9 +168,9 @@ export const THEMES: readonly ThemeDefinition[] = [
 			onPrimary: "#ffffff",
 			onPrimaryFixed: "#ffffff",
 			onPrimaryContainer: "#ffffff",
-			secondary: "#2f6b3c",
-			secondaryContainer: "#d5e8d2",
-			tertiary: "#1f4e8c",
+			secondary: "#1f4e8c",
+			secondaryContainer: "#d6e2f3",
+			tertiary: "#8a5a00",
 			error: "#b3261e",
 			errorContainer: "#f6d6d1",
 			onError: "#ffffff",
@@ -184,40 +181,38 @@ export const THEMES: readonly ThemeDefinition[] = [
 			backdrop: "none",
 			overlay: grain("0", 0.55),
 			overlayOpacity: 0.22,
-			glow: 0,
 			headlineTracking: "-0.015em",
 			icons: { regular: "light", small: "regular" },
 		},
 	},
 	{
-		// A green-screen terminal: one typeface, square corners, scanlines
-		// and phosphor bloom.
+		// An amber terminal: one typeface, square corners and scanlines.
 		id: "phosphor",
 		name: "Phosphor",
-		tagline: "Green-screen terminal",
+		tagline: "Amber terminal",
 		mode: "dark",
 		colors: {
-			background: "#020503",
-			surface: "#020503",
-			surfaceBright: "#1c2a1e",
+			background: "#050402",
+			surface: "#050402",
+			surfaceBright: "#2e2412",
 			surfaceContainerLowest: "#000000",
-			surfaceContainerLow: "#07100a",
-			surfaceContainer: "#0b160e",
-			surfaceContainerHigh: "#102014",
-			surfaceContainerHighest: "#172b1b",
-			onSurface: "#c8ffd2",
-			onSurfaceVariant: "#7fbf8a",
-			outline: "#4f7d57",
-			outlineVariant: "#25402b",
-			primary: "#39ff6a",
-			primaryDim: "#1fd650",
-			primaryContainer: "#39ff6a",
-			onPrimary: "#002b0c",
-			onPrimaryFixed: "#00210a",
-			onPrimaryContainer: "#002b0c",
-			secondary: "#ffb000",
-			secondaryContainer: "#5c3f00",
-			tertiary: "#5ce1e6",
+			surfaceContainerLow: "#0d0a04",
+			surfaceContainer: "#141006",
+			surfaceContainerHigh: "#1d1709",
+			surfaceContainerHighest: "#281f0c",
+			onSurface: "#ffe9c2",
+			onSurfaceVariant: "#c9a868",
+			outline: "#8a6f3a",
+			outlineVariant: "#3f3115",
+			primary: "#ffb000",
+			primaryDim: "#e09a00",
+			primaryContainer: "#ffb000",
+			onPrimary: "#2b1a00",
+			onPrimaryFixed: "#2b1a00",
+			onPrimaryContainer: "#2b1a00",
+			secondary: "#ffe08a",
+			secondaryContainer: "#5c4300",
+			tertiary: "#ff7a45",
 			error: "#ff5f56",
 			errorContainer: "#7a1410",
 			onError: "#ffffff",
@@ -229,14 +224,13 @@ export const THEMES: readonly ThemeDefinition[] = [
 			overlay:
 				"repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.2) 0, rgb(0 0 0 / 0.2) 1px, transparent 1px, transparent 4px)",
 			overlayOpacity: 1,
-			glow: 1.6,
 			headlineTracking: "0.02em",
 			icons: { regular: "bold", small: "bold" },
 		},
 	},
 	{
-		// The last light on the mountains: plum sky, apricot glow, soft round
-		// shapes and filled icons.
+		// The last light on the mountains: a plum sky, an apricot accent,
+		// soft round shapes and filled icons.
 		id: "dusk",
 		name: "Dusk",
 		tagline: "Soft, warm and rounded",
@@ -262,7 +256,7 @@ export const THEMES: readonly ThemeDefinition[] = [
 			onPrimaryContainer: "#4a1020",
 			secondary: "#c7a6ff",
 			secondaryContainer: "#4b2f80",
-			tertiary: "#7fd6c2",
+			tertiary: "#8fc7ff",
 			error: "#ff8a8a",
 			errorContainer: "#7a1f2e",
 			onError: "#ffffff",
@@ -270,12 +264,9 @@ export const THEMES: readonly ThemeDefinition[] = [
 		style: {
 			fonts: { headline: SANS, body: SANS, label: SANS },
 			radius: { sm: "0.5rem", md: "0.75rem", lg: "1rem", xl: "1.5rem", pill: "9999px" },
-			backdrop:
-				"radial-gradient(62% 46% at 88% 0%, rgb(var(--c-primary) / 0.24), transparent 70%) no-repeat, " +
-				"radial-gradient(58% 42% at 0% 100%, rgb(var(--c-secondary) / 0.2), transparent 70%) no-repeat",
+			backdrop: "none",
 			overlay: grain("1", 0.5),
 			overlayOpacity: 0.07,
-			glow: 0.55,
 			headlineTracking: "-0.025em",
 			icons: { regular: "fill", small: "fill" },
 		},
@@ -322,7 +313,6 @@ export function styleVariables(style: ThemeStyle): Record<string, string> {
 		"--backdrop": style.backdrop,
 		"--overlay": style.overlay,
 		"--overlay-opacity": String(style.overlayOpacity),
-		"--glow": String(style.glow),
 		"--headline-tracking": style.headlineTracking,
 	};
 }

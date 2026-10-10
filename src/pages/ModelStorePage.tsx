@@ -72,12 +72,8 @@ const Pick = styled.section`
   margin-bottom: 1.25rem;
   padding: 1rem;
   border-radius: ${tokens.borderRadius.xl};
-  background: linear-gradient(
-    150deg,
-    ${alpha(tokens.colors.primary, "1f")},
-    ${alpha(tokens.colors.secondary, "0f")} 70%
-  ), ${tokens.colors.surfaceContainerLow};
-  border: 1px solid ${alpha(tokens.colors.primary, "40")};
+  background: ${tokens.colors.surfaceContainerLow};
+  border: 1.5px solid ${tokens.colors.primary};
   animation: ${slideIn} 0.3s ease-out both;
 `;
 

@@ -1,4 +1,5 @@
 import { Icon } from "@/components/ui/Icon";
+import { SetupArt } from "@/components/ui/Illustrations";
 import { ModelMeters } from "@/components/ui/Meter";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
 import { useAppContext } from "@/context/AppContext";
@@ -15,7 +16,7 @@ import styled, { keyframes } from "styled-components";
 
 /* First run is one decision: which model to download. Neurix can make that
    decision from the device's memory, so this screen proposes a model and
-   offers a single button — from here to a first chat is one tap and one
+   offers a single button. From here to a first chat is one tap and one
    download, with the full store a tap away for anyone who wants to choose. */
 
 const rise = keyframes`
@@ -64,6 +65,10 @@ const Main = styled.main`
   margin: 0 auto;
   padding: 1.5rem 0;
   animation: ${rise} 0.35s ease-out both;
+`;
+
+const Art = styled(SetupArt)`
+  margin: 0 0 1rem -0.5rem;
 `;
 
 const Eyebrow = styled.p`
@@ -156,18 +161,17 @@ const Primary = styled.button`
   gap: 0.5rem;
   border: none;
   border-radius: ${tokens.borderRadius.lg};
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
   font-family: ${tokens.typography.fontFamily.label};
   font-size: ${tokens.typography.fontSize.md};
   font-weight: ${tokens.typography.fontWeight.bold};
   cursor: pointer;
-  box-shadow: ${tokens.shadows.glow.primary};
   transition: transform 0.1s ease, filter ${tokens.transitions.fast};
 
   &:hover { filter: brightness(1.06); }
   &:active { transform: scale(0.98); }
-  &:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
+  &:disabled { opacity: 0.5; cursor: default; }
   &:focus-visible { outline: 2px solid ${tokens.colors.onSurface}; outline-offset: 2px; }
 `;
 
@@ -265,6 +269,7 @@ export function OnboardingScreen() {
 			</Header>
 
 			<Main>
+				<Art />
 				<Eyebrow>One step to set up</Eyebrow>
 				<Title>Pick the model that runs on this device</Title>
 				<Lead>

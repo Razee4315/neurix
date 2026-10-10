@@ -86,7 +86,7 @@ export async function notifyDownloadProgress(
 		sendNotification({
 			id: DOWNLOAD_NOTIFICATION_ID,
 			title: "Downloading Model",
-			body: `${modelName} — ${rounded}%`,
+			body: `${modelName}: ${rounded}%`,
 			channelId: "downloads",
 			ongoing: true,
 			autoCancel: false,

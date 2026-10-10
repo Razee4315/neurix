@@ -15,11 +15,6 @@ import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
-const shimmer = keyframes`
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-`;
-
 const fillIn = keyframes`
   from { width: 0%; }
 `;
@@ -85,16 +80,8 @@ const BarFill = styled.div<{ $pct: number }>`
   height: 100%;
   width: ${({ $pct }) => $pct}%;
   border-radius: ${tokens.borderRadius.circle};
-  background: linear-gradient(
-    90deg,
-    ${tokens.colors.primary} 0%,
-    ${tokens.colors.primaryContainer} 40%,
-    ${tokens.colors.surfaceBright} 50%,
-    ${tokens.colors.primaryContainer} 60%,
-    ${tokens.colors.primary} 100%
-  );
-  background-size: 200% 100%;
-  animation: ${fillIn} 0.8s ease-out both, ${shimmer} 1.8s ease-in-out 0.8s infinite;
+  background: ${tokens.colors.primary};
+  animation: ${fillIn} 0.8s ease-out both;
   transition: width 0.3s ease;
 `;
 
@@ -174,7 +161,7 @@ const ActionBtn = styled.button<{ $variant?: "danger" | "primary" }>`
   `
 			: $variant === "primary"
 				? `
-    background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+    background: ${tokens.colors.primary};
     border: none;
     color: ${tokens.colors.onPrimaryFixed};
   `

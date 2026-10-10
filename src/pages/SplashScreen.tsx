@@ -22,11 +22,6 @@ const subtleFloat = keyframes`
   50% { transform: translateY(-6px); }
 `;
 
-const glowPulse = keyframes`
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
-`;
-
 /* ── Layout ── */
 
 const Container = styled.div`
@@ -89,21 +84,6 @@ const LogoWrapper = styled.div`
   position: relative;
   animation: ${subtleFloat} 4s ease-in-out infinite;
 
-  /* Glow behind logo */
-  &::after {
-    content: "";
-    position: absolute;
-    inset: -20%;
-    background: radial-gradient(
-      circle,
-      ${alpha(tokens.colors.primary, "26")} 0%,
-      transparent 70%
-    );
-    border-radius: ${tokens.borderRadius.circle};
-    animation: ${glowPulse} 3s ease-in-out infinite;
-    pointer-events: none;
-    z-index: -1;
-  }
 `;
 
 const BrandName = styled.h1`
@@ -164,11 +144,7 @@ const GetStartedButton = styled.button`
   width: 100%;
   padding: 0.875rem;
   border-radius: ${tokens.borderRadius.xl};
-  background: linear-gradient(
-    to right,
-    ${tokens.colors.primary},
-    ${tokens.colors.primaryContainer}
-  );
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
   font-family: ${tokens.typography.fontFamily.label};
   font-size: ${tokens.typography.fontSize.md};
@@ -176,7 +152,6 @@ const GetStartedButton = styled.button`
   border: none;
   cursor: pointer;
   transition: transform ${tokens.transitions.normal};
-  box-shadow: ${tokens.shadows.glow.primary};
 
   &:hover {
     transform: scale(0.98);
@@ -283,7 +258,7 @@ export function SplashScreen() {
 						Your AI. Your device. <AccentText>No cloud.</AccentText>
 					</Headline>
 					<Subtitle>
-						Download a model once, then chat anywhere — on a mountain road, on a
+						Download a model once, then chat anywhere: on a mountain road, on a
 						flight, with no signal at all.
 					</Subtitle>
 				</TextBlock>

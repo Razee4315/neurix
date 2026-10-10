@@ -513,7 +513,7 @@ export function SettingsPage() {
 						<RowLeft>
 							<RowIcon>
 								<Icon
-									name={activeCharacter?.icon ?? "auto_awesome"}
+									name={activeCharacter?.icon ?? "neurix"}
 									size={18}
 									color={accentOf(activeCharacter)}
 								/>
@@ -522,7 +522,7 @@ export function SettingsPage() {
 								<RowTitle>Default character</RowTitle>
 								<RowSub>
 									{activeCharacter
-										? `${activeCharacter.name} — ${activeCharacter.description || "Custom"}`
+										? `${activeCharacter.name}: ${activeCharacter.description || "Custom"}`
 										: "Choose a personality"}
 								</RowSub>
 							</RowText>

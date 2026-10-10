@@ -29,9 +29,9 @@ HOW IT WORKS
 AVAILABLE MODELS
 Choose from current models from leading AI labs:
 
-• Qwen 3.5 (Alibaba) — 0.8B, 2B and 4B. Strong multilingual support; can reason step by step on request
-• LFM 2.5 (Liquid AI) — 1.2B and 2.6B. Built for phones, very fast
-• Gemma 4 (Google) — E2B and E4B. Natural, well-structured writing
+• Qwen 3.5 (Alibaba): 0.8B, 2B and 4B. Strong multilingual support; can reason step by step on request
+• LFM 2.5 (Liquid AI): 1.2B and 2.6B. Built for phones, very fast
+• Gemma 4 (Google): E2B and E4B. Natural, well-structured writing
 
 The app suggests the right model for your device's memory.
 

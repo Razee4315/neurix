@@ -5,7 +5,7 @@ import type { CSSProperties } from "react";
 import styled from "styled-components";
 
 /* One compact row of swatches. Each swatch is a tiny scene drawn with the
-   theme's own variables — its typeface, corner shape, backdrop and texture —
+   theme's own variables (its typeface, corner shape, backdrop and texture),
    so the row shows how the themes differ in character, not only in color. */
 
 const Row = styled.div`
@@ -89,8 +89,7 @@ const Bar = styled.span`
   flex: 1;
   height: 0.625rem;
   border-radius: ${tokens.borderRadius.lg};
-  background: linear-gradient(90deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
-  box-shadow: ${tokens.shadows.glow.primary};
+  background: ${tokens.colors.primary};
 `;
 
 const Dot = styled.span`
@@ -179,7 +178,7 @@ export function ThemePicker({ value, onChange }: ThemePickerProps) {
 				})}
 			</Row>
 			<Caption aria-live="polite">
-				{selected.name} — {selected.tagline}
+				{selected.name}: {selected.tagline}
 			</Caption>
 		</div>
 	);

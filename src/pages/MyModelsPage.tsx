@@ -157,7 +157,7 @@ const Card = styled.div<{ $active: boolean }>`
   border: 2px solid ${({ $active }) =>
 		$active ? tokens.colors.primary : "transparent"};
   ${({ $active }) => $active && `
-    box-shadow: 0 0 0 1px ${alpha(tokens.colors.primary, "20")}, ${tokens.shadows.ambient};
+    box-shadow: 0 0 0 1px ${alpha(tokens.colors.primary, "20")};
   `}
 `;
 
@@ -186,7 +186,7 @@ const ActiveBadge = styled.span`
   font-weight: ${tokens.typography.fontWeight.bold};
   padding: 0.25rem 0.5rem;
   border-radius: ${tokens.borderRadius.md};
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
 `;
 
@@ -216,7 +216,7 @@ const UseBtn = styled.button<{ $active: boolean }>`
   ${({ $active }) =>
 		$active
 			? `
-    background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+    background: ${tokens.colors.primary};
     color: ${tokens.colors.onPrimaryFixed};
   `
 			: `
@@ -318,7 +318,7 @@ const ProgressBarContainer = styled.div`
 const ProgressBarFill = styled.div<{ $pct: number }>`
   height: 100%;
   width: ${({ $pct }) => $pct}%;
-  background: linear-gradient(90deg, ${tokens.colors.tertiary}, ${tokens.colors.primary});
+  background: ${tokens.colors.primary};
   border-radius: ${tokens.borderRadius.circle};
   transition: width 0.3s ease;
 `;
@@ -430,7 +430,7 @@ const PrimaryCta = styled.button`
   padding: 0.625rem 1.125rem;
   border-radius: ${tokens.borderRadius.xl};
   border: none;
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
