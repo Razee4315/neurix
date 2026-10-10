@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
 import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
+import { canDownloadInBackground } from "@/services/androidBridge";
 import type { ModelInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
@@ -334,8 +335,16 @@ export function DownloadingPage() {
 
 				{(status === "failed" || status === "paused") && dl?.error && (
 					<Reason role="alert">
-						<Icon name="error_outline" size={16} color={tokens.colors.error} />
-						<span>{dl.error}</span>
+						<Icon
+							name={dl.blockedByWifi ? "wifi" : "error_outline"}
+							size={16}
+							color={tokens.colors.error}
+						/>
+						<span>
+							{dl.error}
+							{dl.blockedByWifi &&
+								` This download is ${model.size_label}. Connect to WiFi, or go ahead on this connection.`}
+						</span>
 					</Reason>
 				)}
 
@@ -345,9 +354,11 @@ export function DownloadingPage() {
 
 				{status === "downloading" && (
 					<Hint>
-						{isMobile()
-							? "Keep Neurix open until this finishes. If it's interrupted, it resumes from where it stopped."
-							: "You can keep using Neurix while this downloads. Closing the app pauses it."}
+						{canDownloadInBackground()
+							? "You can switch apps or lock the screen: the download carries on in the background. Closing Neurix from recent apps pauses it, and it resumes from where it stopped."
+							: isMobile()
+								? "Keep Neurix open until this finishes. If it's interrupted, it resumes from where it stopped."
+								: "You can keep using Neurix while this downloads. Closing the app pauses it."}
 					</Hint>
 				)}
 
@@ -394,10 +405,21 @@ export function DownloadingPage() {
 
 				{(status === "paused" || status === "failed") && (
 					<ActionRow>
-						<ActionBtn type="button" $variant="primary" onClick={() => resumeDownload(model)}>
-							<Icon name={status === "failed" ? "refresh" : "play_arrow"} size={16} />
-							{status === "failed" ? "Try again" : "Resume"}
-						</ActionBtn>
+						{dl?.blockedByWifi ? (
+							<ActionBtn
+								type="button"
+								$variant="primary"
+								onClick={() => resumeDownload(model, { allowMobileData: true })}
+							>
+								<Icon name="download" size={16} />
+								Use this connection
+							</ActionBtn>
+						) : (
+							<ActionBtn type="button" $variant="primary" onClick={() => resumeDownload(model)}>
+								<Icon name={status === "failed" ? "refresh" : "play_arrow"} size={16} />
+								{status === "failed" ? "Try again" : "Resume"}
+							</ActionBtn>
+						)}
 						<ActionBtn type="button" $variant="danger" onClick={handleCancel}>
 							Cancel
 						</ActionBtn>

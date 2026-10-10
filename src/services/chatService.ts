@@ -1,5 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
-import type { InferenceEvent } from "./types";
+import type { BenchmarkResult, InferenceEvent } from "./types";
 
 export interface ChatHistoryEntry {
 	user: string;
@@ -18,6 +18,8 @@ export interface InferenceRequest {
 	 * continues that reply instead of starting a new one.
 	 */
 	assistantPrefix?: string;
+	/** Ask the model to reason before answering, where it is able to. */
+	enableThinking?: boolean;
 }
 
 export async function runInference(
@@ -29,10 +31,16 @@ export async function runInference(
 	return invoke("run_inference", {
 		...request,
 		assistantPrefix: request.assistantPrefix ?? null,
+		enableThinking: request.enableThinking ?? false,
 		onEvent: channel,
 	});
 }
 
 export async function stopInference(): Promise<void> {
 	return invoke("stop_inference");
+}
+
+/** Measure how fast the loaded model runs on this device. */
+export async function benchmarkModel(): Promise<BenchmarkResult> {
+	return invoke("benchmark_model");
 }

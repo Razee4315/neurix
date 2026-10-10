@@ -10,8 +10,11 @@ describe("cleanResponse", () => {
 		expect(cleanResponse("  spaced out  ")).toBe("spaced out");
 	});
 
-	it("strips a trailing 'Human:' turn", () => {
-		expect(cleanResponse("Reply text.\nHuman: ignore me")).toBe("Reply text.");
+	it("keeps lines that begin with a role label", () => {
+		// A script, an interview or a chat log is ordinary output. The engine
+		// ends a reply at the model's end-of-turn token, not on guessed text.
+		const script = "Here is the dialogue:\nUser: Hi there\nAssistant: Hello!\nHuman: Bye";
+		expect(cleanResponse(script)).toBe(script);
 	});
 
 	it("keeps role-like words that are not at the start of a line", () => {
@@ -37,23 +40,12 @@ describe("cleanResponse", () => {
 		expect(cleanResponse("Reply<|eot_id|>extra")).toBe("Reply");
 	});
 
-	it("strips Phi-3 <|end|> markers", () => {
-		expect(cleanResponse("Reply<|end|>extra")).toBe("Reply");
-	});
-
 	it("strips <|endoftext|> markers", () => {
 		expect(cleanResponse("Reply<|endoftext|>extra")).toBe("Reply");
 	});
 
-	it("handles multiple stop patterns in sequence", () => {
-		expect(cleanResponse("Real reply.<|im_end|>\nHuman: leak")).toBe("Real reply.");
-	});
-
-	it("preserves the body when User: appears in middle of legitimate content", () => {
-		// Note: regex matches anchored to end via [\s\S]*$, so once we hit a stop
-		// token everything after is dropped. This is intentional — models
-		// occasionally emit fake user turns mid-stream that we don't want to keep.
-		expect(cleanResponse("Reply.\nUser: garbage")).toBe("Reply.");
+	it("drops everything after the first template token", () => {
+		expect(cleanResponse("Real reply.<|im_end|>\n<|im_start|>user\nleak")).toBe("Real reply.");
 	});
 
 	it("returns empty string when input is only stop tokens", () => {

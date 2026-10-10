@@ -62,13 +62,25 @@ describe("storage mapping", () => {
 		expect(toStored(fromStored(original))).toEqual(original);
 	});
 
+	it("keeps a reply's reasoning, and only when there is some", () => {
+		const stored = toStored([u("q"), createMessage("ai", "4", { reasoning: "2 + 2" }), u("q2"), a("ok")]);
+		expect(stored[1].reasoning).toBe("2 + 2");
+		expect("reasoning" in stored[3]).toBe(false);
+		expect(fromStored(stored)[1].reasoning).toBe("2 + 2");
+	});
+
+	it("never sends reasoning back to the model", () => {
+		const history = buildHistory([u("q"), createMessage("ai", "4", { reasoning: "2 + 2" })]);
+		expect(history).toEqual([{ user: "q", assistant: "4" }]);
+	});
+
 	it("records the real model id", () => {
 		const conv = toConversation([u("q"), a("r")], {
 			id: "c1",
-			modelId: "qwen-2.5-0.5b",
-			modelName: "Qwen 2.5 0.5B",
+			modelId: "qwen-3.5-2b",
+			modelName: "Qwen 3.5 2B",
 		});
-		expect(conv.model_id).toBe("qwen-2.5-0.5b");
+		expect(conv.model_id).toBe("qwen-3.5-2b");
 		expect(conv.title).toBe("q");
 	});
 });

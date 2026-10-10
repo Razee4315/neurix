@@ -16,6 +16,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Markdown } from "./chat/Markdown";
 import {
+	ComposerTools,
+	ReadingFill,
+	ReadingLine,
+	ReadingTrack,
+	Reasoning,
+	ThinkChip,
+	ToolHint,
+} from "./chat/Reasoning";
+import {
 	type Message,
 	buildHistory,
 	createMessage,
@@ -69,6 +78,9 @@ import {
 const MAX_PROMPT_LENGTH = 16_000;
 const DRAFT_KEY = "neurix.chat.draft";
 const COACH_KEY = "neurix.coach.subtitle.v2";
+const THINK_KEY = "neurix.chat.think";
+/** Share of the context window at which the chat is called "nearly full". */
+const CONTEXT_WARN_RATIO = 0.85;
 /** How close to the bottom (px) still counts as "following" the stream. */
 const FOLLOW_THRESHOLD = 96;
 
@@ -113,6 +125,21 @@ function writeDraft(text: string) {
 	}
 }
 
+function readThink(): boolean {
+	try {
+		return localStorage.getItem(THINK_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
+
+/** Speed of the most recent reply, shown under it when the setting is on. */
+interface ReplyStats {
+	messageId: string;
+	tokensPerSecond: number;
+	tokens: number;
+}
+
 type LoadProblem = { kind: "failed"; message: string } | { kind: "no-models" };
 
 interface RunOptions {
@@ -128,7 +155,8 @@ interface RunOptions {
 export function ChatPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const { activeModel, activeModelId, settings, loadModel } = useAppContext();
+	const { activeModel, activeModelId, activeModelInfo, settings, loadModel, refreshActiveModel } =
+		useAppContext();
 	const { activeCharacter, allCharacters, setActiveCharacter, loaded: charactersLoaded } = useCharacters();
 	const { showToast } = useToast();
 
@@ -140,6 +168,11 @@ export function ChatPage() {
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [showCoach, setShowCoach] = useState(false);
 	const [streamedText, setStreamedText] = useState("");
+	const [streamedReasoning, setStreamedReasoning] = useState("");
+	/** Percent of the conversation read so far, while that is the wait. */
+	const [reading, setReading] = useState<number | null>(null);
+	const [thinkOn, setThinkOn] = useState(readThink);
+	const [replyStats, setReplyStats] = useState<ReplyStats | null>(null);
 	const [tokensPerSecond, setTokensPerSecond] = useState(0);
 	const [openActionsId, setOpenActionsId] = useState<string | null>(null);
 	const [contextNotice, setContextNotice] = useState<string | null>(null);
@@ -161,7 +194,11 @@ export function ChatPage() {
 		saveHistory: settings?.save_history ?? false,
 		character: activeCharacter,
 		isGenerating,
+		modelInfo: activeModelInfo,
+		thinkOn,
 	});
+	live.current.modelInfo = activeModelInfo;
+	live.current.thinkOn = thinkOn;
 	live.current.activeModel = activeModel;
 	live.current.activeModelId = activeModelId;
 	live.current.saveHistory = settings?.save_history ?? false;
@@ -172,7 +209,7 @@ export function ChatPage() {
 	const runIdRef = useRef(0);
 	// Tokens arrive faster than the screen refreshes; they are buffered here
 	// and flushed to state once per animation frame.
-	const streamRef = useRef({ text: "", prefix: "", frame: 0 });
+	const streamRef = useRef({ text: "", prefix: "", reasoning: "", frame: 0 });
 
 	const characterName = activeCharacter?.name ?? "Neurix";
 	const accent = accentOf(activeCharacter);
@@ -236,7 +273,7 @@ export function ChatPage() {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: must re-run whenever the rendered content grows
 	useEffect(() => {
 		if (followingRef.current) scrollToBottom();
-	}, [messages.length, streamedText, isGenerating, scrollToBottom]);
+	}, [messages.length, streamedText, streamedReasoning, isGenerating, scrollToBottom]);
 
 	// Keep the latest message visible when the on-screen keyboard opens.
 	useEffect(() => {
@@ -352,12 +389,15 @@ export function ChatPage() {
 		const s = streamRef.current;
 		s.frame = 0;
 		setStreamedText(s.prefix + s.text);
+		setStreamedReasoning(s.reasoning);
 	}, []);
 
 	const resetStream = useCallback(() => {
 		if (streamRef.current.frame) cancelAnimationFrame(streamRef.current.frame);
-		streamRef.current = { text: "", prefix: "", frame: 0 };
+		streamRef.current = { text: "", prefix: "", reasoning: "", frame: 0 };
 		setStreamedText("");
+		setStreamedReasoning("");
+		setReading(null);
 	}, []);
 
 	const run = useCallback(async ({ prompt, context, prefix = "" }: RunOptions) => {
@@ -382,18 +422,58 @@ export function ChatPage() {
 		const handleEvent = (event: InferenceEvent) => {
 			if (!isCurrent()) return;
 			switch (event.event) {
+				case "PromptProgress":
+					setReading(Math.round((event.data.processed / Math.max(event.data.total, 1)) * 100));
+					break;
+				case "ReasoningGenerated": {
+					const s = streamRef.current;
+					s.reasoning += event.data.token;
+					if (!s.frame) s.frame = requestAnimationFrame(flushStream);
+					setReading(null);
+					break;
+				}
 				case "TokenGenerated": {
 					const s = streamRef.current;
 					s.text += event.data.token;
 					if (!s.frame) s.frame = requestAnimationFrame(flushStream);
+					setReading(null);
 					setTokensPerSecond(event.data.tokens_per_second);
 					break;
 				}
 				case "GenerationComplete": {
-					const { total_tokens, duration_ms, stop_reason } = event.data;
+					const { total_tokens, duration_ms, stop_reason, prompt_tokens } = event.data;
 					const cleaned = cleanResponse(streamRef.current.prefix + streamRef.current.text);
-					if (duration_ms > 0) setTokensPerSecond(total_tokens / (duration_ms / 1000));
-					finish(cleaned ? [createMessage("ai", cleaned, { stopReason: stop_reason })] : []);
+					const reasoning = streamRef.current.reasoning.trim();
+					const speed = duration_ms > 0 ? total_tokens / (duration_ms / 1000) : 0;
+
+					if (cleaned) {
+						const reply = createMessage("ai", cleaned, {
+							stopReason: stop_reason,
+							reasoning: reasoning || undefined,
+						});
+						if (speed > 0) {
+							setReplyStats({ messageId: reply.id, tokensPerSecond: speed, tokens: total_tokens });
+						}
+						finish([reply]);
+					} else if (reasoning && stop_reason !== "cancelled") {
+						// The whole reply budget went on thinking.
+						finish([
+							createMessage(
+								"error",
+								"The model ran out of room while thinking and never reached an answer. Try again, or ask a narrower question.",
+							),
+						]);
+					} else {
+						finish([]);
+					}
+
+					const contextWindow = live.current.modelInfo?.context_length ?? 0;
+					if (contextWindow > 0 && (prompt_tokens + total_tokens) / contextWindow >= CONTEXT_WARN_RATIO) {
+						setContextNotice(
+							"This chat has nearly filled the model's memory. Older messages will start to drop — a new chat keeps answers sharp.",
+						);
+						setTimeout(() => setContextNotice(null), 8000);
+					}
 					break;
 				}
 				case "ContextTrimmed": {
@@ -420,6 +500,7 @@ export function ChatPage() {
 					topP: character?.top_p ?? settings?.top_p ?? 0.9,
 					maxTokens: character?.max_tokens ?? settings?.max_tokens ?? 512,
 					assistantPrefix: prefix || undefined,
+					enableThinking: live.current.thinkOn && live.current.modelInfo?.reasoning === "optional",
 				},
 				handleEvent,
 			);
@@ -432,8 +513,11 @@ export function ChatPage() {
 				...(partial ? [createMessage("ai", partial)] : []),
 				createMessage("error", message),
 			]);
+			// A failed run can leave the backend without a model; resync so the
+			// header and the next send reflect that.
+			refreshActiveModel();
 		}
-	}, [commit, flushStream, resetStream, setGenerating, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
+	}, [commit, flushStream, resetStream, setGenerating, refreshActiveModel, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
 
 	/** Make sure a model is loaded, loading the last-used one if needed. */
 	const ensureModel = useCallback(async (): Promise<boolean> => {
@@ -621,9 +705,22 @@ export function ChatPage() {
 		});
 	};
 
+	const toggleThink = () => {
+		const next = !thinkOn;
+		setThinkOn(next);
+		vibrate(5);
+		try {
+			if (next) localStorage.setItem(THINK_KEY, "1");
+			else localStorage.removeItem(THINK_KEY);
+		} catch {
+			// Not persisted: the choice just resets next launch.
+		}
+	};
+
+	const canThink = activeModelInfo?.reasoning === "optional";
 	const lastId = messages[messages.length - 1]?.id;
 	const hasText = input.trim().length > 0;
-	const showStream = isGenerating || streamedText.length > 0;
+	const showStream = isGenerating || streamedText.length > 0 || streamedReasoning.length > 0;
 	const starters = activeCharacter?.conversation_starters?.slice(0, 4) ?? [];
 
 	return (
@@ -773,8 +870,14 @@ export function ChatPage() {
 											{label}
 										</BubbleLabel>
 										<BubbleBody>
+											{msg.role === "ai" && msg.reasoning && <Reasoning text={msg.reasoning} />}
 											{msg.role === "ai" ? <Markdown text={msg.text} /> : <UserText>{msg.text}</UserText>}
 										</BubbleBody>
+										{settings?.show_speed && replyStats?.messageId === msg.id && (
+											<SpeedBadge>
+												{replyStats.tokensPerSecond.toFixed(1)} tok/s · {replyStats.tokens} tokens
+											</SpeedBadge>
+										)}
 									</Bubble>
 
 									{msg.role === "ai" && isLast && !isGenerating && wasCutShort(msg.stopReason) && (
@@ -817,8 +920,16 @@ export function ChatPage() {
 								<Bubble $role="ai">
 									<BubbleLabel $color={accent}>{characterName}</BubbleLabel>
 									<BubbleBody>
+										{streamedReasoning && <Reasoning text={streamedReasoning} live={!streamedText} />}
 										{streamedText ? (
 											<Markdown text={streamedText} />
+										) : streamedReasoning ? null : reading !== null ? (
+											<ReadingLine role="status">
+												Reading the conversation… {reading}%
+												<ReadingTrack>
+													<ReadingFill $percent={reading} />
+												</ReadingTrack>
+											</ReadingLine>
 										) : (
 											<TypingDots role="status" aria-label="Generating a reply">
 												<span />
@@ -850,6 +961,21 @@ export function ChatPage() {
 					)}
 
 					<InputBar>
+						{canThink && (
+							<ComposerTools>
+								<ThinkChip
+									type="button"
+									$on={thinkOn}
+									aria-pressed={thinkOn}
+									onClick={toggleThink}
+									title="Let the model reason step by step before it answers. Slower, more careful."
+								>
+									<Icon name="psychology" size={14} />
+									Think
+								</ThinkChip>
+								{thinkOn && <ToolHint>Reasons first — slower, more careful</ToolHint>}
+							</ComposerTools>
+						)}
 						<InputRow>
 							<TextInput
 								ref={textareaRef}

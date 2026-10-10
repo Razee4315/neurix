@@ -24,11 +24,3 @@ export async function copyText(text: string): Promise<boolean> {
 		return false;
 	}
 }
-
-/**
- * Rough RAM needed to run a GGUF model: the weights are held in memory, plus
- * working space for the KV cache and the app itself.
- */
-export function requiredMemoryBytes(modelBytes: number): number {
-	return modelBytes * 1.3 + 1024 ** 3;
-}

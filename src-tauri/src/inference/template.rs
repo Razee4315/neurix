@@ -58,9 +58,15 @@ impl ChatTemplate {
         self.source.contains("enable_thinking")
     }
 
-    /// Format a conversation into the exact prompt text the model expects,
-    /// ending where the assistant's reply should begin.
-    pub fn render(&self, messages: &[ChatMessage], enable_thinking: bool) -> Result<String, String> {
+    /// Format a conversation into the exact prompt text the model expects.
+    /// With `add_generation_prompt` it ends where the assistant's reply
+    /// should begin; without, it ends after the last message.
+    pub fn render(
+        &self,
+        messages: &[ChatMessage],
+        add_generation_prompt: bool,
+        enable_thinking: bool,
+    ) -> Result<String, String> {
         let mut env = Environment::new();
         // Hugging Face renders chat templates with these two options on.
         env.set_trim_blocks(true);
@@ -77,7 +83,7 @@ impl ChatTemplate {
         template
             .render(context! {
                 messages => messages,
-                add_generation_prompt => true,
+                add_generation_prompt => add_generation_prompt,
                 enable_thinking => enable_thinking,
                 bos_token => self.bos_token,
                 eos_token => self.eos_token,
@@ -153,7 +159,7 @@ mod tests {
     #[test]
     fn missing_template_falls_back_to_chatml() {
         let t = ChatTemplate::new(None, String::new(), "<|im_end|>".into());
-        let out = t.render(&chat(), false).unwrap();
+        let out = t.render(&chat(), true, false).unwrap();
         assert!(out.starts_with("<|im_start|>system\nBe brief.<|im_end|>\n"));
         assert!(out.ends_with("<|im_start|>assistant\n"));
         assert!(!t.supports_thinking_switch());
@@ -195,27 +201,36 @@ mod tests {
         let t = ChatTemplate::new(Some(src.into()), "<s>".into(), "</s>".into());
         assert!(t.supports_thinking_switch());
 
-        let out = t.render(&chat(), false).unwrap();
+        let out = t.render(&chat(), true, false).unwrap();
         assert_eq!(
             out,
             "<s><sys>Be brief.</sys>\n<user>Hi<end>\n<assistant>Hello!<end>\n<user>What is 2+2?<end>\n<assistant>"
         );
-        assert!(t.render(&chat(), true).unwrap().ends_with("<assistant><think>\n"));
+        assert!(t.render(&chat(), true, true).unwrap().ends_with("<assistant><think>\n"));
 
         let mut past = chat();
         past[2] = ChatMessage::assistant("<think>\nhmm\n</think>\n\nHello!");
-        assert!(t.render(&past, false).unwrap().contains("<assistant>Hello!<end>"));
+        assert!(t.render(&past, true, false).unwrap().contains("<assistant>Hello!<end>"));
 
         let doubled = vec![ChatMessage::user("a"), ChatMessage::user("b")];
-        let err = t.render(&doubled, false).unwrap_err();
+        let err = t.render(&doubled, true, false).unwrap_err();
         assert!(err.contains("Roles must alternate"), "{err}");
+    }
+
+    #[test]
+    fn generation_prompt_is_optional() {
+        let t = ChatTemplate::new(None, String::new(), String::new());
+        let with = t.render(&chat(), true, false).unwrap();
+        let without = t.render(&chat(), false, false).unwrap();
+        assert!(with.starts_with(&without));
+        assert_eq!(&with[without.len()..], "<|im_start|>assistant\n");
     }
 
     #[test]
     fn generation_tags_are_ignored() {
         let src = "{%- for m in messages -%}\n{{- m.role + ':' -}}\n{%- generation -%}\n{{- m.content -}}\n{%- endgeneration -%}\n{{- ';' -}}\n{%- endfor -%}";
         let t = ChatTemplate::new(Some(src.into()), String::new(), String::new());
-        let out = t.render(&[ChatMessage::user("x"), ChatMessage::assistant("y")], false).unwrap();
+        let out = t.render(&[ChatMessage::user("x"), ChatMessage::assistant("y")], true, false).unwrap();
         assert_eq!(out, "user:x;assistant:y;");
     }
 

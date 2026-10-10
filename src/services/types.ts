@@ -1,22 +1,33 @@
+/** Whether a model reasons ("thinks") before it answers. */
+export type Reasoning = "none" | "optional" | "always";
+
 export interface ModelInfo {
 	id: string;
 	name: string;
 	description: string;
 	size_bytes: number;
 	size_label: string;
+	/** "Tiny" | "Fast" | "Balanced" | "Smart", or "Legacy" for superseded models. */
 	tag: string;
 	hf_repo: string;
 	hf_filename: string;
-	tokenizer_repo: string;
-	chat_template: ChatTemplate;
 	context_length: number;
 	company: string;
 	parameters: string;
 	quantization: string;
 	best_for: string[];
+	/** Device RAM, in GB, the model needs to run comfortably. */
+	min_ram_gb: number;
+	/** Rough answer quality relative to the rest of the catalog, 1–5. */
+	quality: number;
+	/** Rough speed relative to the rest of the catalog, 1–5. */
+	speed: number;
+	reasoning: Reasoning;
+	/** Year and month of release, e.g. "2026-02". */
+	released: string;
+	/** Superseded: usable if already installed, not offered in the store. */
+	legacy: boolean;
 }
-
-export type ChatTemplate = "Llama3" | "SmolLM" | "Gemma" | "Phi3" | "Qwen";
 
 export type DownloadEvent =
 	| { event: "Started"; data: { total_bytes: number } }
@@ -50,25 +61,44 @@ export interface PartialDownload {
 export interface ActiveModel {
 	id: string;
 	name: string;
+	reasoning: Reasoning;
+	/** Context window allocated for this model, in tokens. */
+	context_length: number;
+	threads: number;
 }
 
 /** Why the backend stopped generating. */
-export type StopReason =
-	| "eos"
-	| "length"
-	| "cancelled"
-	| "stop_sequence"
-	| "repetition"
-	| "low_confidence";
+export type StopReason = "eos" | "length" | "cancelled" | "repetition";
 
 export type InferenceEvent =
+	/** The conversation is being read, before the first word appears. */
+	| { event: "PromptProgress"; data: { processed: number; total: number } }
+	/** A piece of the model's reasoning. */
+	| { event: "ReasoningGenerated"; data: { token: string } }
 	| { event: "TokenGenerated"; data: { token: string; tokens_per_second: number } }
 	| {
 			event: "GenerationComplete";
-			data: { total_tokens: number; duration_ms: number; stop_reason: StopReason };
+			data: {
+				total_tokens: number;
+				duration_ms: number;
+				stop_reason: StopReason;
+				prompt_tokens: number;
+				cached_tokens: number;
+				prompt_ms: number;
+			};
 	  }
 	| { event: "ContextTrimmed"; data: { pairs_dropped: number } }
 	| { event: "Error"; data: { message: string } };
+
+/** Result of the built-in speed test. */
+export interface BenchmarkResult {
+	prompt_tokens_per_second: number;
+	tokens_per_second: number;
+	prompt_tokens: number;
+	generated_tokens: number;
+	threads: number;
+	context_length: number;
+}
 
 export interface Character {
 	/** "preset:<slug>" for built-ins, "custom:<uuid>" for user-created. */
@@ -128,6 +158,10 @@ export interface Settings {
 	active_character_id?: string;
 	/** User-created characters. Presets live in the Rust side and are not stored here. */
 	custom_characters?: Character[];
+	/** Context window in tokens; 0 lets the app choose from the device's RAM. */
+	context_size?: number;
+	/** Inference threads; 0 lets the app use the device's fast cores. */
+	threads?: number;
 }
 
 export interface StorageInfo {
@@ -140,6 +174,8 @@ export interface StorageInfo {
 export interface DeviceInfo {
 	/** Physical RAM in bytes, or null when the platform does not report it. */
 	total_memory_bytes: number | null;
+	/** Threads used when the thread setting is left on automatic. */
+	inference_threads: number;
 }
 
 /** Portable copy of the user's chats and custom characters. */
@@ -177,6 +213,8 @@ export interface ChatMessage {
 	role: "user" | "assistant";
 	content: string;
 	timestamp: string;
+	/** The model's reasoning for this reply, if it produced any. */
+	reasoning?: string;
 }
 
 export interface ConversationMeta {

@@ -227,11 +227,10 @@ pub async fn load_model(
     info!("Loading model: {} ({})", catalog_entry.name, model_id);
 
     // Opening the file and allocating the context is blocking work.
-    let name = catalog_entry.name.clone();
     let mid = model_id.clone();
     let sampling = catalog_entry.sampling;
     let loaded = tokio::task::spawn_blocking(move || {
-        engine::load_model_from_disk(&mid, &name, &model_path, sampling, options)
+        engine::load_model_from_disk(&mid, &model_path, sampling, options)
     })
     .await
     .map_err(|e| format!("Loading task failed: {}", e))??;

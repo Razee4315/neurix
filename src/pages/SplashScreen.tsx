@@ -304,7 +304,7 @@ export function SplashScreen() {
 						navigate("/store");
 					}}
 				>
-					Skip the tour
+					Browse all models
 				</SkipLink>
 				<SecurityBadge>
 					<Icon name="verified_user" size={14} fill color={tokens.colors.secondary} />

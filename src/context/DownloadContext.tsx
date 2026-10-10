@@ -1,4 +1,5 @@
 import { modelService, notificationService, settingsService } from "@/services";
+import { keepAliveForDownload, releaseDownloadKeepAlive } from "@/services/androidBridge";
 import type { DownloadEvent, ModelInfo } from "@/services/types";
 import { isMobile } from "@/utils/platform";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -45,6 +46,16 @@ export interface DownloadState {
 	speedBps: number;
 	/** Why the download is paused or failed, when there is a reason to show. */
 	error?: string;
+	/**
+	 * True when the only thing stopping the download is the WiFi-only rule.
+	 * The UI then offers to go ahead on the current connection.
+	 */
+	blockedByWifi?: boolean;
+}
+
+export interface StartOptions {
+	/** The user chose to download on this connection despite WiFi-only. */
+	allowMobileData?: boolean;
 }
 
 interface DownloadContextValue {
@@ -55,9 +66,9 @@ interface DownloadContextValue {
 	 * than on every progress tick.
 	 */
 	installedVersion: number;
-	startDownload: (model: ModelInfo) => void;
+	startDownload: (model: ModelInfo, options?: StartOptions) => void;
 	pauseDownload: (modelId: string) => void;
-	resumeDownload: (model: ModelInfo) => void;
+	resumeDownload: (model: ModelInfo, options?: StartOptions) => void;
 	/** Stop and delete the partial file. */
 	cancelDownload: (modelId: string) => void;
 	/** Forget a finished/failed entry without touching files. */
@@ -87,6 +98,9 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 	// Downloads WE paused because WiFi dropped, so they can auto-resume when
 	// it returns. Cleared on user pause/cancel so we never fight the user.
 	const autoPausedRef = useRef<Map<string, ModelInfo>>(new Map());
+	// Downloads the user explicitly allowed on a non-WiFi connection. The
+	// WiFi-only rule is not applied to these again.
+	const mobileDataOkRef = useRef<Set<string>>(new Set());
 
 	const updateDownload = useCallback((modelId: string, patch: Partial<DownloadState>) => {
 		setDownloads((prev) => {
@@ -98,10 +112,11 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 	const bumpInstalled = useCallback(() => setInstalledVersion((v) => v + 1), []);
 
-	const startDownload = useCallback((model: ModelInfo) => {
+	const startDownload = useCallback((model: ModelInfo, options?: StartOptions) => {
 		if (activeRef.current.has(model.id) || startingRef.current.has(model.id)) return;
 		startingRef.current.add(model.id);
 		autoPausedRef.current.delete(model.id);
+		if (options?.allowMobileData) mobileDataOkRef.current.add(model.id);
 
 		setDownloads((prev) => ({
 			...prev,
@@ -114,6 +129,8 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 				totalBytes: prev[model.id]?.totalBytes ?? model.size_bytes,
 				downloadedBytes: prev[model.id]?.downloadedBytes ?? 0,
 				speedBps: 0,
+				error: undefined,
+				blockedByWifi: false,
 			},
 		}));
 
@@ -121,15 +138,16 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 			// Enforce WiFi-only. Fail-closed: proceed only on CONFIRMED WiFi.
 			try {
 				const current = await settingsService.getSettings();
-				if (current.wifi_only) {
+				if (current.wifi_only && !mobileDataOkRef.current.has(model.id)) {
 					const wifi = detectNetwork();
 					if (wifi !== true) {
 						startingRef.current.delete(model.id);
 						updateDownload(model.id, {
 							status: "paused",
+							blockedByWifi: true,
 							error: wifi === false
-								? "You're on mobile data. Connect to WiFi, or turn off WiFi-only downloads in Settings."
-								: "Couldn't confirm a WiFi connection. Connect to WiFi, or turn off WiFi-only downloads in Settings.",
+								? "You're on mobile data, and WiFi-only downloads is on."
+								: "Couldn't confirm this is a WiFi connection, and WiFi-only downloads is on.",
 						});
 						return;
 					}
@@ -190,6 +208,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 						break;
 					case "Finished":
 						activeRef.current.delete(model.id);
+						mobileDataOkRef.current.delete(model.id);
 						updateDownload(model.id, { status: "finished", speedBps: 0, error: undefined });
 						bumpInstalled();
 						notificationService.notifyDownloadComplete(model.name);
@@ -212,7 +231,10 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 				}
 			};
 
-			modelService.downloadModel(model.id, isOnWifi(), handleEvent).catch((err) => {
+			// The backend re-checks the WiFi rule. An explicit "use this
+			// connection" from the user counts as confirmation.
+			const confirmed = isOnWifi() || mobileDataOkRef.current.has(model.id);
+			modelService.downloadModel(model.id, confirmed, handleEvent).catch((err) => {
 				activeRef.current.delete(model.id);
 				// A "Failed" event may already have set the message; don't replace
 				// a specific reason with the generic rejection text.
@@ -236,14 +258,15 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		// Status flips to "paused" when the Cancelled event arrives.
 	}, [updateDownload]);
 
-	const resumeDownload = useCallback((model: ModelInfo) => {
-		startDownload(model);
+	const resumeDownload = useCallback((model: ModelInfo, options?: StartOptions) => {
+		startDownload(model, options);
 	}, [startDownload]);
 
 	const cancelDownload = useCallback((modelId: string) => {
 		activeRef.current.delete(modelId);
 		startingRef.current.delete(modelId);
 		autoPausedRef.current.delete(modelId);
+		mobileDataOkRef.current.delete(modelId);
 		notificationService.clearDownloadNotification();
 		setDownloads((prev) => {
 			const next = { ...prev };
@@ -323,6 +346,8 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
 			if (!isOnWifi()) {
 				for (const modelId of Array.from(activeRef.current)) {
+					// The user already agreed to this one running off WiFi.
+					if (mobileDataOkRef.current.has(modelId)) continue;
 					const current = downloadsRef.current[modelId];
 					if (current) autoPausedRef.current.set(modelId, current.model);
 					updateDownload(modelId, {
@@ -352,6 +377,17 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 			window.clearInterval(pollId);
 		};
 	}, [startDownload, updateDownload]);
+
+	// Keep the app alive in the background for as long as something is
+	// actually transferring (Android only; a no-op elsewhere).
+	const transferring = Object.values(downloads).find(
+		(d) => d.status === "downloading" || d.status === "verifying",
+	);
+	const transferringName = transferring?.modelName ?? null;
+	useEffect(() => {
+		if (transferringName) keepAliveForDownload(transferringName);
+		else releaseDownloadKeepAlive();
+	}, [transferringName]);
 
 	const value = useMemo<DownloadContextValue>(
 		() => ({

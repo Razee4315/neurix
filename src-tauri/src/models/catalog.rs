@@ -118,7 +118,7 @@ fn current() -> Vec<ModelInfo> {
             best_for: strings(&["Fast replies", "Summaries", "Following instructions"]),
             context_length: 8192,
             min_ram_gb: 3,
-            quality: 3,
+            quality: 2,
             speed: 5,
             reasoning: Reasoning::None,
             released: "2026-01".into(),

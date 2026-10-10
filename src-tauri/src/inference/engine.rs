@@ -19,6 +19,7 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
+use llama_cpp_2::{LlamaStateSeqFlags, SeqState};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -36,6 +37,9 @@ const CONTEXT_MARGIN: usize = 16;
 /// Extra reply budget when the model reasons before answering, so thinking
 /// does not use up the whole reply.
 const REASONING_BUDGET: u32 = 1024;
+/// Snapshots kept per conversation (see [`Checkpoint`]). One is taken per
+/// turn; a few are kept so editing a recent message can still rewind.
+const MAX_CHECKPOINTS: usize = 4;
 /// After history has to be trimmed, trim down to this share of the budget
 /// rather than to the brim. The next several turns then fit without
 /// trimming again, which keeps the processed-token cache valid.
@@ -127,9 +131,20 @@ struct TrimState {
     dropped: usize,
 }
 
+/// A snapshot of the model's running state after `pos` tokens.
+///
+/// A plain transformer can forget the tail of what it has read: its memory
+/// is a list of per-token entries, and the last ones are simply dropped.
+/// Hybrid and recurrent models (Qwen 3.5, LFM 2) fold everything they read
+/// into one running state, which cannot be "un-read". To go back they need
+/// a copy of that state from the point to return to.
+struct Checkpoint {
+    pos: usize,
+    state: SeqState,
+}
+
 pub struct LoadedModel {
     pub id: String,
-    pub name: String,
     pub context_length: usize,
     pub threads: u32,
     session: Session,
@@ -138,6 +153,10 @@ pub struct LoadedModel {
     /// Exactly the tokens the context currently holds, in order.
     cached: Vec<LlamaToken>,
     trim: Option<TrimState>,
+    /// Whether this model needs [`Checkpoint`]s to rewind.
+    checkpointing: bool,
+    /// Snapshots along `cached`, oldest (smallest `pos`) first.
+    checkpoints: Vec<Checkpoint>,
 }
 
 /// llama.cpp writes its log to stderr, which nobody sees on a phone. Forward
@@ -189,7 +208,6 @@ fn special_token_text(model: &LlamaModel, token: LlamaToken) -> String {
 
 pub fn load_model_from_disk(
     model_id: &str,
-    name: &str,
     model_path: &Path,
     sampling: SamplingDefaults,
     options: LoadOptions,
@@ -235,14 +253,15 @@ pub fn load_model_from_disk(
         special_token_text(&model, vocab.eos()),
     );
 
+    let checkpointing = model.is_recurrent() || model.is_hybrid();
     info!(
-        "Loaded {model_id} in {} ms: context {context_length} tokens, {threads} threads",
-        started.elapsed().as_millis()
+        "Loaded {model_id} in {} ms: context {context_length} tokens, {threads} threads{}",
+        started.elapsed().as_millis(),
+        if checkpointing { ", rewinds by snapshot" } else { "" }
     );
 
     Ok(LoadedModel {
         id: model_id.to_string(),
-        name: name.to_string(),
         context_length,
         threads: threads as u32,
         session: Session { ctx, model },
@@ -250,6 +269,8 @@ pub fn load_model_from_disk(
         sampling,
         cached: Vec::new(),
         trim: None,
+        checkpointing,
+        checkpoints: Vec::new(),
     })
 }
 
@@ -287,6 +308,10 @@ fn deliver(
 struct Prompt {
     text: String,
     tokens: Vec<LlamaToken>,
+    /// How many leading tokens are the conversation itself, before the
+    /// "assistant starts here" marker. The next turn's prompt begins with
+    /// exactly these tokens, which makes this the place to snapshot.
+    stable_len: usize,
 }
 
 impl LoadedModel {
@@ -299,6 +324,7 @@ impl LoadedModel {
         &self,
         request: &GenerationRequest,
         history: &[(String, String)],
+        add_generation_prompt: bool,
     ) -> Result<String, String> {
         let system = request.system_prompt.trim();
         let mut messages = Vec::with_capacity(history.len() * 2 + 2);
@@ -311,7 +337,8 @@ impl LoadedModel {
         }
         messages.push(ChatMessage::user(request.user_message.as_str()));
 
-        let rendered = match self.template.render(&messages, request.enable_thinking) {
+        let thinking = request.enable_thinking;
+        let rendered = match self.template.render(&messages, add_generation_prompt, thinking) {
             Ok(text) => text,
             // A few templates reject a system role outright. Fold the
             // instructions into the first user turn and try again.
@@ -319,15 +346,15 @@ impl LoadedModel {
                 let mut merged = messages[1..].to_vec();
                 merged[0].content = format!("{system}\n\n{}", merged[0].content);
                 self.template
-                    .render(&merged, request.enable_thinking)
+                    .render(&merged, add_generation_prompt, thinking)
                     .map_err(|_| first_error)?
             }
             Err(e) => return Err(e),
         };
 
         Ok(match request.assistant_prefix.as_deref() {
-            Some(prefix) => rendered + prefix,
-            None => rendered,
+            Some(prefix) if add_generation_prompt => rendered + prefix,
+            _ => rendered,
         })
     }
 
@@ -345,9 +372,15 @@ impl LoadedModel {
         request: &GenerationRequest,
         history: &[(String, String)],
     ) -> Result<Prompt, String> {
-        let text = self.render(request, history)?;
+        let text = self.render(request, history, true)?;
         let tokens = self.tokenize(&text);
-        Ok(Prompt { text, tokens })
+        // The same conversation without the assistant marker. Templates
+        // that cannot render that way simply get no snapshot point.
+        let stable_len = self
+            .render(request, history, false)
+            .map(|stable| common_prefix(&self.tokenize(&stable), &tokens))
+            .unwrap_or(0);
+        Ok(Prompt { text, tokens, stable_len })
     }
 
     /// Build the prompt, dropping the oldest exchanges if the conversation
@@ -432,47 +465,96 @@ impl LoadedModel {
     fn reset_context(&mut self) {
         self.session.ctx.clear_kv_cache();
         self.cached.clear();
+        self.checkpoints.clear();
     }
 
-    /// Bring the context to hold exactly `tokens`, re-using whatever prefix
-    /// it has already processed. Returns how many tokens were re-used, or
-    /// `None` if the user cancelled part-way.
+    /// Make the context forget everything after the first `target` tokens.
+    /// Returns how many tokens it still holds, which is `target` or less.
+    fn rewind_to(&mut self, target: usize) -> usize {
+        if self.session.ctx.kv_cache_seq_rm(0, Some(target as u32), None).is_ok() {
+            self.cached.truncate(target);
+            self.checkpoints.retain(|c| c.pos <= target);
+            return target;
+        }
+
+        // The model cannot rewind part-way (the call above changed nothing).
+        // Go back to the latest snapshot at or before the target instead.
+        self.checkpointing = true;
+        if let Some(index) = self.checkpoints.iter().rposition(|c| c.pos <= target) {
+            self.checkpoints.truncate(index + 1);
+            let checkpoint = &self.checkpoints[index];
+            let pos = checkpoint.pos;
+            let restored = self.session.ctx.state_seq_set(&checkpoint.state, 0).is_ok()
+                && self.session.ctx.kv_cache_seq_rm(0, Some(pos as u32), None).is_ok();
+            if restored {
+                self.cached.truncate(pos);
+                return pos;
+            }
+            warn!("Could not restore the snapshot at {pos} tokens; re-reading the conversation");
+        }
+
+        self.reset_context();
+        0
+    }
+
+    /// Remember the model's state at the current position.
+    fn save_checkpoint(&mut self) {
+        let pos = self.cached.len();
+        if self.checkpoints.iter().any(|c| c.pos == pos) {
+            return;
+        }
+        match self.session.ctx.state_seq_get(0, LlamaStateSeqFlags::PARTIAL_ONLY) {
+            Ok(state) => {
+                info!("Snapshot at {pos} tokens ({} KB)", state.byte_len() / 1024);
+                self.checkpoints.push(Checkpoint { pos, state });
+                if self.checkpoints.len() > MAX_CHECKPOINTS {
+                    self.checkpoints.remove(0);
+                }
+            }
+            Err(e) => warn!("Could not snapshot the model state: {e}"),
+        }
+    }
+
+    /// Bring the context to hold exactly the prompt's tokens, re-using
+    /// whatever prefix it has already processed. Returns how many tokens
+    /// were re-used, or `None` if the user cancelled part-way.
     fn ingest(
         &mut self,
-        tokens: &[LlamaToken],
+        prompt: &Prompt,
         emit: &mut dyn FnMut(InferenceEvent),
         cancel: &CancellationToken,
     ) -> Result<Option<usize>, String> {
+        let tokens = prompt.tokens.as_slice();
         // Always decode at least the final token: sampling needs its logits.
         let mut reused = common_prefix(&self.cached, tokens).min(tokens.len() - 1);
-
         if reused < self.cached.len() {
-            // Drop everything after the shared prefix. Models with recurrent
-            // state cannot rewind part-way; they start over instead.
-            let removed = self.session.ctx.kv_cache_seq_rm(0, Some(reused as u32), None);
-            if removed.is_err() {
-                self.reset_context();
-                reused = 0;
-            } else {
-                self.cached.truncate(reused);
-            }
+            reused = self.rewind_to(reused);
         }
 
         let total = tokens.len() - reused;
         let report_progress = total > PROMPT_BATCH;
-        let mut batch = LlamaBatch::new(PROMPT_BATCH, 1);
-        let mut done = 0;
+        // Stop at the snapshot point on the way, if it is still ahead.
+        let snapshot_at = (self.checkpointing
+            && prompt.stable_len > reused
+            && prompt.stable_len < tokens.len())
+        .then_some(prompt.stable_len);
 
-        for chunk in tokens[reused..].chunks(PROMPT_BATCH) {
+        let mut batch = LlamaBatch::new(PROMPT_BATCH, 1);
+        while self.cached.len() < tokens.len() {
             if cancel.is_cancelled() {
                 return Ok(None);
             }
+            let from = self.cached.len();
+            let limit = match snapshot_at {
+                Some(at) if from < at => at,
+                _ => tokens.len(),
+            };
+            let to = (from + PROMPT_BATCH).min(limit);
+
             batch.clear();
-            for (i, token) in chunk.iter().enumerate() {
-                let position = (self.cached.len() + i) as i32;
-                let is_last = done + i + 1 == total;
+            for (position, token) in tokens.iter().enumerate().take(to).skip(from) {
                 batch
-                    .add(*token, position, &[0], is_last)
+                    .add(*token, position as i32, &[0], position + 1 == tokens.len())
                     .map_err(|e| format!("Could not queue the prompt: {e}"))?;
             }
             if let Err(e) = self.session.ctx.decode(&mut batch) {
@@ -480,10 +562,13 @@ impl LoadedModel {
                 self.reset_context();
                 return Err(format!("The model failed while reading the conversation: {e}"));
             }
-            self.cached.extend_from_slice(chunk);
-            done += chunk.len();
+            self.cached.extend_from_slice(&tokens[from..to]);
+
+            if snapshot_at == Some(to) {
+                self.save_checkpoint();
+            }
             if report_progress {
-                emit(InferenceEvent::PromptProgress { processed: done, total });
+                emit(InferenceEvent::PromptProgress { processed: to - reused, total });
             }
         }
 
@@ -515,7 +600,7 @@ impl LoadedModel {
         let prompt_started = Instant::now();
         let mut stats = GenerationStats { prompt_tokens: prompt.tokens.len(), ..Default::default() };
 
-        let Some(reused) = self.ingest(&prompt.tokens, emit, cancel)? else {
+        let Some(reused) = self.ingest(&prompt, emit, cancel)? else {
             emit(InferenceEvent::GenerationComplete {
                 total_tokens: 0,
                 duration_ms: 0,
@@ -667,12 +752,13 @@ mod tests {
         let path = std::env::var("NEURIX_TEST_MODEL").expect("NEURIX_TEST_MODEL is not set");
         let sampling = SamplingDefaults { top_k: 40, min_p: 0.05, repeat_penalty: 1.0 };
         let options = LoadOptions { context_length: 2048, threads: 2 };
-        let mut model = load_model_from_disk("test", "Test", Path::new(&path), sampling, options)
+        let mut model = load_model_from_disk("test", Path::new(&path), sampling, options)
             .expect("model failed to load");
         println!(
-            "context {} tokens, thinking switch: {}",
+            "context {} tokens, thinking switch: {}, rewinds by snapshot: {}",
             model.context_length,
-            model.supports_thinking_switch()
+            model.supports_thinking_switch(),
+            model.checkpointing
         );
 
         let mut request = GenerationRequest {
@@ -706,6 +792,16 @@ mod tests {
         assert!(
             stats2.cached_tokens * 2 > stats.prompt_tokens,
             "follow-up re-read the conversation: {stats2:?} after {stats:?}"
+        );
+
+        // Asking the same question again (the "Retry" button) re-reads at
+        // most the tail of the prompt.
+        let (again, stats3) = run(&mut model, &request);
+        println!("retry -> {:?} | {stats3:?}", again.answer);
+        assert!(again.answer.to_lowercase().contains("rome"), "answer: {:?}", again.answer);
+        assert!(
+            stats3.cached_tokens * 2 > stats3.prompt_tokens,
+            "retry re-read the conversation: {stats3:?}"
         );
 
         // Continuing a reply appends to it rather than starting over.
