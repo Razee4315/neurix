@@ -1,4 +1,3 @@
-import { NeurixGlyph } from "@/components/ui/NeurixGlyph";
 import { type IconWeight, useIconWeights } from "@/theme/iconWeight";
 import { AirplaneTilt } from "@phosphor-icons/react/dist/csr/AirplaneTilt";
 import { ArrowCounterClockwise } from "@phosphor-icons/react/dist/csr/ArrowCounterClockwise";
@@ -60,6 +59,7 @@ import { PiggyBank } from "@phosphor-icons/react/dist/csr/PiggyBank";
 import { Play } from "@phosphor-icons/react/dist/csr/Play";
 import { Plus } from "@phosphor-icons/react/dist/csr/Plus";
 import { Power } from "@phosphor-icons/react/dist/csr/Power";
+import { Robot } from "@phosphor-icons/react/dist/csr/Robot";
 import { RocketLaunch } from "@phosphor-icons/react/dist/csr/RocketLaunch";
 import { Scroll } from "@phosphor-icons/react/dist/csr/Scroll";
 import { ShareNetwork } from "@phosphor-icons/react/dist/csr/ShareNetwork";
@@ -101,8 +101,6 @@ interface GlyphProps {
 const DECORATIVE: Record<string, string> = { "aria-hidden": "true", focusable: "false" };
 
 const ICONS = new Map<string, ComponentType<GlyphProps>>(Object.entries({
-	// The app's own mark: the default assistant's face.
-	neurix: NeurixGlyph,
 	add: Plus,
 	airplanemode_active: AirplaneTilt,
 	arrow_back: ArrowLeft,
@@ -167,6 +165,8 @@ const ICONS = new Map<string, ComponentType<GlyphProps>>(Object.entries({
 	search: MagnifyingGlass,
 	self_improvement: FlowerLotus,
 	sentiment_satisfied: Smiley,
+	// The default assistant.
+	smart_toy: Robot,
 	settings: GearSix,
 	share: ShareNetwork,
 	shield: Shield,

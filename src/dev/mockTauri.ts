@@ -247,7 +247,7 @@ const preset = (
 });
 
 const PRESETS: Character[] = [
-	preset("default", "Default", "Helpful and balanced", "neurix", "#8ff5ff", "Hi! What can I help you with?", [
+	preset("default", "Default", "Helpful and balanced", "smart_toy", "#8ff5ff", "Hi! What can I help you with?", [
 		"Summarize a topic I'm trying to learn",
 		"Help me draft a short message",
 		"Explain something simply",

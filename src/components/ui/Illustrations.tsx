@@ -1,5 +1,3 @@
-import { Icon } from "@/components/ui/Icon";
-import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import styled, { keyframes } from "styled-components";
 
@@ -285,74 +283,6 @@ export function SetupArt({ className }: { className?: string }) {
 			<circle className="float late" cx="112" cy="24" r="3" fill={C.tertiary} />
 			<circle className="float" cx="16" cy="64" r="2" fill={C.primary} />
 		</SetupSvg>
-	);
-}
-
-/* ── Chat scene: the active character inside orbiting rings ── */
-
-const Orb = styled.div<{ $accent: string }>`
-  position: relative;
-  width: 112px;
-  height: 112px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: ${({ $accent }) => $accent};
-
-  svg.rings {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    animation: ${spin} 28s linear infinite;
-  }
-
-
-  .core {
-    position: relative;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: ${({ $accent }) => alpha($accent, "26")};
-    border: 1px solid ${({ $accent }) => alpha($accent, "80")};
-  }
-`;
-
-export function ChatScene({ accent, icon }: { accent: string; icon: string }) {
-	return (
-		<Orb $accent={accent} aria-hidden="true">
-			<svg
-				className="rings"
-				viewBox="0 0 112 112"
-				fill="none"
-				aria-hidden="true"
-			>
-				<circle
-					cx="56"
-					cy="56"
-					r="52"
-					stroke="currentColor"
-					strokeOpacity="0.18"
-					strokeDasharray="2 7"
-				/>
-				<circle
-					cx="56"
-					cy="56"
-					r="40"
-					stroke="currentColor"
-					strokeOpacity="0.3"
-					strokeDasharray="14 10"
-				/>
-				<circle cx="56" cy="4" r="3" fill="currentColor" />
-				<circle cx="96" cy="56" r="2" fill="currentColor" fillOpacity="0.6" />
-			</svg>
-			<span className="core">
-				<Icon name={icon} size={26} />
-			</span>
-		</Orb>
 	);
 }
 

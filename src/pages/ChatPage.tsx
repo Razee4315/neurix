@@ -1,7 +1,6 @@
 import { CharacterPicker } from "@/components/character/CharacterPicker";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Icon } from "@/components/ui/Icon";
-import { ChatScene } from "@/components/ui/Illustrations";
 import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
 import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
@@ -780,7 +779,7 @@ export function ChatPage() {
 						aria-label={`Character: ${characterName}. Model: ${activeModel ?? "none loaded"}. Change character or model.`}
 					>
 						<HeaderAvatar $accent={accent}>
-							<Icon name={activeCharacter?.icon || "neurix"} size={20} />
+							<Icon name={activeCharacter?.icon || "smart_toy"} size={20} />
 						</HeaderAvatar>
 						<HeaderTextStack>
 							<HeaderCharName>
@@ -814,7 +813,6 @@ export function ChatPage() {
 					<MessagesArea ref={scrollRef} onScroll={handleScroll}>
 						{messages.length === 0 && !showStream && (
 							<Welcome>
-								<ChatScene accent={accent} icon={activeCharacter?.icon ?? "neurix"} />
 								<WelcomeTitle>{activeCharacter?.greeting || `Chat with ${characterName}`}</WelcomeTitle>
 								<WelcomeText>
 									{activeCharacter?.description

@@ -47,7 +47,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             id: "preset:default".into(),
             name: "Default".into(),
             description: "Helpful and balanced".into(),
-            icon: "neurix".into(),
+            icon: "smart_toy".into(),
             accent_color: Some("#8ff5ff".into()),
             system_prompt: "You are a helpful assistant. Give clear, concise answers. Do not repeat yourself.".into(),
             temperature: 0.7,

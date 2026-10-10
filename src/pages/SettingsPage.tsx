@@ -513,7 +513,7 @@ export function SettingsPage() {
 						<RowLeft>
 							<RowIcon>
 								<Icon
-									name={activeCharacter?.icon ?? "neurix"}
+									name={activeCharacter?.icon ?? "smart_toy"}
 									size={18}
 									color={accentOf(activeCharacter)}
 								/>
