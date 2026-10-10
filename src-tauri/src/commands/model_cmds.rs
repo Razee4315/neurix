@@ -6,11 +6,29 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tokio_util::sync::CancellationToken;
 
-use crate::models::catalog::{self, ModelInfo};
+use crate::device;
+use crate::inference::engine::{self, LoadOptions};
+use crate::models::catalog::{self, ModelInfo, Reasoning};
 use crate::models::download::{self, DownloadEvent};
 use crate::models::manager::{self, DownloadedModel, PartialDownload};
 use crate::settings;
 use crate::state::{ActiveModel, SharedState};
+
+/// Below this much RAM a large context is a real risk of the system killing
+/// the app, so the automatic setting stays at 4,096 tokens.
+const SMALL_DEVICE_BYTES: u64 = 5_500_000_000;
+
+/// Context window to allocate. An explicit setting wins; otherwise the
+/// model's default is used, halved on low-memory devices.
+fn context_length_for(setting: u32, model_default: u32, ram_bytes: Option<u64>) -> u32 {
+    if setting > 0 {
+        return setting;
+    }
+    match ram_bytes {
+        Some(ram) if ram < SMALL_DEVICE_BYTES => model_default.min(4096),
+        _ => model_default,
+    }
+}
 
 fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app
@@ -191,46 +209,49 @@ pub async fn load_model(
         s.active_model = None;
     }
 
-    let model_dir = models_dir(&app)?.join(&model_id);
-    let model_path = model_dir.join("model.gguf");
-    let tokenizer_path = model_dir.join("tokenizer.json");
-
+    let model_path = models_dir(&app)?.join(&model_id).join("model.gguf");
     if !model_path.exists() {
         return Err(format!("Model file not found for {}", catalog_entry.name));
     }
-    if !tokenizer_path.exists() {
-        return Err(format!(
-            "Tokenizer not found for {}. Download the model again to repair it.",
-            catalog_entry.name
-        ));
-    }
+
+    let current = settings::load(&app)?;
+    let options = LoadOptions {
+        context_length: context_length_for(
+            current.context_size,
+            catalog_entry.context_length as u32,
+            device::total_memory_bytes(),
+        ),
+        threads: if current.threads > 0 { current.threads } else { device::inference_threads() },
+    };
 
     info!("Loading model: {} ({})", catalog_entry.name, model_id);
 
-    // Load on a blocking thread since candle does heavy CPU work
+    // Opening the file and allocating the context is blocking work.
     let name = catalog_entry.name.clone();
     let mid = model_id.clone();
-    let template = catalog_entry.chat_template.clone();
-    let ctx_len = catalog_entry.context_length;
-
+    let sampling = catalog_entry.sampling;
     let loaded = tokio::task::spawn_blocking(move || {
-        crate::inference::engine::load_model_from_disk(
-            &mid,
-            &name,
-            &model_path,
-            &tokenizer_path,
-            template,
-            ctx_len,
-        )
+        engine::load_model_from_disk(&mid, &name, &model_path, sampling, options)
     })
     .await
     .map_err(|e| format!("Loading task failed: {}", e))??;
+
+    // Trust the model's own template over the catalog about whether
+    // reasoning can be switched.
+    let reasoning = match (catalog_entry.reasoning, loaded.supports_thinking_switch()) {
+        (Reasoning::Always, _) => Reasoning::Always,
+        (_, true) => Reasoning::Optional,
+        (_, false) => Reasoning::None,
+    };
 
     {
         let mut s = state.lock().await;
         s.active_model = Some(ActiveModel {
             id: model_id.clone(),
             name: catalog_entry.name.clone(),
+            reasoning,
+            context_length: loaded.context_length,
+            threads: loaded.threads,
         });
         s.loaded_model = Some(loaded);
     }
@@ -245,4 +266,22 @@ pub async fn load_model(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::context_length_for;
+
+    #[test]
+    fn context_follows_setting_then_memory() {
+        let gb = 1_000_000_000u64;
+        // An explicit setting always wins.
+        assert_eq!(context_length_for(16_384, 8192, Some(4 * gb)), 16_384);
+        // Automatic: the model default, halved on small devices.
+        assert_eq!(context_length_for(0, 8192, Some(4 * gb)), 4096);
+        assert_eq!(context_length_for(0, 8192, Some(8 * gb)), 8192);
+        // Unknown RAM (desktop) is not treated as small.
+        assert_eq!(context_length_for(0, 8192, None), 8192);
+        assert_eq!(context_length_for(0, 4096, Some(12 * gb)), 4096);
+    }
 }

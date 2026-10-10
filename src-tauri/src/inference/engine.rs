@@ -1,522 +1,613 @@
-use std::path::{Path, PathBuf};
+//! Text generation on llama.cpp.
+//!
+//! One model and one context are kept loaded for the life of a chat. The
+//! context remembers the tokens it has already processed, so each new message
+//! only pays for the text that was added since the last reply — time to the
+//! first word no longer grows with the length of the conversation.
+
+use std::ffi::{c_char, c_void, CStr};
+use std::num::NonZeroU32;
+use std::path::Path;
+use std::sync::OnceLock;
 use std::time::Instant;
 
-use candle_core::{quantized::gguf_file, Device, Result as CandleResult, Tensor};
-use candle_transformers::models::quantized_gemma3 as qgemma;
-use candle_transformers::models::quantized_llama as qllama;
-use candle_transformers::models::quantized_phi3 as qphi3;
-use candle_transformers::models::quantized_qwen2 as qqwen2;
-use log::info;
+use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::context::LlamaContext;
+use llama_cpp_2::llama_backend::LlamaBackend;
+use llama_cpp_2::llama_batch::LlamaBatch;
+use llama_cpp_2::model::params::LlamaModelParams;
+use llama_cpp_2::model::LlamaModel;
+use llama_cpp_2::sampling::LlamaSampler;
+use llama_cpp_2::token::LlamaToken;
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use tauri::ipc::Channel;
-use tokenizers::Tokenizer;
 use tokio_util::sync::CancellationToken;
 
-use super::sampler::LogitsSampler;
-use crate::models::catalog::ChatTemplate;
+use super::stream::{self, Chunk, ReplyFilter, Utf8Assembler};
+use super::template::{ChatMessage, ChatTemplate};
+use crate::models::catalog::SamplingDefaults;
 
-/// Wraps architecture-specific model weights behind a unified interface.
-/// Each variant loads from GGUF using the correct metadata prefix
-/// (llama.*, qwen2.*, phi3.*, gemma*.*) and dispatches forward() accordingly.
-pub enum ModelWeights {
-    Llama(qllama::ModelWeights),
-    Qwen2(qqwen2::ModelWeights),
-    Phi3(qphi3::ModelWeights),
-    Gemma(qgemma::ModelWeights),
-}
-
-impl ModelWeights {
-    pub fn forward(&mut self, x: &Tensor, index_pos: usize) -> CandleResult<Tensor> {
-        match self {
-            Self::Llama(m) => m.forward(x, index_pos),
-            Self::Qwen2(m) => m.forward(x, index_pos),
-            Self::Phi3(m) => m.forward(x, index_pos),
-            Self::Gemma(m) => m.forward(x, index_pos),
-        }
-    }
-}
-
-pub struct LoadedModel {
-    pub id: String,
-    pub name: String,
-    /// `None` only transiently, while the weights are being replaced.
-    pub weights: Option<ModelWeights>,
-    pub tokenizer: Tokenizer,
-    pub chat_template: ChatTemplate,
-    pub device: Device,
-    pub context_length: usize,
-    pub model_path: PathBuf,
-}
-
-fn load_weights(
-    template: &ChatTemplate,
-    model_path: &Path,
-    device: &Device,
-) -> Result<ModelWeights, String> {
-    let mut file =
-        std::fs::File::open(model_path).map_err(|e| format!("Cannot open model: {}", e))?;
-    let content =
-        gguf_file::Content::read(&mut file).map_err(|e| format!("Invalid GGUF: {}", e))?;
-
-    match template {
-        ChatTemplate::Llama3 | ChatTemplate::SmolLM => {
-            qllama::ModelWeights::from_gguf(content, &mut file, device)
-                .map(ModelWeights::Llama)
-                .map_err(|e| format!("Failed to load Llama weights: {}", e))
-        }
-        ChatTemplate::Qwen => qqwen2::ModelWeights::from_gguf(content, &mut file, device)
-            .map(ModelWeights::Qwen2)
-            .map_err(|e| format!("Failed to load Qwen2 weights: {}", e)),
-        ChatTemplate::Phi3 => qphi3::ModelWeights::from_gguf(false, content, &mut file, device)
-            .map(ModelWeights::Phi3)
-            .map_err(|e| format!("Failed to load Phi3 weights: {}", e)),
-        ChatTemplate::Gemma => qgemma::ModelWeights::from_gguf(content, &mut file, device)
-            .map(ModelWeights::Gemma)
-            .map_err(|e| format!("Failed to load Gemma weights: {}", e)),
-    }
-}
-
-/// Reload just the model weights from disk (fresh KV cache).
-/// The tokenizer is kept since it has no mutable state.
-///
-/// The old weights are dropped *before* the new ones are read, so peak
-/// memory stays at one copy of the model instead of two.
-pub fn reload_weights(model: &mut LoadedModel) -> Result<(), String> {
-    info!("Reloading model weights for fresh KV cache");
-    model.weights = None;
-    model.weights = Some(load_weights(
-        &model.chat_template,
-        &model.model_path,
-        &model.device,
-    )?);
-    info!("Model weights reloaded");
-    Ok(())
-}
+/// Tokens fed to the model per decode call while reading the prompt. Also
+/// the granularity of cancellation and progress reports during that phase.
+const PROMPT_BATCH: usize = 256;
+/// Room kept free in the context for template tokens that are not counted
+/// precisely (the generation prompt, an end-of-turn token).
+const CONTEXT_MARGIN: usize = 16;
+/// Extra reply budget when the model reasons before answering, so thinking
+/// does not use up the whole reply.
+const REASONING_BUDGET: u32 = 1024;
+/// After history has to be trimmed, trim down to this share of the budget
+/// rather than to the brim. The next several turns then fit without
+/// trimming again, which keeps the processed-token cache valid.
+const TRIM_TARGET_PERCENT: usize = 70;
 
 /// Why generation ended. Sent to the UI so it can tell a finished answer
 /// from one that was cut short.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StopReason {
-    /// The model emitted its end-of-turn token.
+    /// The model ended its turn.
     Eos,
-    /// The reply hit the max-token limit.
+    /// The reply hit the token limit, or the context window is full.
     Length,
     /// The user pressed stop.
     Cancelled,
-    /// The model started writing the next turn itself.
-    StopSequence,
-    /// A degenerate repetition loop was detected.
+    /// The model fell into an endless loop.
     Repetition,
-    /// The model's confidence collapsed for several tokens in a row.
-    LowConfidence,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data")]
 pub enum InferenceEvent {
+    /// The conversation is being read. Sent before the first word when
+    /// there is enough new text for the wait to be noticeable.
+    PromptProgress { processed: usize, total: usize },
+    /// A piece of the model's reasoning (shown collapsed).
+    ReasoningGenerated { token: String },
+    /// A piece of the answer.
     TokenGenerated { token: String, tokens_per_second: f32 },
-    GenerationComplete { total_tokens: usize, duration_ms: u64, stop_reason: StopReason },
+    GenerationComplete {
+        total_tokens: usize,
+        duration_ms: u64,
+        stop_reason: StopReason,
+        /// Size of the prompt, and how much of it was already cached.
+        prompt_tokens: usize,
+        cached_tokens: usize,
+        /// Time spent reading the prompt before the first token.
+        prompt_ms: u64,
+    },
     ContextTrimmed { pairs_dropped: usize },
     Error { message: String },
+}
+
+/// Figures from one generation, for the speed test and the logs.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct GenerationStats {
+    pub prompt_tokens: usize,
+    pub cached_tokens: usize,
+    pub prompt_ms: u64,
+    pub generated_tokens: usize,
+    pub generation_ms: u64,
+}
+
+pub struct GenerationRequest {
+    pub system_prompt: String,
+    /// Earlier (user, assistant) exchanges, oldest first.
+    pub history: Vec<(String, String)>,
+    pub user_message: String,
+    /// Text the assistant already produced for this turn; generation
+    /// continues it instead of starting a new reply.
+    pub assistant_prefix: Option<String>,
+    pub max_tokens: u32,
+    pub temperature: f32,
+    pub top_p: f32,
+    /// Ask the model to reason first. Ignored by models that cannot.
+    pub enable_thinking: bool,
+}
+
+pub struct LoadOptions {
+    /// Context window to allocate, in tokens.
+    pub context_length: u32,
+    pub threads: u32,
+}
+
+/// The model plus the context created from it.
+struct Session {
+    // Field order matters: fields drop in declaration order, and the context
+    // must be freed before the model it points into.
+    ctx: LlamaContext<'static>,
+    model: Box<LlamaModel>,
+}
+
+/// Remembers how much history was cut for the current conversation, so the
+/// same cut is applied on the next turn. Re-deciding from scratch each time
+/// would move the cut point and force the whole prompt to be re-read.
+struct TrimState {
+    conversation: u64,
+    dropped: usize,
+}
+
+pub struct LoadedModel {
+    pub id: String,
+    pub name: String,
+    pub context_length: usize,
+    pub threads: u32,
+    session: Session,
+    template: ChatTemplate,
+    sampling: SamplingDefaults,
+    /// Exactly the tokens the context currently holds, in order.
+    cached: Vec<LlamaToken>,
+    trim: Option<TrimState>,
+}
+
+/// llama.cpp writes its log to stderr, which nobody sees on a phone. Forward
+/// warnings and errors to the app log, where a failed model load can be
+/// diagnosed, and drop the (very chatty) informational output.
+unsafe extern "C" fn forward_log(
+    level: llama_cpp_sys_2::ggml_log_level,
+    text: *const c_char,
+    _user_data: *mut c_void,
+) {
+    if text.is_null() {
+        return;
+    }
+    // SAFETY: llama.cpp passes a valid NUL-terminated string that lives for
+    // the duration of this call.
+    let message = unsafe { CStr::from_ptr(text) }.to_string_lossy();
+    let message = message.trim_end();
+    if message.is_empty() {
+        return;
+    }
+    if level == llama_cpp_sys_2::GGML_LOG_LEVEL_ERROR {
+        error!("llama.cpp: {message}");
+    } else if level == llama_cpp_sys_2::GGML_LOG_LEVEL_WARN {
+        warn!("llama.cpp: {message}");
+    }
+}
+
+fn backend() -> Result<&'static LlamaBackend, String> {
+    static BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
+    BACKEND
+        .get_or_init(|| {
+            // SAFETY: `forward_log` is a plain function with static lifetime
+            // and uses no user data.
+            unsafe { llama_cpp_sys_2::llama_log_set(Some(forward_log), std::ptr::null_mut()) };
+            LlamaBackend::init().map_err(|e| format!("Could not start the inference engine: {e}"))
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
+/// Text of a special token such as BOS, or "" when the model has none.
+fn special_token_text(model: &LlamaModel, token: LlamaToken) -> String {
+    let vocab = model.vocab();
+    if token.0 < 0 || token.0 >= vocab.n_tokens() {
+        return String::new();
+    }
+    String::from_utf8_lossy(&vocab.token_to_piece(token, true, None)).into_owned()
 }
 
 pub fn load_model_from_disk(
     model_id: &str,
     name: &str,
     model_path: &Path,
-    tokenizer_path: &Path,
-    chat_template: ChatTemplate,
-    context_length: usize,
+    sampling: SamplingDefaults,
+    options: LoadOptions,
 ) -> Result<LoadedModel, String> {
-    let device = Device::Cpu;
+    let backend = backend()?;
+    let started = Instant::now();
 
-    info!("Loading GGUF model from {:?}", model_path);
-    let weights = load_weights(&chat_template, model_path, &device)?;
-    info!("Model weights loaded");
+    info!("Loading {model_id} from {model_path:?}");
+    // Defaults: memory-mapped file, CPU only.
+    let model_params = LlamaModelParams::default();
+    let model = LlamaModel::load_from_file(backend, model_path, &model_params).map_err(|e| {
+        format!("This model could not be loaded ({e}). The file may be damaged; delete it and download it again.")
+    })?;
+    let model = Box::new(model);
 
-    let tokenizer = Tokenizer::from_file(tokenizer_path)
-        .map_err(|e| format!("Failed to load tokenizer: {}", e))?;
-    info!("Tokenizer loaded");
+    let trained = model.n_ctx_train().max(512);
+    let n_ctx = options.context_length.clamp(512, trained);
+    let threads = options.threads.clamp(1, 32) as i32;
+
+    let ctx_params = LlamaContextParams::default()
+        .with_n_ctx(NonZeroU32::new(n_ctx))
+        .with_n_batch(PROMPT_BATCH as u32)
+        .with_n_threads(threads)
+        .with_n_threads_batch(threads);
+
+    // SAFETY: the context borrows the model. The model lives in a Box whose
+    // heap address never changes, both are owned by the same `Session`, and
+    // `Session` declares `ctx` first so it is dropped before the model.
+    let model_ref: &'static LlamaModel = unsafe { &*(model.as_ref() as *const LlamaModel) };
+    let ctx = model_ref.new_context(backend, ctx_params).map_err(|e| {
+        format!("Not enough memory to start this model ({e}). Close other apps or choose a smaller model.")
+    })?;
+    let context_length = ctx.n_ctx() as usize;
+
+    let vocab = model.vocab();
+    let template_source = model.chat_template(None).ok().and_then(|t| t.to_string().ok());
+    if template_source.is_none() {
+        warn!("{model_id} has no chat template; falling back to ChatML");
+    }
+    let template = ChatTemplate::new(
+        template_source,
+        special_token_text(&model, vocab.bos()),
+        special_token_text(&model, vocab.eos()),
+    );
+
+    info!(
+        "Loaded {model_id} in {} ms: context {context_length} tokens, {threads} threads",
+        started.elapsed().as_millis()
+    );
 
     Ok(LoadedModel {
         id: model_id.to_string(),
         name: name.to_string(),
-        weights: Some(weights),
-        tokenizer,
-        chat_template,
-        device,
         context_length,
-        model_path: model_path.to_path_buf(),
+        threads: threads as u32,
+        session: Session { ctx, model },
+        template,
+        sampling,
+        cached: Vec::new(),
+        trim: None,
     })
 }
 
-pub fn format_prompt(
-    template: &ChatTemplate,
-    system_prompt: &str,
-    messages: &[(String, String)],
-    user_msg: &str,
-) -> String {
-    match template {
-        ChatTemplate::Llama3 => {
-            let mut prompt = String::from("<|begin_of_text|>");
-            if !system_prompt.is_empty() {
-                prompt.push_str(&format!(
-                    "<|start_header_id|>system<|end_header_id|>\n\n{}<|eot_id|>",
-                    system_prompt
-                ));
+/// A cheap, stable fingerprint of a conversation: its first user message.
+fn conversation_key(history: &[(String, String)], user_message: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    history.first().map(|(user, _)| user.as_str()).unwrap_or(user_message).hash(&mut hasher);
+    hasher.finish()
+}
+
+fn common_prefix(a: &[LlamaToken], b: &[LlamaToken]) -> usize {
+    a.iter().zip(b).take_while(|(x, y)| x == y).count()
+}
+
+/// Send filtered reply text to the UI.
+fn deliver(
+    chunks: &mut Vec<Chunk>,
+    generated: usize,
+    started: Instant,
+    emit: &mut dyn FnMut(InferenceEvent),
+) {
+    for chunk in chunks.drain(..) {
+        match chunk {
+            Chunk::Reasoning(token) => emit(InferenceEvent::ReasoningGenerated { token }),
+            Chunk::Answer(token) => {
+                let tokens_per_second =
+                    generated as f32 / started.elapsed().as_secs_f32().max(0.001);
+                emit(InferenceEvent::TokenGenerated { token, tokens_per_second });
             }
-            for (user, assistant) in messages {
-                prompt.push_str(&format!(
-                    "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n{}<|eot_id|>",
-                    user, assistant
-                ));
-            }
-            prompt.push_str(&format!(
-                "<|start_header_id|>user<|end_header_id|>\n\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
-                user_msg
-            ));
-            prompt
-        }
-        ChatTemplate::Gemma => {
-            let mut prompt = String::new();
-            // Gemma doesn't have a system role — prepend system prompt to first user turn
-            if !system_prompt.is_empty() {
-                prompt.push_str(&format!(
-                    "<start_of_turn>user\nSystem: {}<end_of_turn>\n",
-                    system_prompt
-                ));
-            }
-            for (user, assistant) in messages {
-                prompt.push_str(&format!(
-                    "<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n{}<end_of_turn>\n",
-                    user, assistant
-                ));
-            }
-            prompt.push_str(&format!(
-                "<start_of_turn>user\n{}<end_of_turn>\n<start_of_turn>model\n",
-                user_msg
-            ));
-            prompt
-        }
-        ChatTemplate::Phi3 => {
-            let mut prompt = String::new();
-            if !system_prompt.is_empty() {
-                prompt.push_str(&format!("<|system|>\n{}<|end|>\n", system_prompt));
-            }
-            for (user, assistant) in messages {
-                prompt.push_str(&format!(
-                    "<|user|>\n{}<|end|>\n<|assistant|>\n{}<|end|>\n",
-                    user, assistant
-                ));
-            }
-            prompt.push_str(&format!("<|user|>\n{}<|end|>\n<|assistant|>\n", user_msg));
-            prompt
-        }
-        ChatTemplate::SmolLM | ChatTemplate::Qwen => {
-            let mut prompt = String::new();
-            if !system_prompt.is_empty() {
-                prompt.push_str(&format!(
-                    "<|im_start|>system\n{}<|im_end|>\n",
-                    system_prompt
-                ));
-            }
-            for (user, assistant) in messages {
-                prompt.push_str(&format!(
-                    "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n{}<|im_end|>\n",
-                    user, assistant
-                ));
-            }
-            prompt.push_str(&format!(
-                "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
-                user_msg
-            ));
-            prompt
         }
     }
 }
 
-/// Count tokens in a text string using the model's tokenizer.
-pub fn count_tokens(model: &LoadedModel, text: &str) -> Result<usize, String> {
-    let tokens = model
-        .tokenizer
-        .encode(text, true)
-        .map_err(|e| format!("Tokenization failed: {}", e))?;
-    Ok(tokens.get_ids().len())
+struct Prompt {
+    text: String,
+    tokens: Vec<LlamaToken>,
 }
 
-/// Trim history pairs so that the full formatted prompt fits within the context budget.
-/// Returns the trimmed history (newest pairs preserved) and the number of pairs dropped.
-pub fn trim_history_to_fit(
-    model: &LoadedModel,
-    system_prompt: &str,
-    history: &[(String, String)],
-    user_msg: &str,
-    max_tokens: u32,
-) -> Result<(Vec<(String, String)>, usize), String> {
-    let safety_margin: usize = 32; // Buffer for special tokens and template overhead
-    let budget = model
-        .context_length
-        .saturating_sub(max_tokens as usize)
-        .saturating_sub(safety_margin);
+impl LoadedModel {
+    /// Whether this model can be asked to reason before answering.
+    pub fn supports_thinking_switch(&self) -> bool {
+        self.template.supports_thinking_switch()
+    }
 
-    let mut included: Vec<(String, String)> = history.to_vec();
-
-    loop {
-        let formatted = format_prompt(&model.chat_template, system_prompt, &included, user_msg);
-        let token_count = count_tokens(model, &formatted)?;
-
-        if token_count <= budget {
-            let dropped = history.len() - included.len();
-            if dropped > 0 {
-                info!(
-                    "Context management: dropped {} oldest pairs, using {}/{} tokens (budget={})",
-                    dropped, token_count, model.context_length, budget
-                );
-            }
-            return Ok((included, dropped));
+    fn render(
+        &self,
+        request: &GenerationRequest,
+        history: &[(String, String)],
+    ) -> Result<String, String> {
+        let system = request.system_prompt.trim();
+        let mut messages = Vec::with_capacity(history.len() * 2 + 2);
+        if !system.is_empty() {
+            messages.push(ChatMessage::system(system));
         }
+        for (user, assistant) in history {
+            messages.push(ChatMessage::user(user.as_str()));
+            messages.push(ChatMessage::assistant(assistant.as_str()));
+        }
+        messages.push(ChatMessage::user(request.user_message.as_str()));
 
-        // Remove oldest pair
-        if included.is_empty() {
-            // Even without history, prompt is too long — let run_generation handle raw truncation
+        let rendered = match self.template.render(&messages, request.enable_thinking) {
+            Ok(text) => text,
+            // A few templates reject a system role outright. Fold the
+            // instructions into the first user turn and try again.
+            Err(first_error) if !system.is_empty() => {
+                let mut merged = messages[1..].to_vec();
+                merged[0].content = format!("{system}\n\n{}", merged[0].content);
+                self.template
+                    .render(&merged, request.enable_thinking)
+                    .map_err(|_| first_error)?
+            }
+            Err(e) => return Err(e),
+        };
+
+        Ok(match request.assistant_prefix.as_deref() {
+            Some(prefix) => rendered + prefix,
+            None => rendered,
+        })
+    }
+
+    fn tokenize(&self, text: &str) -> Vec<LlamaToken> {
+        // Templates usually write the BOS token themselves. Only let the
+        // tokenizer add one when the text does not already start with it —
+        // a doubled BOS measurably degrades answers.
+        let bos = self.template.bos_token();
+        let add_special = bos.is_empty() || !text.starts_with(bos);
+        self.session.model.vocab().tokenize(text.as_bytes(), add_special, true)
+    }
+
+    fn prompt_for(
+        &self,
+        request: &GenerationRequest,
+        history: &[(String, String)],
+    ) -> Result<Prompt, String> {
+        let text = self.render(request, history)?;
+        let tokens = self.tokenize(&text);
+        Ok(Prompt { text, tokens })
+    }
+
+    /// Build the prompt, dropping the oldest exchanges if the conversation
+    /// no longer fits. Returns the prompt and how many exchanges were cut.
+    fn fit_prompt(
+        &mut self,
+        request: &GenerationRequest,
+        max_tokens: usize,
+    ) -> Result<(Prompt, usize), String> {
+        let budget = self.context_length.saturating_sub(max_tokens + CONTEXT_MARGIN);
+        let key = conversation_key(&request.history, &request.user_message);
+
+        // Start from the cut made on an earlier turn of this conversation.
+        let mut dropped = match &self.trim {
+            Some(state) if state.conversation == key => state.dropped.min(request.history.len()),
+            _ => 0,
+        };
+
+        let mut prompt = self.prompt_for(request, &request.history[dropped..])?;
+        if prompt.tokens.len() > budget {
+            let target = budget * TRIM_TARGET_PERCENT / 100;
+            while prompt.tokens.len() > target && dropped < request.history.len() {
+                dropped += 1;
+                prompt = self.prompt_for(request, &request.history[dropped..])?;
+            }
+            // Cutting to the lower target was a courtesy to the cache; what
+            // must hold is the budget itself.
+            if prompt.tokens.len() > budget {
+                return Err(format!(
+                    "That message is too long for this model: it is about {} tokens and {} fit. Shorten it or split it into parts.",
+                    prompt.tokens.len(),
+                    budget
+                ));
+            }
             info!(
-                "Context management: all history dropped, prompt still {} tokens (budget={})",
-                count_tokens(model, &format_prompt(&model.chat_template, system_prompt, &[], user_msg))
-                    .unwrap_or(0),
-                budget
+                "Context trimmed: dropped {dropped} of {} exchanges, prompt is {} of {} tokens",
+                request.history.len(),
+                prompt.tokens.len(),
+                self.context_length
             );
-            return Ok((vec![], history.len()));
-        }
-        included.remove(0);
-    }
-}
-
-/// Chat-template control tokens. If one of these shows up in the decoded
-/// text the model has finished its turn (or is starting the next one).
-const TEMPLATE_STOP_TOKENS: &[&str] = &[
-    "<|im_start|>",
-    "<|im_end|>",
-    "<start_of_turn>",
-    "<end_of_turn>",
-    "<|eot_id|>",
-    "<|start_header_id|>",
-    "<|end|>",
-    "<|user|>",
-    "<|system|>",
-    "<|assistant|>",
-    "<|endoftext|>",
-];
-
-/// Role labels a model writes when it starts talking to itself. These are
-/// only treated as a stop when they begin a line: "user:" in the middle of a
-/// sentence, a YAML key, or a line of code is ordinary output.
-const ROLE_LABEL_STOPS: &[&str] = &["User:", "Human:"];
-
-/// True if the generated text shows the model starting a new turn.
-fn contains_stop_sequence(generated: &str) -> bool {
-    if TEMPLATE_STOP_TOKENS.iter().any(|stop| generated.contains(stop)) {
-        return true;
-    }
-    generated
-        .lines()
-        .any(|line| ROLE_LABEL_STOPS.iter().any(|label| line.starts_with(label)))
-}
-
-/// Detect degenerate n-gram repetition loops.
-/// Returns true if the same `n`-gram of tokens appears `max_repeats` or more times
-/// in the last portion of generated tokens. This catches the "death spiral" where
-/// the model endlessly repeats phrases like "haha haha haha" or emoji sequences.
-fn has_repeated_ngram(tokens: &[u32], n: usize, max_repeats: usize) -> bool {
-    // Need at least enough tokens to contain the pattern repeated max_repeats times
-    if tokens.len() < n * max_repeats {
-        return false;
-    }
-    // Only scan the recent window to keep this fast
-    let scan_len = (n * (max_repeats + 2) * 2).min(tokens.len());
-    let recent = &tokens[tokens.len() - scan_len..];
-    if recent.len() < n {
-        return false;
-    }
-    // The target n-gram is the most recently generated one
-    let target = &recent[recent.len() - n..];
-    let count = recent.windows(n).filter(|w| *w == target).count();
-    count >= max_repeats
-}
-
-/// One forward pass. Takes the weights and device separately (rather than the
-/// whole model) so the caller can keep borrowing the tokenizer meanwhile.
-fn forward(
-    weights: &mut Option<ModelWeights>,
-    device: &Device,
-    tokens: &[u32],
-    index_pos: usize,
-) -> Result<Tensor, String> {
-    let input = Tensor::new(tokens, device)
-        .map_err(|e| format!("Tensor error: {}", e))?
-        .unsqueeze(0)
-        .map_err(|e| format!("Unsqueeze error: {}", e))?;
-    weights
-        .as_mut()
-        .ok_or_else(|| "Model weights are not loaded".to_string())?
-        .forward(&input, index_pos)
-        .map_err(|e| format!("Forward pass error: {}", e))
-}
-
-pub fn run_generation(
-    model: &mut LoadedModel,
-    prompt: &str,
-    max_tokens: u32,
-    sampler: &mut LogitsSampler,
-    channel: &Channel<InferenceEvent>,
-    cancel_token: &CancellationToken,
-) -> Result<(), String> {
-    // Reload weights to guarantee a fresh KV cache.
-    // Candle 0.9.2's quantized models accumulate KV cache entries across calls,
-    // and the pos=0 reset is unreliable with reused model instances.
-    // This takes ~1-3s but prevents "cannot broadcast [X] to [Y]" errors.
-    reload_weights(model)?;
-
-    let tokens = model
-        .tokenizer
-        .encode(prompt, true)
-        .map_err(|e| format!("Tokenization failed: {}", e))?;
-    let mut prompt_tokens = tokens.get_ids().to_vec();
-
-    // Truncate prompt to fit within context window: prompt + max_tokens must not exceed it.
-    let max_prompt_len = model.context_length.saturating_sub(max_tokens as usize).max(1);
-    if prompt_tokens.len() > max_prompt_len {
-        info!(
-            "Truncating prompt from {} to {} tokens (context_length={}, max_tokens={})",
-            prompt_tokens.len(), max_prompt_len, model.context_length, max_tokens
-        );
-        let start = prompt_tokens.len() - max_prompt_len;
-        prompt_tokens = prompt_tokens[start..].to_vec();
-    }
-    if prompt_tokens.is_empty() {
-        return Err("Prompt is empty after tokenization".to_string());
-    }
-    let prompt_len = prompt_tokens.len();
-
-    // The sampler only ever sees generated tokens for the repetition penalty,
-    // never the prompt.
-    let mut generated_tokens: Vec<u32> = Vec::with_capacity(max_tokens as usize);
-
-    let eos_token = model
-        .tokenizer
-        .token_to_id("<|eot_id|>")
-        .or_else(|| model.tokenizer.token_to_id("</s>"))
-        .or_else(|| model.tokenizer.token_to_id("<end_of_turn>"))
-        .or_else(|| model.tokenizer.token_to_id("<|end|>"))
-        .or_else(|| model.tokenizer.token_to_id("<|endoftext|>"))
-        .or_else(|| model.tokenizer.token_to_id("<|im_end|>"));
-
-    let start = Instant::now();
-    let mut generated_text = String::new();
-
-    // Process the entire prompt in one forward pass at position 0.
-    let mut logits = forward(&mut model.weights, &model.device, prompt_tokens.as_slice(), 0)?;
-
-    // Use DecodeStream for incremental decoding instead of decoding each token
-    // in isolation. Single-token decode loses leading spaces because
-    // BPE/SentencePiece tokenizers encode spaces as part of the token.
-    // DecodeStream keeps state so multi-byte sequences and space prefixes are
-    // handled correctly across successive .step() calls.
-    let mut decode_stream = model.tokenizer.decode_stream(false);
-
-    // Minimum confidence threshold — if the model's top probability drops below this
-    // for several consecutive tokens, it has nothing useful left to say.
-    const LOW_CONFIDENCE_THRESHOLD: f32 = 0.05;
-    const LOW_CONFIDENCE_STREAK_LIMIT: usize = 4;
-    let mut low_confidence_streak: usize = 0;
-
-    let mut stop_reason = StopReason::Length;
-
-    // First token: nothing generated yet, so the penalty has nothing to penalise.
-    let (mut next_token, _) = sampler.sample(&logits, &generated_tokens)?;
-
-    loop {
-        // End-of-turn: stop before emitting the control token as text.
-        if eos_token == Some(next_token) {
-            stop_reason = StopReason::Eos;
-            break;
         }
 
-        generated_tokens.push(next_token);
+        self.trim = Some(TrimState { conversation: key, dropped });
+        Ok((prompt, dropped))
+    }
 
-        if let Some(text) = decode_stream
-            .step(next_token)
-            .map_err(|e| format!("Decode error: {}", e))?
-        {
-            generated_text.push_str(&text);
-            let tps = generated_tokens.len() as f32 / start.elapsed().as_secs_f32().max(0.001);
-            let _ = channel.send(InferenceEvent::TokenGenerated {
-                token: text,
-                tokens_per_second: tps,
+    fn sampler(&self, request: &GenerationRequest) -> LlamaSampler {
+        let s = self.sampling;
+        let mut chain = Vec::new();
+        if (s.repeat_penalty - 1.0).abs() > f32::EPSILON {
+            chain.push(LlamaSampler::penalties(
+                self.session.model.n_vocab(),
+                64,
+                s.repeat_penalty,
+                0.0,
+                0.0,
+            ));
+        }
+        if request.temperature <= 0.0 {
+            chain.push(LlamaSampler::greedy());
+            return LlamaSampler::chain_simple(chain);
+        }
+        if s.top_k > 0 {
+            chain.push(LlamaSampler::top_k(s.top_k));
+        }
+        if request.top_p < 1.0 {
+            chain.push(LlamaSampler::top_p(request.top_p, 1));
+        }
+        if s.min_p > 0.0 {
+            chain.push(LlamaSampler::min_p(s.min_p, 1));
+        }
+        chain.push(LlamaSampler::temp(request.temperature));
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() ^ (d.as_secs() as u32))
+            .unwrap_or(0x5eed);
+        chain.push(LlamaSampler::dist(seed));
+        LlamaSampler::chain_simple(chain)
+    }
+
+    /// Forget everything the context has processed.
+    fn reset_context(&mut self) {
+        self.session.ctx.clear_kv_cache();
+        self.cached.clear();
+    }
+
+    /// Bring the context to hold exactly `tokens`, re-using whatever prefix
+    /// it has already processed. Returns how many tokens were re-used, or
+    /// `None` if the user cancelled part-way.
+    fn ingest(
+        &mut self,
+        tokens: &[LlamaToken],
+        emit: &mut dyn FnMut(InferenceEvent),
+        cancel: &CancellationToken,
+    ) -> Result<Option<usize>, String> {
+        // Always decode at least the final token: sampling needs its logits.
+        let mut reused = common_prefix(&self.cached, tokens).min(tokens.len() - 1);
+
+        if reused < self.cached.len() {
+            // Drop everything after the shared prefix. Models with recurrent
+            // state cannot rewind part-way; they start over instead.
+            let removed = self.session.ctx.kv_cache_seq_rm(0, Some(reused as u32), None);
+            if removed.is_err() {
+                self.reset_context();
+                reused = 0;
+            } else {
+                self.cached.truncate(reused);
+            }
+        }
+
+        let total = tokens.len() - reused;
+        let report_progress = total > PROMPT_BATCH;
+        let mut batch = LlamaBatch::new(PROMPT_BATCH, 1);
+        let mut done = 0;
+
+        for chunk in tokens[reused..].chunks(PROMPT_BATCH) {
+            if cancel.is_cancelled() {
+                return Ok(None);
+            }
+            batch.clear();
+            for (i, token) in chunk.iter().enumerate() {
+                let position = (self.cached.len() + i) as i32;
+                let is_last = done + i + 1 == total;
+                batch
+                    .add(*token, position, &[0], is_last)
+                    .map_err(|e| format!("Could not queue the prompt: {e}"))?;
+            }
+            if let Err(e) = self.session.ctx.decode(&mut batch) {
+                // The context may hold part of the batch; start clean next time.
+                self.reset_context();
+                return Err(format!("The model failed while reading the conversation: {e}"));
+            }
+            self.cached.extend_from_slice(chunk);
+            done += chunk.len();
+            if report_progress {
+                emit(InferenceEvent::PromptProgress { processed: done, total });
+            }
+        }
+
+        Ok(Some(reused))
+    }
+
+    /// Generate a reply, streaming it through `emit`.
+    pub fn generate(
+        &mut self,
+        request: &GenerationRequest,
+        emit: &mut dyn FnMut(InferenceEvent),
+        cancel: &CancellationToken,
+    ) -> Result<GenerationStats, String> {
+        let mut max_tokens = request.max_tokens.max(16);
+        if request.enable_thinking && self.supports_thinking_switch() {
+            max_tokens += REASONING_BUDGET;
+        }
+        // Never let the reply budget swallow the whole context window.
+        let max_tokens = (max_tokens as usize).min(self.context_length / 2);
+
+        let (prompt, dropped) = self.fit_prompt(request, max_tokens)?;
+        if dropped > 0 {
+            emit(InferenceEvent::ContextTrimmed { pairs_dropped: dropped });
+        }
+        if prompt.tokens.is_empty() {
+            return Err("The prompt is empty.".to_string());
+        }
+
+        let prompt_started = Instant::now();
+        let mut stats = GenerationStats { prompt_tokens: prompt.tokens.len(), ..Default::default() };
+
+        let Some(reused) = self.ingest(&prompt.tokens, emit, cancel)? else {
+            emit(InferenceEvent::GenerationComplete {
+                total_tokens: 0,
+                duration_ms: 0,
+                stop_reason: StopReason::Cancelled,
+                prompt_tokens: stats.prompt_tokens,
+                cached_tokens: 0,
+                prompt_ms: prompt_started.elapsed().as_millis() as u64,
             });
-        }
+            return Ok(stats);
+        };
+        stats.cached_tokens = reused;
+        stats.prompt_ms = prompt_started.elapsed().as_millis() as u64;
 
-        // Model trying to start a new turn.
-        if contains_stop_sequence(&generated_text) {
-            stop_reason = StopReason::StopSequence;
-            break;
-        }
+        let mut sampler = self.sampler(request);
+        let mut batch = LlamaBatch::new(1, 1);
+        let mut assembler = Utf8Assembler::default();
+        let mut filter = ReplyFilter::new(stream::prompt_opens_reasoning(&prompt.text));
+        let mut chunks: Vec<Chunk> = Vec::new();
+        let mut generated: Vec<i32> = Vec::with_capacity(max_tokens);
+        let mut answer_tokens = 0usize;
+        let started = Instant::now();
 
-        // N-gram repetition detection — catches degenerate loops that penalties miss.
-        if generated_tokens.len() >= 12
-            && (has_repeated_ngram(&generated_tokens, 4, 3)
-                || has_repeated_ngram(&generated_tokens, 3, 4)
-                || has_repeated_ngram(&generated_tokens, 2, 5))
-        {
-            info!(
-                "Stopping: n-gram repetition loop detected after {} tokens",
-                generated_tokens.len()
-            );
-            stop_reason = StopReason::Repetition;
-            break;
-        }
-
-        if generated_tokens.len() >= max_tokens as usize {
-            break;
-        }
-
-        if cancel_token.is_cancelled() {
-            stop_reason = StopReason::Cancelled;
-            break;
-        }
-
-        // The n-th generated token (0-based) sits at position prompt_len + n.
-        let index_pos = prompt_len + generated_tokens.len() - 1;
-        logits = forward(&mut model.weights, &model.device, &[next_token], index_pos)?;
-
-        let (sampled_token, confidence) = sampler.sample(&logits, &generated_tokens)?;
-
-        // Early low-confidence stopping: if the model's top probability is very low
-        // for several tokens in a row, it's lost and generating noise. Stop early.
-        if confidence < LOW_CONFIDENCE_THRESHOLD {
-            low_confidence_streak += 1;
-            if low_confidence_streak >= LOW_CONFIDENCE_STREAK_LIMIT {
-                info!(
-                    "Stopping: low confidence ({:.3}) for {} consecutive tokens",
-                    confidence, low_confidence_streak
-                );
-                stop_reason = StopReason::LowConfidence;
-                break;
+        let stop_reason = loop {
+            let token = sampler.sample(&self.session.ctx, -1);
+            let vocab = self.session.model.vocab();
+            if vocab.is_eog(token) {
+                break StopReason::Eos;
             }
-        } else {
-            low_confidence_streak = 0;
-        }
+            generated.push(token.0);
 
-        next_token = sampled_token;
+            // Control tokens are template plumbing and never shown — except
+            // the reasoning tags, which the filter needs to see.
+            let piece = vocab.token_to_piece(token, true, None);
+            let hidden = vocab.is_control(token)
+                && !stream::is_reasoning_marker(&String::from_utf8_lossy(&piece));
+            if !hidden {
+                let text = assembler.push(&piece);
+                if !text.is_empty() {
+                    filter.push(&text, &mut chunks);
+                    answer_tokens += 1;
+                    deliver(&mut chunks, generated.len(), started, &mut *emit);
+                }
+            }
+
+            if generated.len() >= max_tokens || self.cached.len() >= self.context_length {
+                break StopReason::Length;
+            }
+            if cancel.is_cancelled() {
+                break StopReason::Cancelled;
+            }
+            if generated.len() % 32 == 0 && stream::is_stuck(&generated) {
+                info!("Stopping: the model is looping after {} tokens", generated.len());
+                break StopReason::Repetition;
+            }
+
+            batch.clear();
+            batch
+                .add(token, self.cached.len() as i32, &[0], true)
+                .map_err(|e| format!("Could not queue a token: {e}"))?;
+            if let Err(e) = self.session.ctx.decode(&mut batch) {
+                self.reset_context();
+                return Err(format!("The model failed while writing: {e}"));
+            }
+            self.cached.push(token);
+        };
+
+        assembler.reset();
+        filter.finish(&mut chunks);
+        deliver(&mut chunks, generated.len(), started, &mut *emit);
+
+        stats.generated_tokens = generated.len();
+        stats.generation_ms = started.elapsed().as_millis() as u64;
+        info!(
+            "Reply: {} tokens ({answer_tokens} shown) in {} ms; prompt {} tokens, {} cached, read in {} ms; stop {:?}",
+            stats.generated_tokens,
+            stats.generation_ms,
+            stats.prompt_tokens,
+            stats.cached_tokens,
+            stats.prompt_ms,
+            stop_reason
+        );
+
+        emit(InferenceEvent::GenerationComplete {
+            total_tokens: stats.generated_tokens,
+            duration_ms: stats.generation_ms,
+            stop_reason,
+            prompt_tokens: stats.prompt_tokens,
+            cached_tokens: stats.cached_tokens,
+            prompt_ms: stats.prompt_ms,
+        });
+        Ok(stats)
     }
-
-    let _ = channel.send(InferenceEvent::GenerationComplete {
-        total_tokens: generated_tokens.len(),
-        duration_ms: start.elapsed().as_millis() as u64,
-        stop_reason,
-    });
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -524,25 +615,163 @@ mod tests {
     use super::*;
 
     #[test]
-    fn template_tokens_stop() {
-        assert!(contains_stop_sequence("Sure.<|im_end|>"));
-        assert!(contains_stop_sequence("Done<|eot_id|>"));
+    fn conversations_are_keyed_by_their_first_message() {
+        let first = vec![("hello".to_string(), "hi".to_string())];
+        let longer = vec![
+            ("hello".to_string(), "hi".to_string()),
+            ("more".to_string(), "sure".to_string()),
+        ];
+        assert_eq!(conversation_key(&first, "x"), conversation_key(&longer, "y"));
+        assert_ne!(conversation_key(&first, "x"), conversation_key(&[], "x"));
+        // A brand-new chat is keyed by the message being sent, which becomes
+        // the first history entry on the next turn.
+        assert_eq!(conversation_key(&[], "hello"), conversation_key(&first, "next"));
+    }
+
+    /// Collects what a generation streamed.
+    #[derive(Default)]
+    struct Transcript {
+        answer: String,
+        reasoning: String,
+        stop: Option<StopReason>,
+    }
+
+    fn run(model: &mut LoadedModel, request: &GenerationRequest) -> (Transcript, GenerationStats) {
+        let cancel = CancellationToken::new();
+        let mut transcript = Transcript::default();
+        let stats = model
+            .generate(
+                request,
+                &mut |event: InferenceEvent| match event {
+                    InferenceEvent::TokenGenerated { token, .. } => transcript.answer.push_str(&token),
+                    InferenceEvent::ReasoningGenerated { token } => {
+                        transcript.reasoning.push_str(&token)
+                    }
+                    InferenceEvent::GenerationComplete { stop_reason, .. } => {
+                        transcript.stop = Some(stop_reason)
+                    }
+                    _ => {}
+                },
+                &cancel,
+            )
+            .expect("generation failed");
+        (transcript, stats)
+    }
+
+    /// End-to-end check against a real GGUF: load, answer, follow up, think,
+    /// cancel. Skipped unless `NEURIX_TEST_MODEL` points at a model file; CI
+    /// downloads small ones and runs this with `--ignored --nocapture`.
+    #[test]
+    #[ignore = "needs a model file: set NEURIX_TEST_MODEL"]
+    fn real_model_end_to_end() {
+        let path = std::env::var("NEURIX_TEST_MODEL").expect("NEURIX_TEST_MODEL is not set");
+        let sampling = SamplingDefaults { top_k: 40, min_p: 0.05, repeat_penalty: 1.0 };
+        let options = LoadOptions { context_length: 2048, threads: 2 };
+        let mut model = load_model_from_disk("test", "Test", Path::new(&path), sampling, options)
+            .expect("model failed to load");
+        println!(
+            "context {} tokens, thinking switch: {}",
+            model.context_length,
+            model.supports_thinking_switch()
+        );
+
+        let mut request = GenerationRequest {
+            system_prompt: "You are a helpful assistant. Answer in one short sentence.".into(),
+            history: Vec::new(),
+            user_message: "What is the capital of France?".into(),
+            assistant_prefix: None,
+            max_tokens: 64,
+            // Greedy, so the run is repeatable.
+            temperature: 0.0,
+            top_p: 1.0,
+            enable_thinking: false,
+        };
+
+        // First turn: nothing cached, a clean answer.
+        let (first, stats) = run(&mut model, &request);
+        println!("Q1 -> {:?} | reasoning {:?} | {stats:?}", first.answer, first.reasoning);
+        assert_eq!(stats.cached_tokens, 0);
+        assert!(first.answer.to_lowercase().contains("paris"), "answer: {:?}", first.answer);
+        for leak in ["<|", "|>", "<think>", "</think>", "<start_of_turn>", "<end_of_turn>"] {
+            assert!(!first.answer.contains(leak), "template token leaked: {:?}", first.answer);
+        }
+        assert_ne!(first.stop, Some(StopReason::Repetition));
+
+        // Second turn: the first exchange must come from the cache.
+        request.history.push((request.user_message.clone(), first.answer.clone()));
+        request.user_message = "And what is the capital of Italy?".into();
+        let (second, stats2) = run(&mut model, &request);
+        println!("Q2 -> {:?} | {stats2:?}", second.answer);
+        assert!(second.answer.to_lowercase().contains("rome"), "answer: {:?}", second.answer);
+        assert!(
+            stats2.cached_tokens * 2 > stats.prompt_tokens,
+            "follow-up re-read the conversation: {stats2:?} after {stats:?}"
+        );
+
+        // Continuing a reply appends to it rather than starting over.
+        request.assistant_prefix = Some("The capital of Italy is".into());
+        let (continued, _) = run(&mut model, &request);
+        println!("continue -> {:?}", continued.answer);
+        assert!(continued.answer.to_lowercase().contains("rome"), "answer: {:?}", continued.answer);
+        request.assistant_prefix = None;
+
+        // Reasoning, where the model can be asked for it.
+        if model.supports_thinking_switch() {
+            request.enable_thinking = true;
+            request.max_tokens = 256;
+            let (thought, _) = run(&mut model, &request);
+            println!("thinking -> reasoning {:?} | answer {:?}", thought.reasoning, thought.answer);
+            assert!(!thought.answer.contains("</think>"), "answer: {:?}", thought.answer);
+            assert!(!thought.answer.contains("<channel|>"), "answer: {:?}", thought.answer);
+            request.enable_thinking = false;
+        }
+
+        // A message that cannot fit is refused with an explanation.
+        let mut huge = GenerationRequest {
+            system_prompt: String::new(),
+            history: Vec::new(),
+            user_message: "word ".repeat(6000),
+            assistant_prefix: None,
+            max_tokens: 64,
+            temperature: 0.0,
+            top_p: 1.0,
+            enable_thinking: false,
+        };
+        let cancel = CancellationToken::new();
+        let refused = model.generate(&huge, &mut |_: InferenceEvent| {}, &cancel).unwrap_err();
+        assert!(refused.contains("too long"), "{refused}");
+
+        // Cancelling before the prompt is read stops cleanly, and the model
+        // still works afterwards.
+        huge.user_message = "Tell me about mountains. ".repeat(60);
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let mut stop = None;
+        model
+            .generate(
+                &huge,
+                &mut |event: InferenceEvent| {
+                    if let InferenceEvent::GenerationComplete { stop_reason, .. } = event {
+                        stop = Some(stop_reason);
+                    }
+                },
+                &cancelled,
+            )
+            .expect("cancelled generation returned an error");
+        assert_eq!(stop, Some(StopReason::Cancelled));
+
+        request.history.clear();
+        request.user_message = "Reply with the single word: ready".into();
+        let (after, _) = run(&mut model, &request);
+        println!("after cancel -> {:?}", after.answer);
+        assert!(!after.answer.trim().is_empty());
     }
 
     #[test]
-    fn role_labels_stop_only_at_line_start() {
-        assert!(contains_stop_sequence("Hello there.\nUser: next question"));
-        assert!(contains_stop_sequence("Human: hi"));
-        assert!(!contains_stop_sequence("Ask the user: what do they need?"));
-        assert!(!contains_stop_sequence("db:\n  user: admin\n  port: 5432"));
-        assert!(!contains_stop_sequence("    User: indented example"));
-    }
-
-    #[test]
-    fn repetition_is_detected() {
-        let looping = [1, 2, 3, 4, 7, 8, 7, 8, 7, 8, 7, 8, 7, 8];
-        assert!(has_repeated_ngram(&looping, 2, 5));
-        let varied = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-        assert!(!has_repeated_ngram(&varied, 2, 5));
+    fn shared_prefix_is_measured_in_tokens() {
+        let t = |ids: &[i32]| ids.iter().map(|i| LlamaToken(*i)).collect::<Vec<_>>();
+        assert_eq!(common_prefix(&t(&[1, 2, 3]), &t(&[1, 2, 4, 5])), 2);
+        assert_eq!(common_prefix(&t(&[]), &t(&[1])), 0);
+        assert_eq!(common_prefix(&t(&[1, 2]), &t(&[1, 2])), 2);
     }
 }

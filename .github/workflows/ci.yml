@@ -1,21 +1,68 @@
 name: CI
 
-# Runs on every push and every pull request to main.
-# Catches type errors, lint violations, failing tests and Rust issues early.
+# Runs on every pull request and every push to main.
+#
+#   frontend  lint, unit tests, type check and bundle
+#   engine    Rust tests + clippy on Windows, then the inference engine is run
+#             end to end against real (small) models
+#   android   a full APK build, attached to the run for on-device testing
+#
+# Nothing here needs a developer machine: llama.cpp is compiled, and the
+# models are run, on the GitHub runners.
 
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'website/**'
+      - '.github/workflows/site.yml'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - 'website/**'
+      - '.github/workflows/site.yml'
+  workflow_dispatch:
+
+# A newer push to the same branch replaces a run that is still going.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  check:
-    name: Lint, test, build + Rust checks
-    runs-on: windows-latest
+  frontend:
+    name: Frontend (lint, tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Type check and bundle
+        run: npm run build
+
+  engine:
+    name: Engine (Rust tests + real-model run)
+    runs-on: windows-latest
+    env:
+      # bindgen generates the llama.cpp bindings with libclang, which ships
+      # with the LLVM install on the runner.
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,28 +83,58 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Lint frontend
-        run: npm run lint
-
-      - name: Unit tests
-        run: npm test
-
-      - name: Type check frontend (tsc + vite build)
-        run: npm run build
-
-      - name: Check Rust compilation
-        working-directory: src-tauri
-        run: cargo check
+      # Tauri embeds the web bundle at compile time, so it has to exist
+      # before any cargo command runs.
+      - name: Build the web bundle
+        run: |
+          npm ci
+          npm run build
 
       - name: Rust tests
         working-directory: src-tauri
         run: cargo test
 
-      # Reports lints without failing the build. Tighten to `-D warnings`
-      # once the existing warnings have been cleared.
+      # Reports lints without failing the build.
       - name: Clippy
         working-directory: src-tauri
         run: cargo clippy
+
+      - name: Cache test models
+        uses: actions/cache@v4
+        with:
+          path: test-models
+          key: test-models-qwen35-0.8b-q4km-lfm25-1.2b-q4km
+
+      # Two small models from different families: a standard transformer
+      # (Qwen) and a hybrid architecture (LFM), which exercises the path
+      # where the context cannot be rewound part-way.
+      - name: Download test models
+        shell: bash
+        run: |
+          mkdir -p test-models
+          fetch() {
+            if [ ! -f "test-models/$2" ]; then
+              curl --location --fail --retry 3 --silent --show-error \
+                --output "test-models/$2" "https://huggingface.co/$1/resolve/main/$2"
+            fi
+          }
+          fetch unsloth/Qwen3.5-0.8B-GGUF Qwen3.5-0.8B-Q4_K_M.gguf
+          fetch LiquidAI/LFM2.5-1.2B-Instruct-GGUF LFM2.5-1.2B-Instruct-Q4_K_M.gguf
+          ls -lh test-models
+
+      - name: Engine end to end (Qwen 3.5 0.8B)
+        working-directory: src-tauri
+        env:
+          NEURIX_TEST_MODEL: ../test-models/Qwen3.5-0.8B-Q4_K_M.gguf
+        run: cargo test real_model_end_to_end -- --ignored --nocapture
+
+      - name: Engine end to end (LFM 2.5 1.2B)
+        working-directory: src-tauri
+        env:
+          NEURIX_TEST_MODEL: ../test-models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf
+        run: cargo test real_model_end_to_end -- --ignored --nocapture
+
+  android:
+    name: Android
+    uses: ./.github/workflows/android.yml
+    secrets: inherit

@@ -31,9 +31,14 @@ const MAX_CHAR_SYSTEM_PROMPT: usize = 8192;
 const MAX_CHAR_GREETING: usize = 500;
 const MAX_CHAR_STARTERS: usize = 8;
 const MAX_CHAR_STARTER_LEN: usize = 200;
-/// Longest reply a character may request. Every catalog model has at least a
-/// 4096-token context, so this always leaves half of it for the prompt.
+/// Longest reply a character may request. The engine additionally caps a
+/// reply at half the context window, so the prompt always has room.
 pub const MAX_REPLY_TOKENS: u32 = 2048;
+/// Bounds for a hand-picked context window. The floor keeps room for a
+/// system prompt and a reply; the ceiling keeps memory use sane.
+const MIN_CONTEXT_SIZE: u32 = 2048;
+const MAX_CONTEXT_SIZE: u32 = 32_768;
+const MAX_THREADS: u32 = 16;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
@@ -53,6 +58,10 @@ pub struct Settings {
     pub last_model_id: Option<String>,
     pub active_character_id: Option<String>,
     pub custom_characters: Vec<Character>,
+    /// Context window in tokens; 0 picks one from the model and device RAM.
+    pub context_size: u32,
+    /// Inference threads; 0 picks the device's fast cores.
+    pub threads: u32,
 }
 
 impl Default for Settings {
@@ -73,6 +82,8 @@ impl Default for Settings {
             last_model_id: None,
             active_character_id: Some("preset:default".to_string()),
             custom_characters: Vec::new(),
+            context_size: 0,
+            threads: 0,
         }
     }
 }
@@ -95,6 +106,10 @@ impl Settings {
         self.temperature = self.temperature.clamp(0.0, 2.0);
         self.top_p = self.top_p.clamp(0.05, 1.0);
         self.max_tokens = self.max_tokens.clamp(16, MAX_REPLY_TOKENS);
+        if self.context_size != 0 {
+            self.context_size = self.context_size.clamp(MIN_CONTEXT_SIZE, MAX_CONTEXT_SIZE);
+        }
+        self.threads = self.threads.min(MAX_THREADS);
         truncate_in_place(&mut self.system_prompt, MAX_CHAR_SYSTEM_PROMPT);
         truncate_in_place(&mut self.font_size, 16);
         truncate_in_place(&mut self.theme, 32);
@@ -204,6 +219,20 @@ mod tests {
         let mut s = Settings { max_tokens: 9000, ..Settings::default() };
         s.sanitize();
         assert_eq!(s.max_tokens, MAX_REPLY_TOKENS);
+    }
+
+    #[test]
+    fn sanitize_bounds_engine_settings() {
+        let mut s = Settings { context_size: 100, threads: 99, ..Settings::default() };
+        s.sanitize();
+        assert_eq!(s.context_size, MIN_CONTEXT_SIZE);
+        assert_eq!(s.threads, MAX_THREADS);
+
+        // Zero means automatic and must survive untouched.
+        let mut auto = Settings::default();
+        auto.sanitize();
+        assert_eq!(auto.context_size, 0);
+        assert_eq!(auto.threads, 0);
     }
 
     #[test]

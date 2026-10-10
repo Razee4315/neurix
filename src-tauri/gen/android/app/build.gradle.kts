@@ -27,7 +27,9 @@ android {
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
         applicationId = "com.neurix.app"
-        minSdk = 24
+        // Android 9. llama.cpp is compiled for this API level (see
+        // ANDROID_API_LEVEL in .github/workflows/android.yml).
+        minSdk = 28
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")

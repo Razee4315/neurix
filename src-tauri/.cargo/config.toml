@@ -1,9 +1,22 @@
-# ARM64 Android — enable NEON SIMD + FP16 for faster matmul in candle/ggml kernels.
-# NEON is baseline on aarch64 but these flags ensure the compiler fully utilizes
-# advanced SIMD paths (fp16, dotprod for Q4 matmul acceleration).
-[target.aarch64-linux-android]
-rustflags = ["-C", "target-feature=+neon,+fp16,+dotprod"]
+# llama.cpp (ggml) picks its SIMD kernels at compile time from these settings.
+#
+# x86_64 desktop: the bindings translate Rust target features into GGML_AVX /
+# GGML_AVX2 / GGML_FMA / GGML_F16C. Without them ggml is built for plain SSE2
+# and runs several times slower. AVX2 has shipped in every desktop CPU since
+# 2013 (Haswell / Excavator).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+sse4.2,+avx,+avx2,+fma,+f16c,+bmi2"]
 
-# x86_64 Android emulator — no special flags needed
-[target.x86_64-linux-android]
-rustflags = []
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-feature=+sse4.2,+avx,+avx2,+fma,+f16c,+bmi2"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "target-feature=+sse4.2,+avx,+avx2,+fma,+f16c,+bmi2"]
+
+# ARM64 Android: read by the bindings' build script and passed to ggml. The
+# int8 dot-product kernels make Q4_K_M matmul several times faster than the
+# plain-NEON armv8.0 baseline. Every phone SoC since 2018 (Cortex-A55/A75 and
+# later) supports them; it is the same floor the app already required.
+# Ignored on other targets.
+[env]
+GGML_CPU_ARM_ARCH = "armv8.2-a+dotprod+fp16"

@@ -97,8 +97,8 @@ pub async fn download_model_files(
     let part_path = model_dir.join("model.gguf.part");
     let final_path = model_dir.join("model.gguf");
 
-    // The weights may already be in place from an earlier run whose tokenizer
-    // download failed. In that case only the tokenizer is fetched.
+    // The model file is everything a model needs: its tokenizer and chat
+    // template are stored inside the GGUF.
     if !final_path.exists() {
         match download_weights(model, &client, &part_path, &final_path, channel, &cancel_token)
             .await?
@@ -106,17 +106,6 @@ pub async fn download_model_files(
             Outcome::Completed => {}
             Outcome::Cancelled => return Ok(()),
         }
-    }
-
-    if cancel_token.is_cancelled() {
-        let _ = channel.send(DownloadEvent::Cancelled);
-        return Ok(());
-    }
-
-    if let Err(e) = download_tokenizer(model, &client, &model_dir).await {
-        // Without a tokenizer the model cannot load. Report failure instead
-        // of success; the weights stay on disk so the retry is a few MB.
-        return fail(channel, e);
     }
 
     let _ = channel.send(DownloadEvent::Finished);
@@ -162,7 +151,13 @@ async fn download_weights(
     };
 
     let status = response.status().as_u16();
-    let expected_hash = expected_sha256(&response);
+    // The catalog's own checksum is authoritative; the hash HuggingFace
+    // sends in its headers covers older entries that do not carry one.
+    let expected_hash = model
+        .sha256
+        .as_ref()
+        .map(|h| h.to_ascii_lowercase())
+        .or_else(|| expected_sha256(&response));
 
     // 416 = "range not satisfiable": the partial file already holds every
     // byte (the app was closed between the last chunk and the rename).
@@ -284,7 +279,7 @@ async fn download_weights(
     //   1. Size — partial download or a lying content-length.
     //   2. Magic bytes — the response was actually HTML (404 page, Cloudflare
     //      error, gated-repo redirect) and not a GGUF file.
-    //   3. SHA-256 — when the server told us the content hash.
+    //   3. SHA-256 — against the catalog's checksum, or the server's.
     let mut verdict = verify_gguf(part_path, total_bytes).await;
     if verdict.is_ok() {
         if let Some(expected) = expected_hash {
@@ -315,48 +310,6 @@ async fn download_weights(
 
     info!("Model file downloaded: {:?}", final_path);
     Ok(Outcome::Completed)
-}
-
-/// Download the tokenizer — try the GGUF repo first (public), then the
-/// original repo (may be gated).
-async fn download_tokenizer(
-    model: &ModelInfo,
-    client: &reqwest::Client,
-    model_dir: &Path,
-) -> Result<(), String> {
-    let tokenizer_path = model_dir.join("tokenizer.json");
-    let tokenizer_urls = [
-        format!("https://huggingface.co/{}/resolve/main/tokenizer.json", model.hf_repo),
-        format!("https://huggingface.co/{}/resolve/main/tokenizer.json", model.tokenizer_repo),
-    ];
-
-    for url in &tokenizer_urls {
-        info!("Trying tokenizer from: {}", url);
-        let bytes = match client.get(url).send().await {
-            Ok(resp) if resp.status().is_success() => match resp.bytes().await {
-                Ok(bytes) => bytes,
-                Err(_) => continue,
-            },
-            _ => {
-                warn!("Tokenizer not available at: {}", url);
-                continue;
-            }
-        };
-        // A tokenizer is JSON; anything else is an error page.
-        if serde_json::from_slice::<serde_json::Value>(&bytes).is_err() {
-            warn!("Tokenizer at {} is not valid JSON", url);
-            continue;
-        }
-        fs::write(&tokenizer_path, &bytes)
-            .await
-            .map_err(|e| format!("Could not save tokenizer: {}", e))?;
-        info!("Tokenizer downloaded from: {}", url);
-        return Ok(());
-    }
-
-    Err("The model downloaded but its tokenizer could not be fetched. \
-         Retry to finish — the model file itself will not be downloaded again."
-        .to_string())
 }
 
 /// Verify a downloaded model file is valid by checking size + GGUF magic bytes.
