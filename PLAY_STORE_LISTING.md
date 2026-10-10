@@ -27,15 +27,15 @@ HOW IT WORKS
 3. Chat with your AI assistant — works offline forever after download
 
 AVAILABLE MODELS
-Choose from 8 curated models from leading AI companies:
+Choose from current models from leading AI labs:
 
-• Qwen 2.5 (Alibaba) — 0.5B, 1.5B, and 3B variants. Great multilingual support
-• Llama 3.2 (Meta) — 1B and 3B. Strong chat and reasoning
-• SmolLM2 (HuggingFace) — 1.7B. Balanced performance
-• Gemma 2 (Google) — 2B. Optimized for on-device use
-• Phi-3.5 Mini (Microsoft) — 3.8B. Excellent for code
+• Qwen 3.5 (Alibaba) — 0.8B, 2B and 4B. Strong multilingual support; can reason step by step on request
+• LFM 2.5 (Liquid AI) — 1.2B and 2.6B. Built for phones, very fast
+• Gemma 4 (Google) — E2B and E4B. Natural, well-structured writing
 
-All models use Q4 quantization for the best balance of quality and size.
+The app suggests the right model for your device's memory.
+
+Models are quantized for the best balance of quality and size.
 
 WHY OFFLINE?
 Every AI app today requires internet and sends your data to remote servers. If you're in an area with limited connectivity — traveling, in a rural region, on a flight — you lose access to AI tools entirely.
@@ -64,12 +64,12 @@ BUILT FOR PRIVACY
 • Conversations stored only on your device
 
 TECHNICAL DETAILS
-Built with Tauri 2.0 and Rust for minimal memory footprint. Uses Candle (HuggingFace's ML framework) for inference with GGUF quantized models. The entire app is under 15 MB before model downloads.
+Built with Tauri 2.0 and Rust for minimal memory footprint. Uses llama.cpp for inference with GGUF quantized models. The app is about 15 MB before model downloads.
 
 TIPS
-• Larger models (3B) give better answers but are slower
-• Smaller models (0.5B-1B) respond faster but with less depth
-• Start with Llama 3.2 1B for your first experience
+• Larger models (4B) give better answers but are slower
+• Smaller models (around 1B) respond faster but with less depth
+• Start with the model the app suggests for your device
 • Lower the temperature in settings for more focused answers
 
 Free. Open source. No strings attached.

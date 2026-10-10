@@ -36,7 +36,7 @@ const Shell = styled.div`
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
-  background: ${tokens.colors.background};
+  background: ${tokens.surfaces.page};
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0px);
 `;

@@ -1,60 +1,111 @@
 import { Icon } from "@/components/ui/Icon";
-import { alpha } from "@/theme/alpha";
-import { THEMES, type ThemeDefinition } from "@/theme/themes";
+import { THEMES, type ThemeDefinition, getTheme, themeVariables } from "@/theme/themes";
 import { tokens } from "@/theme/tokens";
+import type { CSSProperties } from "react";
 import styled from "styled-components";
 
-const Grid = styled.div`
+/* One compact row of swatches. Each swatch is a tiny scene drawn with the
+   theme's own variables — its typeface, corner shape, backdrop and texture —
+   so the row shows how the themes differ in character, not only in color. */
+
+const Row = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
-  gap: 0.625rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
 `;
 
-const Card = styled.button<{ $active: boolean }>`
+const Tile = styled.button`
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: ${tokens.colors.onSurface};
+  cursor: pointer;
+  text-align: left;
+  min-width: 0;
+
+  &:focus-visible { outline: none; }
+`;
+
+/* Everything inside a swatch resolves the swatch's theme, because the
+   theme's variables are set on this element (see `themeVariables`). */
+const Swatch = styled.span<{ $active: boolean }>`
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  justify-content: space-between;
+  height: 4.25rem;
   padding: 0.5rem;
+  overflow: hidden;
   border-radius: ${tokens.borderRadius.xl};
-  border: 1.5px solid ${({ $active }) => ($active ? tokens.colors.primary : alpha(tokens.colors.outlineVariant, "80"))};
-  background: ${tokens.colors.surfaceContainerHigh};
+  background: ${tokens.surfaces.page};
   color: ${tokens.colors.onSurface};
-  text-align: left;
-  cursor: pointer;
-  transition: transform ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
+  box-shadow: 0 0 0 1px rgb(127 127 127 / 0.28);
+  transition: transform ${tokens.transitions.fast}, box-shadow ${tokens.transitions.fast};
 
-  &:hover { transform: translateY(-2px); }
-  &:active { transform: scale(0.97); }
+  ${Tile}:hover & { transform: translateY(-1px); }
+  ${Tile}:active & { transform: scale(0.97); }
 `;
 
-const Preview = styled.svg`
-  width: 100%;
-  height: auto;
-  border-radius: ${tokens.borderRadius.lg};
+/* The selection ring belongs to the picker, not the swatch, so it is drawn
+   in the app's current accent color, outside the swatch's own variables. */
+const Ring = styled.span<{ $active: boolean }>`
   display: block;
+  border-radius: calc(${tokens.borderRadius.xl} + 3px);
+  padding: 2px;
+  box-shadow: 0 0 0 2px ${({ $active }) => ($active ? tokens.colors.primary : "transparent")};
+  transition: box-shadow ${tokens.transitions.fast};
+
+  ${Tile}:focus-visible & { box-shadow: 0 0 0 2px ${tokens.colors.onSurface}; }
 `;
 
-const Name = styled.div`
+const Texture = styled.span`
+  position: absolute;
+  inset: 0;
+  background: var(--overlay, none);
+  opacity: var(--overlay-opacity, 0);
+  pointer-events: none;
+`;
+
+const Letters = styled.span`
+  position: relative;
   font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  padding: 0 0.25rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: var(--headline-tracking, 0);
 `;
 
-const Tagline = styled.div`
-  font-size: 11px;
-  color: ${tokens.colors.onSurfaceVariant};
-  line-height: 1.3;
-  padding: 0 0.25rem 0.25rem;
+const Shapes = styled.span`
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+`;
+
+const Bar = styled.span`
+  flex: 1;
+  height: 0.625rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: linear-gradient(90deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  box-shadow: ${tokens.shadows.glow.primary};
+`;
+
+const Dot = styled.span`
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: ${tokens.borderRadius.circle};
+  background: ${tokens.colors.secondary};
 `;
 
 const Check = styled.span`
   position: absolute;
-  top: 0.875rem;
-  right: 0.875rem;
-  width: 22px;
-  height: 22px;
+  top: 0.375rem;
+  right: 0.375rem;
+  width: 1rem;
+  height: 1rem;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -63,23 +114,40 @@ const Check = styled.span`
   color: ${tokens.colors.onPrimaryFixed};
 `;
 
-/** A miniature of the chat screen drawn in the theme's own colors. */
-function ThemePreview({ theme }: { theme: ThemeDefinition }) {
-	const c = theme.colors;
+const Name = styled.span<{ $active: boolean }>`
+  padding: 0 0.125rem;
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${({ $active }) => ($active ? 700 : 500)};
+  color: ${({ $active }) => ($active ? tokens.colors.onSurface : tokens.colors.onSurfaceVariant)};
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+`;
+
+const Caption = styled.p`
+  margin-top: 0.5rem;
+  padding: 0 0.125rem;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
+function ThemeSwatch({ theme, active }: { theme: ThemeDefinition; active: boolean }) {
 	return (
-		<Preview viewBox="0 0 160 96" aria-hidden="true">
-			<rect width="160" height="96" fill={c.background} />
-			<rect width="160" height="18" fill={c.surfaceContainerLow} />
-			<circle cx="14" cy="9" r="5" fill={c.primary} opacity="0.9" />
-			<rect x="24" y="6" width="38" height="6" rx="3" fill={c.onSurface} opacity="0.85" />
-			<rect x="12" y="28" width="84" height="20" rx="8" fill={c.surfaceContainerHigh} />
-			<rect x="20" y="35" width="52" height="5" rx="2.5" fill={c.onSurfaceVariant} opacity="0.8" />
-			<rect x="68" y="54" width="80" height="18" rx="8" fill={c.primary} opacity="0.28" />
-			<rect x="76" y="60" width="46" height="5" rx="2.5" fill={c.onSurface} opacity="0.85" />
-			<rect x="12" y="80" width="112" height="10" rx="5" fill={c.surfaceContainerHigh} />
-			<circle cx="140" cy="85" r="7" fill={c.primaryContainer} />
-			<circle cx="148" cy="9" r="3" fill={c.secondary} />
-		</Preview>
+		<Ring $active={active}>
+			<Swatch $active={active} style={themeVariables(theme) as CSSProperties}>
+				<Texture />
+				<Letters>Aa</Letters>
+				<Shapes>
+					<Bar />
+					<Dot />
+				</Shapes>
+				{active && (
+					<Check>
+						<Icon name="check" size={10} />
+					</Check>
+				)}
+			</Swatch>
+		</Ring>
 	);
 }
 
@@ -89,30 +157,30 @@ interface ThemePickerProps {
 }
 
 export function ThemePicker({ value, onChange }: ThemePickerProps) {
+	const selected = getTheme(value);
 	return (
-		<Grid role="radiogroup" aria-label="Theme">
-			{THEMES.map((theme) => {
-				const active = theme.id === value;
-				return (
-					<Card
-						key={theme.id}
-						type="button"
-						role="radio"
-						aria-checked={active}
-						$active={active}
-						onClick={() => onChange(theme.id)}
-					>
-						<ThemePreview theme={theme} />
-						{active && (
-							<Check>
-								<Icon name="check" size={14} />
-							</Check>
-						)}
-						<Name>{theme.name}</Name>
-						<Tagline>{theme.tagline}</Tagline>
-					</Card>
-				);
-			})}
-		</Grid>
+		<div>
+			<Row role="radiogroup" aria-label="Theme">
+				{THEMES.map((theme) => {
+					const active = theme.id === selected.id;
+					return (
+						<Tile
+							key={theme.id}
+							type="button"
+							role="radio"
+							aria-checked={active}
+							aria-label={`${theme.name}: ${theme.tagline}`}
+							onClick={() => onChange(theme.id)}
+						>
+							<ThemeSwatch theme={theme} active={active} />
+							<Name $active={active}>{theme.name}</Name>
+						</Tile>
+					);
+				})}
+			</Row>
+			<Caption aria-live="polite">
+				{selected.name} — {selected.tagline}
+			</Caption>
+		</div>
 	);
 }

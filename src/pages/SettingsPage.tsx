@@ -10,7 +10,7 @@ import { accentOf } from "@/utils/characterAccent";
 import type { BenchmarkResult, Settings } from "@/services/types";
 import { chatService, dataService, historyService, settingsService } from "@/services";
 import { alpha } from "@/theme/alpha";
-import { FONT_SCALES, type FontSize, getTheme, isFontSize } from "@/theme/themes";
+import { FONT_SCALES, type FontSize, isFontSize } from "@/theme/themes";
 import { isMobile, vibrate } from "@/utils/platform";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useState } from "react";
@@ -198,10 +198,6 @@ const Choice = styled.button<{ $active: boolean }>`
   &:focus-visible { outline: 2px solid ${tokens.colors.primary}; outline-offset: 1px; }
 `;
 
-const ThemeDrawer = styled.div`
-  padding: 0 0.75rem 0.75rem;
-`;
-
 const Result = styled.div`
   margin: 0 1rem 0.875rem;
   padding: 0.75rem 0.875rem;
@@ -283,7 +279,6 @@ export function SettingsPage() {
 	const { showToast } = useToast();
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [busy, setBusy] = useState<"export" | "import" | null>(null);
-	const [themesOpen, setThemesOpen] = useState(false);
 	const [autoThreads, setAutoThreads] = useState<number | null>(null);
 	const [reloading, setReloading] = useState(false);
 	const [testing, setTesting] = useState(false);
@@ -494,35 +489,7 @@ export function SettingsPage() {
 		<AppLayout title="Settings">
 			<Page>
 				<SectionHeading>Appearance</SectionHeading>
-				<Section>
-					<ActionRow
-						as="button"
-						type="button"
-						aria-expanded={themesOpen}
-						onClick={() => setThemesOpen((open) => !open)}
-					>
-						<RowLeft>
-							<RowIcon>
-								<Icon name="palette" size={18} color={tokens.colors.primary} />
-							</RowIcon>
-							<RowText>
-								<RowTitle>Theme</RowTitle>
-								<RowSub>{getTheme(current("theme")).name}</RowSub>
-							</RowText>
-						</RowLeft>
-						<span style={{ display: "inline-flex", transform: themesOpen ? "rotate(180deg)" : undefined }}>
-							<Icon name="expand_more" size={20} color={tokens.colors.onSurfaceVariant} />
-						</span>
-					</ActionRow>
-					{themesOpen && (
-						<ThemeDrawer>
-							<ThemePicker
-								value={current("theme") ?? "obsidian"}
-								onChange={(theme) => save({ theme })}
-							/>
-						</ThemeDrawer>
-					)}
-				</Section>
+				<ThemePicker value={current("theme") ?? "obsidian"} onChange={(theme) => save({ theme })} />
 				<Segments role="radiogroup" aria-label="Text size">
 					{(Object.keys(FONT_SCALES) as FontSize[]).map((size) => (
 						<Segment

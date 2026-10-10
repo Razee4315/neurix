@@ -3,6 +3,41 @@
 All notable changes to Neurix. Finding IDs (F-, M-, D-, C-, O-) refer to
 [AUDIT_PROGRESS.md](AUDIT_PROGRESS.md).
 
+## v0.5.0
+
+The inference engine was replaced. Answers are better and arrive sooner,
+and the model list is current.
+
+### Engine
+- Inference runs on llama.cpp instead of Candle
+- The model stays loaded between messages and keeps the conversation in memory: a follow-up no longer re-reads the whole chat, and weights are no longer re-read from disk for every message
+- Prompts use the chat template stored in each model file. This fixes a doubled start token on Llama models, the wrong end-of-turn token on Qwen, SmolLM2 and Phi, and a fake extra turn on Gemma
+- Replies are no longer cut off by tables, code or lists that repeat short patterns, or by lines that begin with "User:"
+- Reasoning models are supported: thinking is shown apart from the answer, and can be switched on per message where the model allows it
+- Thread count follows the device's fast cores and context size follows its memory; both can be set by hand
+- A built-in speed test reports tokens per second on this device
+
+### Models
+- New catalog: Qwen 3.5 (0.8B, 2B, 4B), LFM 2.5 (1.2B, 2.6B) and Gemma 4 (E2B, E4B)
+- Every download is verified against a pinned SHA-256
+- The separate tokenizer download is gone; a model is one file
+- Earlier models stay usable if already installed
+
+### Interface
+- The store suggests a model for this device and downloads it in one tap; models show relative quality and speed and what memory they need
+- First run is a single screen
+- Downloads continue in the background on Android, and a WiFi-only block can be overridden where it appears
+- Four themes replace the previous ten. Each sets its own typeface, corner shapes, backdrop, surface texture, glow and icon weight: Obsidian, Paper, Phosphor and Dusk. A theme chosen in an earlier version maps to the closest of the four
+- The theme picker is one compact row of live swatches
+- New icon set (Phosphor), drawn in the weight the active theme chooses
+- Settings: new Performance section
+
+### Requirements
+- Android 9 or later (was Android 7)
+
+### Not yet verified on a device
+- The Android background-download service and on-device speed were built and tested in CI, not on a physical phone
+
 ## v0.4.1 and v0.4.2
 
 No app changes. These releases repair the Android build in the release

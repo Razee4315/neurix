@@ -30,13 +30,51 @@ export const GlobalStyles = createGlobalStyle`
     font-size: ${tokens.typography.fontSize.base};
     line-height: ${tokens.typography.lineHeight.normal};
     color: ${tokens.colors.onSurface};
-    background: ${tokens.colors.background};
+    background: ${tokens.surfaces.page};
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
+  /* The theme's surface texture (paper grain, scanlines) lies over the
+     whole interface, dialogs included. It never takes input. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    pointer-events: none;
+    background: var(--overlay, none);
+    opacity: var(--overlay-opacity, 0);
+  }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: ${tokens.typography.fontFamily.headline};
+    letter-spacing: var(--headline-tracking, 0);
+  }
+
+  button, input, select, textarea {
+    font-family: ${tokens.typography.fontFamily.label};
+  }
+
+  /* Per-theme character that variables alone cannot express. */
+
+  /* Paper: set like a book. Headings in a lighter weight, links underlined. */
+  html[data-theme="paper"] h1,
+  html[data-theme="paper"] h2,
+  html[data-theme="paper"] h3 {
+    font-weight: 600;
+  }
+  html[data-theme="paper"] a { text-decoration: underline; text-underline-offset: 2px; }
+
+  /* Phosphor: the glow of a CRT. Bright text blooms slightly. */
+  html[data-theme="phosphor"] h1,
+  html[data-theme="phosphor"] h2,
+  html[data-theme="phosphor"] h3 {
+    text-shadow: 0 0 10px rgb(var(--c-primary) / 0.45);
+  }
+  html[data-theme="phosphor"] ::selection {
+    background: rgb(var(--c-primary));
+    color: rgb(var(--c-background));
   }
 
   ::selection {

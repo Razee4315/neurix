@@ -70,15 +70,19 @@ Neurix runs large language models entirely on your phone or desktop. No server, 
 
 ## Features
 
-- **On-device inference** — AI runs on your CPU, no server involved
-- **8 curated models** — from 380 MB to 2.2 GB, pick what fits your device
+- **On-device inference** — AI runs on your CPU through llama.cpp, no server involved
+- **Current small models** — Qwen 3.5, LFM 2.5 and Gemma 4, from 640 MB to 5.2 GB
+- **A pick for your device** — the store suggests a model from your device's memory and warns when one will not fit
+- **Reasoning models** — optional "Think" mode, with the model's reasoning shown separately from its answer
+- **Fast follow-ups** — the conversation stays in the model's memory, so a reply starts without re-reading the whole chat
 - **Offline after download** — use anywhere, anytime, no internet needed
 - **Private by design** — conversations never leave your device
 - **Model manager** — download, switch, unload and delete models; warns when a model is too large for the device
 - **Chat history** — auto-saved locally, searchable by title and message text
 - **Characters** — built-in and custom personas, each with its own instructions, creativity, word variety and reply length
-- **Themes** — ten color themes (dark and light) and four text sizes
-- **Resume downloads** — pause and continue where you left off; downloads are verified before use
+- **Themes** — four, each with its own typeface, shapes, texture and icon style: Obsidian (neon on black glass), Paper (serif ink on warm stock), Phosphor (green-screen terminal) and Dusk (soft and rounded). Four text sizes
+- **Resume downloads** — pause and continue where you left off; every download is checked against a SHA-256 checksum. On Android a download keeps going while the app is in the background
+- **Speed test** — measure tokens per second for any model on your own device
 - **Backup** — export chats and custom characters to a file and import them on another device
 - **Built with Rust** — lightweight, fast, minimal memory footprint
 
@@ -86,8 +90,25 @@ Neurix runs large language models entirely on your phone or desktop. No server, 
 
 ## Available Models
 
-| Model | Size | Best For |
-|-------|------|----------|
+| Model | Download | Memory | Notes |
+|-------|----------|--------|-------|
+| Qwen 3.5 0.8B | 640 MB | 3 GB | Smallest; quick answers on almost any phone |
+| LFM 2.5 1.2B | 840 MB | 3 GB | Built for phones; very fast |
+| Qwen 3.5 2B | 1.3 GB | 4 GB | Best all-rounder; can reason on request |
+| LFM 2.5 2.6B | 1.7 GB | 6 GB | Always reasons step by step before answering |
+| Qwen 3.5 4B | 2.7 GB | 8 GB | Strongest for code and analysis on a phone |
+| Gemma 4 E2B | 3.3 GB | 8 GB | Google's on-device model, official QAT build |
+| Gemma 4 E4B | 5.2 GB | 12 GB | For computers and high-memory phones |
+
+The catalog lives in [`src-tauri/src/models/catalog.rs`](src-tauri/src/models/catalog.rs).
+Models from earlier versions (Llama 3.2, Qwen 2.5, Gemma 2, Phi-3.5, SmolLM2)
+keep working if you already have them, but are no longer offered.
+
+Any GGUF that llama.cpp supports can be added: the tokenizer and prompt
+format are read from the model file itself.
+
+
+-------|------|----------|
 | Qwen 2.5 0.5B | 380 MB | Ultra-fast, basic tasks |
 | Llama 3.2 1B | 700 MB | Quick tasks and chat |
 | Qwen 2.5 1.5B | 940 MB | Multilingual, reasoning |
@@ -173,13 +194,13 @@ production builds.
 | Layer | Technology |
 |-------|-----------|
 | Framework | [Tauri 2.0](https://tauri.app) |
-| Backend | Rust + [Candle](https://github.com/huggingface/candle) |
+| Backend | Rust + [llama.cpp](https://github.com/ggml-org/llama.cpp) (via [llama-cpp-2](https://github.com/utilityai/llama-cpp-rs)) |
 | Frontend | React 18 + TypeScript |
 | Styling | styled-components |
 | Inference | GGUF quantized models |
 | Build | Vite |
 
-Neurix is one of the first apps built with Tauri 2.0's mobile support. The Rust backend handles model loading and inference through Candle (HuggingFace's ML framework for Rust), while the React frontend provides the UI. This architecture keeps the app lightweight — the entire install is under 15 MB before models.
+Neurix is one of the first apps built with Tauri 2.0's mobile support. The Rust backend runs models with llama.cpp, while the React frontend provides the UI. The Android install is about 15 MB before models. Android 9 or later is required.
 
 ---
 

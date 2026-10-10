@@ -28,7 +28,7 @@ const Container = styled.div`
   height: 100dvh;
   display: flex;
   flex-direction: column;
-  background: ${tokens.colors.background};
+  background: ${tokens.surfaces.page};
   color: ${tokens.colors.onSurface};
   padding: max(1rem, env(safe-area-inset-top)) 1.5rem max(1.25rem, env(safe-area-inset-bottom));
   overflow-y: auto;

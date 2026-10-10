@@ -11,7 +11,7 @@ const Container = styled.div`
   justify-content: center;
   padding: 2rem;
   text-align: center;
-  background: ${tokens.colors.background};
+  background: ${tokens.surfaces.page};
   gap: 1rem;
 `;
 

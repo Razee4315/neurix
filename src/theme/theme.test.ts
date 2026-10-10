@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { alpha } from "./alpha";
-import { DEFAULT_THEME_ID, THEMES, getTheme, isFontSize } from "./themes";
+import { DEFAULT_THEME_ID, THEMES, getTheme, isFontSize, themeVariables } from "./themes";
 import { tokens } from "./tokens";
 
 describe("alpha", () => {
@@ -48,6 +48,42 @@ describe("themes", () => {
 	it("falls back to the default for unknown ids", () => {
 		expect(getTheme("does-not-exist").id).toBe(DEFAULT_THEME_ID);
 		expect(getTheme(null).id).toBe(DEFAULT_THEME_ID);
+	});
+
+	it("maps themes from earlier versions to a current one", () => {
+		const current = new Set(THEMES.map((t) => t.id));
+		for (const retired of ["aurora", "karakoram", "deosai", "ember", "sakura", "void", "glacier", "apricot"]) {
+			expect(current.has(getTheme(retired).id), retired).toBe(true);
+		}
+		// Light stays light: nobody should be dropped into a dark theme.
+		expect(getTheme("glacier").mode).toBe("light");
+		expect(getTheme("apricot").mode).toBe("light");
+		expect(getTheme("paper").id).toBe("paper");
+	});
+
+	it("is a short list", () => {
+		expect(THEMES.length).toBeLessThanOrEqual(4);
+	});
+
+	it("gives every theme its own character, not only its own colors", () => {
+		const signature = (pick: (t: (typeof THEMES)[number]) => string) => new Set(THEMES.map(pick)).size;
+		// No two themes share a headline typeface + corner shape, a backdrop
+		// and texture, or an icon weight.
+		expect(signature((t) => `${t.style.fonts.headline}|${t.style.radius.lg}`)).toBe(THEMES.length);
+		expect(signature((t) => `${t.style.backdrop}|${t.style.overlay}`)).toBe(THEMES.length);
+		expect(signature((t) => t.style.icons.regular)).toBe(THEMES.length);
+	});
+
+	it("defines the same variables for every theme", () => {
+		const names = Object.keys(themeVariables(THEMES[0])).sort();
+		for (const theme of THEMES) {
+			const variables = themeVariables(theme);
+			expect(Object.keys(variables).sort()).toEqual(names);
+			for (const [name, value] of Object.entries(variables)) {
+				expect(value.length, `${theme.id} ${name}`).toBeGreaterThan(0);
+			}
+			expect(variables["--c-primary"]).toMatch(/^\d+ \d+ \d+$/);
+		}
 	});
 
 	it("keeps body text readable against the background (WCAG AA)", () => {

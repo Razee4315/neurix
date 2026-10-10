@@ -39,7 +39,7 @@ const Container = styled.div`
   justify-content: space-between;
   overflow: hidden;
   padding: clamp(1.5rem, 4vh, 3rem) 1.5rem clamp(1rem, 2vh, 1.5rem);
-  background: ${tokens.colors.background};
+  background: ${tokens.surfaces.page};
   position: relative;
 
   /* Subtle ambient light from top */

@@ -30,7 +30,7 @@ No data is stored on any external server.
 
 Neurix connects to the internet only for:
 
-- **Downloading AI models** — Models are downloaded from HuggingFace (huggingface.co), a public model hosting service. Only the model files and tokenizer files are downloaded. No personal data is sent.
+- **Downloading AI models** — Models are downloaded from HuggingFace (huggingface.co), a public model hosting service. Only the model files are downloaded. No personal data is sent.
 
 After a model is downloaded, Neurix works entirely offline. No internet connection is required to use the AI chat features.
 

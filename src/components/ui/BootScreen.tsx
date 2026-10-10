@@ -16,7 +16,7 @@ const Screen = styled.div`
   align-items: center;
   justify-content: center;
   gap: 1rem;
-  background: ${tokens.colors.background};
+  background: ${tokens.surfaces.page};
 `;
 
 const Mark = styled.div`
