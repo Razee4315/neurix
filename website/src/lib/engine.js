@@ -153,10 +153,13 @@ export function start() {
 
 const small = matchMedia('(max-width: 760px)').matches
 
+/** A file from public/, addressed relative to wherever the site is served from. */
+export const asset = (path) => import.meta.env.BASE_URL + path.replace(/^\//, '')
+
 /** Gives an image its real source (the smaller file on a phone). */
 export function loadImage(img) {
   if (!img.dataset.src) return
-  img.src = (small && img.dataset.srcM) || img.dataset.src
+  img.src = asset((small && img.dataset.srcM) || img.dataset.src)
   img.removeAttribute('data-src')
 }
 

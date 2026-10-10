@@ -4,7 +4,7 @@
 // same CSS variables). Static screens are real screenshots.
 import snapshot from '../app/snapshot.json'
 import themes from '../app/themes.json'
-import { reduced } from './engine.js'
+import { asset, reduced } from './engine.js'
 
 const W = 390
 const H = 844
@@ -146,8 +146,8 @@ export class Phone {
     const frame = document.createElement('div')
     frame.className = 'shot'
     frame.innerHTML =
-      `<img class="shot-soft" src="/img/shot-${name}-soft.webp" alt="" width="390" height="844">` +
-      `<img class="shot-sharp" src="/img/shot-${name}.webp" alt="" width="780" height="1688" decoding="async">`
+      `<img class="shot-soft" src="${asset(`img/shot-${name}-soft.webp`)}" alt="" width="390" height="844">` +
+      `<img class="shot-sharp" src="${asset(`img/shot-${name}.webp`)}" alt="" width="780" height="1688" decoding="async">`
     this.screen.append(frame)
     const old = this.current
     this.current = frame

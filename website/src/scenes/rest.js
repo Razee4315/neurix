@@ -3,7 +3,7 @@
 // pieces of field kit hanging around the phone at different distances, the one that belongs to the line
 // comes sharp while the others stay soft.
 import meta from '../img-meta.json'
-import { fade, lerp, move, scene, view } from '../lib/engine.js'
+import { asset, fade, lerp, move, scene, view } from '../lib/engine.js'
 import { Phone } from '../lib/phone.js'
 
 // Position is in phone-widths from the centre of the phone; depth 0 is far, 1 is near the lens.
@@ -56,8 +56,8 @@ export function rest() {
       // Fetch a screen a little before its line arrives.
       if (r.top < h * 2 && !preload.has(i)) {
         preload.add(i)
-        new Image().src = `/img/shot-${item.dataset.shot}.webp`
-        new Image().src = `/img/shot-${item.dataset.shot}-soft.webp`
+        new Image().src = asset(`img/shot-${item.dataset.shot}.webp`)
+        new Image().src = asset(`img/shot-${item.dataset.shot}-soft.webp`)
       }
     })
     if (best !== active) {

@@ -15,8 +15,13 @@ npm run build      # writes dist/
 npm run preview    # serves dist/ on http://localhost:5184
 ```
 
-The site assumes it is served from the root of a domain. To host it under a sub-path, set `base` in
-`vite.config.js` and prefix the `/img/` and `/fonts/` URLs in `index.html` and `src/styles/main.css`.
+Every URL in the build is relative, so `dist/` works from a domain root or from any sub-path.
+
+## Deploy
+
+`.github/workflows/site.yml` builds this folder and publishes `dist/` to GitHub Pages whenever a push to
+`main` changes something under `website/` (or when the workflow is run by hand). The app's Release workflow
+ignores changes under `website/`, so updating the site does not publish a new app version.
 
 ## What is on the page
 

@@ -1,6 +1,8 @@
 name: Release
 
-# Triggers on every push to main and on manual dispatch.
+# Triggers on every push to main that changes the app, and on manual dispatch.
+# Pushes that only touch the marketing site (website/) are ignored: they deploy
+# through site.yml and must not publish a new app version.
 # Builds: Windows (.msi + .exe) and Android (APK + AAB)
 #
 # ─── ONE-TIME SETUP REQUIRED ──────────────────────────────────────────────────
@@ -19,6 +21,9 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'website/**'
+      - '.github/workflows/site.yml'
   workflow_dispatch:
 
 permissions:

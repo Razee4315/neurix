@@ -3,7 +3,7 @@
 // chat screen, recoloured with the theme's real values, and it can be handed to any built-in character.
 import { characters } from '../app/models.js'
 import themes from '../app/themes.json'
-import { lerp, move, reduced, scene, view } from '../lib/engine.js'
+import { asset, lerp, move, reduced, scene, view } from '../lib/engine.js'
 import { Phone } from '../lib/phone.js'
 
 export function yours() {
@@ -23,7 +23,7 @@ export function yours() {
     img.width = 1672
     img.height = 941
     img.decoding = 'async'
-    img.dataset.lazy = `/img/world-${i + 1}${small ? '-m' : ''}.webp`
+    img.dataset.lazy = asset(`img/world-${i + 1}${small ? '-m' : ''}.webp`)
     world.append(img)
     return img
   })
