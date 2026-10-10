@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Neurix. AI that works without a signal.</title>
+    <meta name="description" content="Neurix runs language models on your own phone or PC. Download a model once, then chat anywhere: offline, private, free and open source. Android and Windows." />
+    <meta name="theme-color" content="#0e0e0f" />
+    <link rel="icon" type="image/svg+xml" href="/neurix_logo.svg" />
+    <link rel="preload" href="/fonts/space-grotesk.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" as="image" href="/img/valley-soft.webp" />
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body>
+    <a class="skip" href="#download">Skip to download</a>
+
+    <header class="nav" id="top">
+      <a class="brand" href="#top" aria-label="Neurix, back to top">
+        <svg viewBox="0 0 100 100" width="30" height="30" aria-hidden="true">
+          <rect width="100" height="100" rx="22" fill="#060607" />
+          <path d="M35 20H20v60h15M65 20h15v60H65" fill="none" stroke="#8ff5ff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+          <circle cx="50" cy="50" r="10" fill="#2ff801" />
+        </svg>
+        <span>NEU<b>RIX</b></span>
+      </a>
+      <div class="nav-end">
+        <div class="signal" data-signal role="img" aria-label="Signal strength: full">
+          <span class="signal-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="signal-text" aria-hidden="true">No signal</span>
+        </div>
+        <a class="btn btn-quiet" href="#download">Download</a>
+      </div>
+    </header>
+
+    <main>
+      <!-- 1. The climb: the signal goes, the phone keeps answering -->
+      <section class="climb" id="climb" aria-label="Neurix works without a signal">
+        <div class="stage">
+          <div class="world" aria-hidden="true">
+            <img class="layer plate" data-l="valley" src="/img/valley-soft.webp" alt="" width="1672" height="941" />
+            <img class="layer plate" data-l="valley-sharp" data-src="/img/valley.webp" data-src-m="/img/valley-m.webp" alt="" width="1672" height="941" />
+            <img class="layer bokeh" data-l="lights" data-src="/img/lights.webp" alt="" width="900" height="507" />
+            <img class="layer plate" data-l="cloudsea" data-defer data-src="/img/cloudsea.webp" data-src-m="/img/cloudsea-m.webp" alt="" width="1672" height="941" />
+            <div class="layer veil" data-l="veil"></div>
+            <img class="layer mist" data-l="mist-a" data-defer data-src="/img/mist-1.webp" alt="" width="900" height="506" />
+            <img class="layer mist" data-l="mist-b" data-defer data-src="/img/mist-3.webp" alt="" width="900" height="507" />
+            <img class="layer mist" data-l="mist-c" data-defer data-src="/img/mist-2.webp" alt="" width="900" height="600" />
+            <div class="layer shade"></div>
+          </div>
+
+          <div class="phone-wrap" data-phone="climb"><div class="phone-glow" aria-hidden="true"></div></div>
+
+          <div class="world world-front" aria-hidden="true">
+            <img class="layer fore" data-l="grass" data-src="/img/grass-soft.webp" alt="" width="550" height="368" />
+            <img class="layer fore" data-l="ridge" data-defer data-src="/img/ridge-soft.webp" alt="" width="550" height="290" />
+            <img class="layer mist" data-l="mist-d" data-defer data-src="/img/mist-4.webp" alt="" width="900" height="613" />
+          </div>
+
+          <div class="climb-copy">
+            <div class="signal climb-signal" data-signal aria-hidden="true">
+              <span class="signal-bars"><i></i><i></i><i></i><i></i></span>
+              <span class="signal-text">Full signal</span>
+            </div>
+            <div class="beat" data-beat="0">
+              <h1 class="display"><span class="line"><span>AI that works</span></span> <span class="line"><span>without a signal.</span></span></h1>
+              <p class="lede">Neurix runs language models on your own phone or PC. Download one once, then chat anywhere, with no internet at all.</p>
+              <div class="actions">
+                <a class="btn" href="#download">Download free</a>
+                <a class="link" href="https://github.com/Razee4315/neurix" target="_blank" rel="noopener">Source on GitHub <span aria-hidden="true">↗</span></a>
+              </div>
+              <p class="fine">Android and Windows. Open source.</p>
+            </div>
+            <div class="beat" data-beat="1">
+              <h2 class="display">Leave town and the signal goes.</h2>
+            </div>
+            <div class="beat" data-beat="2">
+              <h2 class="display">Every cloud AI goes with it.</h2>
+            </div>
+            <div class="beat" data-beat="3">
+              <h2 class="display">Neurix keeps answering.</h2>
+              <p class="lede">The model is already on your device. There is nothing to connect to.</p>
+            </div>
+          </div>
+
+          <div class="scroll-cue" aria-hidden="true"><i></i></div>
+        </div>
+      </section>
+
+      <!-- 2. Models, as things you carry -->
+      <section class="models" id="models" aria-labelledby="models-title">
+        <div class="stage">
+          <div class="pool" aria-hidden="true"></div>
+          <div class="stones" aria-hidden="true"></div>
+          <div class="models-copy">
+            <p class="eyebrow">Models</p>
+            <h2 class="title" id="models-title">Pick a model. Download it once.</h2>
+            <p class="body">Eight open models, from 380 MB to 2.2 GB. A model is a file. Once it is on your device, it runs on your own processor.</p>
+          </div>
+          <div class="model-card" aria-live="polite">
+            <p class="model-maker" data-m="maker"></p>
+            <p class="model-name" data-m="name"></p>
+            <p class="model-meta" data-m="meta"></p>
+            <p class="model-for" data-m="for"></p>
+          </div>
+          <ol class="model-index" aria-label="Available models, smallest first"></ol>
+          <p class="models-note">Downloads pause and resume, and each file is checked before use. Neurix warns you if a model is too big for your device's memory.</p>
+        </div>
+      </section>
+
+      <!-- 3. Private -->
+      <section class="private" id="private" aria-labelledby="private-title">
+        <div class="camp" aria-hidden="true">
+          <img class="camp-dark" data-src="/img/camp-1.webp" data-src-m="/img/camp-1-m.webp" alt="" width="1672" height="941" />
+          <div class="lamp"><img data-src="/img/camp-2.webp" data-src-m="/img/camp-2-m.webp" alt="" width="1672" height="941" /></div>
+        </div>
+        <div class="private-copy">
+          <p class="eyebrow reveal">Privacy</p>
+          <h2 class="title reveal" id="private-title">Nothing leaves your device.</h2>
+          <p class="body reveal">No account. No analytics. No ads. Your chats are stored on the device and nowhere else.</p>
+          <p class="body dim reveal">Neurix goes online for one thing: downloading the model you chose, from Hugging Face.</p>
+        </div>
+      </section>
+
+      <!-- 4. Yours: the app's ten themes re-light the place -->
+      <section class="yours" id="yours" aria-labelledby="yours-title">
+        <div class="lights-out" aria-hidden="true"></div>
+        <div class="yours-copy">
+          <p class="eyebrow reveal">Themes and characters</p>
+          <h2 class="title reveal" id="yours-title">Change how it looks. Change how it talks.</h2>
+        </div>
+        <div class="phone-wrap" data-phone="yours"></div>
+        <div class="yours-controls">
+          <div class="control">
+            <p class="control-label"><span>Theme</span> <span class="control-value" data-theme-name></span></p>
+            <div class="swatches" role="radiogroup" aria-label="Theme"></div>
+          </div>
+          <div class="control">
+            <p class="control-label"><span>Character</span> <span class="control-value" data-character-name></span></p>
+            <div class="chips" role="radiogroup" aria-label="Character"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. The rest, on real screens -->
+      <section class="rest" id="rest" aria-labelledby="rest-title">
+        <div class="rest-view">
+          <div class="pool" aria-hidden="true"></div>
+          <div class="kit" aria-hidden="true"></div>
+          <div class="phone-wrap" data-phone="rest"></div>
+        </div>
+        <div class="rest-list">
+          <h2 class="eyebrow" id="rest-title">Also in the app</h2>
+          <div class="rest-item" data-shot="store" data-kit="carabiner"><p>Browse the model store. Every model shows its size before you download it.</p></div>
+          <div class="rest-item" data-shot="search" data-kit="notebook"><p>Every chat is saved on your device. Search by title, or by any word inside.</p></div>
+          <div class="rest-item" data-shot="models" data-kit="compass"><p>See what is installed. Switch, unload or delete a model whenever you like.</p></div>
+          <div class="rest-item" data-shot="picker" data-kit="mug"><p>Characters set the tone, the creativity and the reply length. Six are built in.</p></div>
+          <div class="rest-item" data-shot="character" data-kit="lantern"><p>Or write your own, with its own instructions, icon and greeting.</p></div>
+          <div class="rest-item" data-shot="backup" data-kit="padlock"><p>Back up chats and characters to a file. Import it on another device.</p></div>
+        </div>
+      </section>
+
+      <!-- 6. Why it exists -->
+      <section class="origin" id="origin" aria-label="Why Neurix exists">
+        <img class="origin-plate" data-src="/img/road.webp" data-src-m="/img/road-m.webp" alt="" width="1536" height="1024" />
+        <figure class="origin-quote">
+          <blockquote>
+            <p class="reveal">I'm from Skardu, a small town in the mountains of northern Pakistan.</p>
+            <p class="reveal">When you drive out toward Deosai or up the road to Shigar, the signal drops. Sometimes for hours, sometimes for days.</p>
+            <p class="reveal">That's why I built Neurix.</p>
+          </blockquote>
+          <figcaption class="reveal">Saqlain Abbas, developer of Neurix</figcaption>
+        </figure>
+      </section>
+
+      <!-- 7. Download -->
+      <section class="download" id="download" aria-labelledby="download-title">
+        <img class="download-plate" data-src="/img/dawn.webp" data-src-m="/img/dawn-m.webp" alt="" width="1672" height="941" />
+        <div class="download-copy">
+          <h2 class="display reveal" id="download-title">Download it once. Use it anywhere.</h2>
+          <div class="actions reveal">
+            <a class="btn" href="https://github.com/Razee4315/neurix/releases" target="_blank" rel="noopener">Android <small>.apk</small></a>
+            <a class="btn" href="https://github.com/Razee4315/neurix/releases" target="_blank" rel="noopener">Windows <small>.msi</small></a>
+          </div>
+          <p class="body reveal">Free and open source under the MIT licence. No account. The app is under 15 MB before models.</p>
+        </div>
+        <footer class="foot">
+          <nav class="foot-links" aria-label="Project links">
+            <a href="https://github.com/Razee4315/neurix" target="_blank" rel="noopener">GitHub</a>
+            <a href="https://github.com/Razee4315/neurix/blob/main/PRIVACY_POLICY.md" target="_blank" rel="noopener">Privacy policy</a>
+            <a href="https://github.com/Razee4315/neurix/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a>
+            <a href="https://github.com/Razee4315/neurix/blob/main/LICENSE" target="_blank" rel="noopener">MIT licence</a>
+          </nav>
+          <p class="foot-note">Made by Saqlain Abbas. The interface shown is the real app with demo data, and the chat reply is scripted: real speed depends on your device and the model. The landscape, mineral and object photographs were generated with AI.</p>
+        </footer>
+      </section>
+    </main>
+
+    <div class="lens" aria-hidden="true"></div>
+    <div class="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

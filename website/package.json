@@ -1,0 +1,22 @@
+{
+  "name": "neurix-site",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Marketing site for Neurix. Independent of the app's own build.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "images": "node tools/generate.mjs",
+    "images:process": "python tools/process.py",
+    "capture": "node tools/capture.mjs"
+  },
+  "dependencies": {
+    "lenis": "^1.3.26"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.13.0",
+    "vite": "^8.3.4"
+  }
+}
