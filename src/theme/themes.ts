@@ -227,7 +227,7 @@ export const THEMES: readonly ThemeDefinition[] = [
 			radius: { sm: "0", md: "0", lg: "0", xl: "0", pill: "2px" },
 			backdrop: "radial-gradient(ellipse at center, transparent 55%, rgb(0 0 0 / 0.6) 100%) no-repeat",
 			overlay:
-				"repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.3) 0, rgb(0 0 0 / 0.3) 1px, transparent 1px, transparent 3px)",
+				"repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.2) 0, rgb(0 0 0 / 0.2) 1px, transparent 1px, transparent 4px)",
 			overlayOpacity: 1,
 			glow: 1.6,
 			headlineTracking: "0.02em",
