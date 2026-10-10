@@ -1,0 +1,241 @@
+name: Android build
+
+# Builds the Android APK + AAB. Called by:
+#   - ci.yml      every pull request; the APK is attached to the run so a
+#                 change can be installed on a phone before it is merged.
+#   - release.yml every release; the files are also uploaded to the release.
+#
+# Signing: with the ANDROID_* secrets present the build is signed with the
+# release keystore. Without them Gradle falls back to the debug key, which is
+# still installable but cannot update an existing release install.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build. Defaults to the commit that triggered the caller.
+        type: string
+        default: ''
+      release_version:
+        description: When set (e.g. "0.5.0"), upload the APK and AAB to the release v<version>.
+        type: string
+        default: ''
+    secrets:
+      ANDROID_KEYSTORE_BASE64:
+        required: false
+      ANDROID_KEY_ALIAS:
+        required: false
+      ANDROID_KEY_PASSWORD:
+        required: false
+      ANDROID_STORE_PASSWORD:
+        required: false
+
+env:
+  # One NDK for everything: the Rust linker (via Tauri) and llama.cpp's CMake
+  # build must agree, or the C++ runtime they link will not match.
+  NDK_VERSION: 29.0.14206865
+  # llama.cpp is compiled for this API level. It matches minSdkVersion in
+  # src-tauri/tauri.android.conf.json.
+  ANDROID_API_LEVEL: '28'
+
+jobs:
+  build:
+    name: APK + AAB (arm64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # Skip gracefully if `npm run android:init` has never been committed.
+      - name: Check Android project is initialized
+        id: android-check
+        run: |
+          if [ -d "src-tauri/gen/android" ]; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+            echo "::warning::src-tauri/gen/android not found. Run 'npm run android:init' and commit the folder."
+          fi
+
+      - name: Setup Java 17
+        if: steps.android-check.outputs.ready == 'true'
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      # The action's default package list is "tools platform-tools". "tools" is
+      # the long-obsolete SDK Tools package and is no longer in Google's
+      # repository, so asking for it fails the step. Nothing in the build uses
+      # it: the NDK is installed below and Gradle fetches the rest.
+      - name: Setup Android SDK
+        if: steps.android-check.outputs.ready == 'true'
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android NDK and point every tool at it
+        if: steps.android-check.outputs.ready == 'true'
+        run: |
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_DIR="$ANDROID_HOME/ndk/$NDK_VERSION"
+          test -f "$NDK_DIR/build/cmake/android.toolchain.cmake"
+          # Tauri reads NDK_HOME; llama.cpp's build script reads ANDROID_NDK.
+          echo "NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_NDK=$NDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$NDK_DIR" >> $GITHUB_ENV
+          echo "Using NDK at: $NDK_DIR"
+
+      # llama.cpp is built from source: CMake drives the C++ build and
+      # bindgen needs libclang to generate the Rust bindings.
+      - name: Install native build tools
+        if: steps.android-check.outputs.ready == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libclang-dev
+
+      - name: Install Rust (stable)
+        if: steps.android-check.outputs.ready == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust build artifacts
+        if: steps.android-check.outputs.ready == 'true'
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          key: android
+
+      - name: Setup Node.js
+        if: steps.android-check.outputs.ready == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        if: steps.android-check.outputs.ready == 'true'
+        run: npm ci
+
+      # Two copies of the Tauri CLI take part in an Android build: `npx tauri`
+      # starts it, and Gradle calls `cargo tauri android-studio-script` back
+      # into it. They must be the same version or the handshake fails
+      # ("failed to read .tauri/cli-options-server.json"). Install the cargo
+      # copy at exactly the version package-lock.json pins for the npm copy.
+      - name: Install Tauri CLI (cargo, same version as the npm CLI)
+        if: steps.android-check.outputs.ready == 'true'
+        run: |
+          CLI_VERSION=$(node -p "require('@tauri-apps/cli/package.json').version")
+          if cargo tauri --version 2>/dev/null | grep -q "$CLI_VERSION"; then
+            echo "tauri-cli $CLI_VERSION already installed (cache)"
+          else
+            echo "Installing tauri-cli $CLI_VERSION"
+            cargo install tauri-cli --version "$CLI_VERSION" --locked
+          fi
+
+      - name: Setup Android signing keystore
+        if: steps.android-check.outputs.ready == 'true'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+        run: |
+          mkdir -p src-tauri/gen/android/app
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/app/neurix-release.keystore
+            printf 'storeFile=neurix-release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$ANDROID_STORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" \
+              > src-tauri/gen/android/keystore.properties
+            echo "Release keystore configured"
+          else
+            echo "::notice::No keystore secret set: the build is signed with the debug key."
+          fi
+
+      - name: Build Android APK + AAB (ARM64)
+        if: steps.android-check.outputs.ready == 'true'
+        run: npx tauri android build --target aarch64
+
+      - name: Sign AAB and APK with release keystore
+        if: steps.android-check.outputs.ready == 'true' && hashFiles('src-tauri/gen/android/app/neurix-release.keystore') != ''
+        env:
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          AAB=$(find src-tauri/gen/android -name "*.aab" -type f | head -1)
+          APK=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
+          KEYSTORE="src-tauri/gen/android/app/neurix-release.keystore"
+
+          if [ -n "$AAB" ]; then
+            echo "Signing AAB: $AAB"
+            jarsigner -keystore "$KEYSTORE" \
+              -storepass "$ANDROID_STORE_PASSWORD" \
+              -keypass "$ANDROID_KEY_PASSWORD" \
+              "$AAB" "$ANDROID_KEY_ALIAS"
+            jarsigner -verify "$AAB" && echo "AAB signed successfully"
+          fi
+
+          if [ -n "$APK" ]; then
+            echo "Signing APK: $APK"
+            # apksigner adds the v2/v3 signatures Android requires; jarsigner
+            # alone only produces v1.
+            APKSIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" | sort -V | tail -1)
+            if [ -n "$APKSIGNER" ]; then
+              "$APKSIGNER" sign --ks "$KEYSTORE" \
+                --ks-pass "pass:$ANDROID_STORE_PASSWORD" \
+                --ks-key-alias "$ANDROID_KEY_ALIAS" \
+                --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+                "$APK"
+              echo "APK signed successfully"
+            else
+              jarsigner -keystore "$KEYSTORE" \
+                -storepass "$ANDROID_STORE_PASSWORD" \
+                -keypass "$ANDROID_KEY_PASSWORD" \
+                "$APK" "$ANDROID_KEY_ALIAS"
+            fi
+          fi
+
+      - name: Collect build outputs
+        if: steps.android-check.outputs.ready == 'true'
+        id: outputs
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          mkdir -p android-out
+          APK=$(find src-tauri/gen/android -name "*.apk" -type f | head -1)
+          AAB=$(find src-tauri/gen/android -name "*.aab" -type f | head -1)
+          if [ -z "$APK" ]; then
+            echo "::error::The build produced no APK"
+            exit 1
+          fi
+          cp "$APK" "android-out/Neurix_${VERSION}_android.apk"
+          [ -n "$AAB" ] && cp "$AAB" "android-out/Neurix_${VERSION}.aab"
+          ls -lh android-out
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Attach APK to the workflow run
+        if: steps.android-check.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: neurix-android-${{ steps.outputs.outputs.version }}
+          path: android-out/*
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload to the GitHub release
+        if: steps.android-check.outputs.ready == 'true' && inputs.release_version != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.release_version }}
+        run: |
+          # The release normally exists already (created by the Windows job).
+          if ! gh release view "v$VERSION" &>/dev/null; then
+            echo "Release v$VERSION not found — creating it"
+            gh release create "v$VERSION" --title "Neurix v$VERSION" --notes "Release v$VERSION"
+          fi
+          gh release upload "v$VERSION" android-out/* --clobber

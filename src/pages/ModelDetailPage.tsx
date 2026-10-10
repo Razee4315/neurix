@@ -1,15 +1,16 @@
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Icon } from "@/components/ui/Icon";
+import { ModelMeters } from "@/components/ui/Meter";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
 import { useDownloads } from "@/context/DownloadContext";
-import { modelService, notificationService, settingsService } from "@/services";
-import type { ModelInfo } from "@/services/types";
+import { modelService, settingsService } from "@/services";
+import type { ModelInfo, Reasoning } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { formatGB } from "@/utils/format";
-import { requiredMemoryBytes, vibrate } from "@/utils/platform";
+import { fitSummary, modelFit } from "@/utils/modelFit";
 import { useCatalogModel } from "@/utils/useCatalogModel";
+import { useModelDownload } from "@/utils/useModelDownload";
 import { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -119,7 +120,7 @@ const DownloadBtn = styled.button`
   width: 100%;
   padding: 0.875rem;
   border-radius: ${tokens.borderRadius.xl};
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
   font-family: ${tokens.typography.fontFamily.label};
   font-size: ${tokens.typography.fontSize.md};
@@ -162,6 +163,26 @@ const Notice = styled.div<{ $tone: "warn" | "info" }>`
   svg { margin-top: 2px; }
 `;
 
+const Meters = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 1rem;
+  margin-top: 0.875rem;
+`;
+
+const REASONING_LABEL: Record<Reasoning, string> = {
+	none: "Answers directly",
+	optional: "Can think first (you choose)",
+	always: "Always thinks first",
+};
+
+/** "2026-02" -> "February 2026". */
+function releaseLabel(released: string): string {
+	const [year, month] = released.split("-").map(Number);
+	if (!year || !month) return released;
+	return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
 export function ModelDetailPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
@@ -169,8 +190,8 @@ export function ModelDetailPage() {
 	// Allow deep-linking via ?id=... so reload doesn't kick back to /store.
 	const idFromQuery = new URLSearchParams(location.search).get("id");
 	const { model, lookupFailed } = useCatalogModel(stateModel, idFromQuery);
-	const { downloads, installedVersion, startDownload } = useDownloads();
-	const { showConfirm } = useConfirm();
+	const { downloads, installedVersion } = useDownloads();
+	const download = useModelDownload();
 	const [isDownloaded, setIsDownloaded] = useState(false);
 	const [deviceMemory, setDeviceMemory] = useState<number | null>(null);
 	const [freeBytes, setFreeBytes] = useState<number | null>(null);
@@ -206,26 +227,8 @@ export function ModelDetailPage() {
 
 	const dl = downloads[model.id];
 	const inProgress = !!dl && dl.status !== "finished";
-	const tooLarge = deviceMemory !== null && requiredMemoryBytes(model.size_bytes) > deviceMemory;
+	const fit = modelFit(model, deviceMemory);
 	const noSpace = freeBytes !== null && freeBytes < model.size_bytes;
-
-	const handleDownload = async () => {
-		const ok = await showConfirm({
-			title: tooLarge ? "This model may not run here" : "Download model",
-			message: tooLarge
-				? `${model.name} needs about ${formatGB(requiredMemoryBytes(model.size_bytes))} GB of memory and this device has ${formatGB(deviceMemory ?? 0)} GB. It may fail to load or be very slow. Download ${model.size_label} anyway?`
-				: `Download ${model.name}? It will use ${model.size_label} of storage.`,
-			confirmLabel: tooLarge ? "Download anyway" : "Download",
-			cancelLabel: "Cancel",
-		});
-		if (!ok) return;
-		vibrate(10);
-		// Ask for notifications here, where the reason is obvious: to be told
-		// when a long download finishes.
-		await notificationService.requestNotificationPermission();
-		startDownload(model);
-		navigate(`/downloading?id=${encodeURIComponent(model.id)}`, { state: { model } });
-	};
 
 	return (
 		<AppLayout title={model.name} back="/store">
@@ -239,12 +242,24 @@ export function ModelDetailPage() {
 
 				<Description>{model.description}</Description>
 
-				{tooLarge && !isDownloaded && (
+				<Meters>
+					<ModelMeters quality={model.quality} speed={model.speed} />
+				</Meters>
+
+				{fit === "good" && !isDownloaded && (
+					<Notice $tone="info" role="note">
+						<Icon name="check_circle" size={16} color={tokens.colors.tertiary} />
+						<span>{fitSummary(model, deviceMemory)}.</span>
+					</Notice>
+				)}
+				{(fit === "tight" || fit === "too_big") && !isDownloaded && (
 					<Notice $tone="warn" role="note">
 						<Icon name="warning" size={16} color={tokens.colors.error} />
 						<span>
-							This model needs about {formatGB(requiredMemoryBytes(model.size_bytes))} GB of memory;
-							this device has {formatGB(deviceMemory ?? 0)} GB. A smaller model will work better.
+							{fitSummary(model, deviceMemory)}.{" "}
+							{fit === "too_big"
+								? "It will probably fail to load; a smaller model will work better."
+								: "It should load, but expect it to be slow."}
 						</span>
 					</Notice>
 				)}
@@ -279,8 +294,20 @@ export function ModelDetailPage() {
 						<InfoValue>{model.quantization}</InfoValue>
 					</InfoRow>
 					<InfoRow>
+						<InfoLabel>Reasoning</InfoLabel>
+						<InfoValue>{REASONING_LABEL[model.reasoning]}</InfoValue>
+					</InfoRow>
+					<InfoRow>
+						<InfoLabel>Memory needed</InfoLabel>
+						<InfoValue>{model.min_ram_gb} GB</InfoValue>
+					</InfoRow>
+					<InfoRow>
 						<InfoLabel>Context window</InfoLabel>
-						<InfoValue>{model.context_length.toLocaleString()} tokens</InfoValue>
+						<InfoValue>up to {model.context_length.toLocaleString()} tokens</InfoValue>
+					</InfoRow>
+					<InfoRow>
+						<InfoLabel>Released</InfoLabel>
+						<InfoValue>{releaseLabel(model.released)}</InfoValue>
 					</InfoRow>
 					<InfoRow>
 						<InfoLabel>Download size</InfoLabel>
@@ -290,7 +317,7 @@ export function ModelDetailPage() {
 
 				{isDownloaded ? (
 					<DownloadedBtn type="button" onClick={() => navigate("/models")}>
-						Installed — open My Models
+						Installed. Open My Models
 					</DownloadedBtn>
 				) : inProgress ? (
 					<DownloadBtn
@@ -300,19 +327,21 @@ export function ModelDetailPage() {
 						}
 					>
 						{dl.status === "paused"
-							? "Download paused — view"
+							? "Download paused. View it"
 							: dl.status === "failed"
-								? "Download failed — view"
-								: "Downloading — view progress"}
+								? "Download failed. View it"
+								: "Downloading. View progress"}
 					</DownloadBtn>
 				) : (
 					<>
-						<DownloadBtn type="button" onClick={handleDownload} disabled={noSpace}>
-							Download {model.name}
+						<DownloadBtn
+							type="button"
+							onClick={() => download(model, deviceMemory)}
+							disabled={noSpace}
+						>
+							Download · {model.size_label}
 						</DownloadBtn>
-						<SizeNote>
-							{model.size_label} · downloaded once, then works offline
-						</SizeNote>
+						<SizeNote>Downloaded once, then works with no connection</SizeNote>
 					</>
 				)}
 			</Page>

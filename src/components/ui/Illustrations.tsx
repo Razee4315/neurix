@@ -1,5 +1,4 @@
-import { Icon } from "@/components/ui/Icon";
-import { alpha } from "@/theme/alpha";
+import { tokens } from "@/theme/tokens";
 import styled, { keyframes } from "styled-components";
 
 /**
@@ -21,11 +20,6 @@ const spin = keyframes`
   to { transform: rotate(360deg); }
 `;
 
-const breathe = keyframes`
-  0%, 100% { transform: scale(1); opacity: 0.55; }
-  50% { transform: scale(1.06); opacity: 0.9; }
-`;
-
 const C = {
 	primary: "rgb(var(--c-primary))",
 	secondary: "rgb(var(--c-secondary))",
@@ -36,119 +30,259 @@ const C = {
 	highest: "rgb(var(--c-surface-container-highest))",
 	outline: "rgb(var(--c-outline-variant))",
 	onVariant: "rgb(var(--c-on-surface-variant))",
+	onSurface: "rgb(var(--c-on-surface))",
 };
 
-/* ── Mountain scene: the Karakoram at night, no signal needed ── */
+/* ── Mountain scene: a camp below a Karakoram peak, no signal needed ──
+
+   A flat picture in a frame: a night sky with stars and a crescent moon, a
+   far range, a second summit, then the main peak with one face in light and
+   one in shadow and snow on its shoulders. In front, the ground and a
+   single lit tent. The tent is the point of the picture: someone is out
+   here with no signal, and the light is on.
+
+   Every shape is a solid fill. Depth comes from overlap and from how much
+   of the accent color each layer carries, not from glows or fades. */
 
 const SceneSvg = styled.svg`
+  display: block;
   width: 100%;
   max-width: 340px;
   height: auto;
-  overflow: visible;
+  overflow: hidden;
+  border-radius: calc(${tokens.borderRadius.xl} * 1.5);
+  border: 1px solid ${tokens.colors.outlineVariant};
+  background: ${tokens.colors.surfaceContainerLow};
 
   .star { animation: ${twinkle} 3.2s ease-in-out infinite; }
   .star:nth-of-type(2n) { animation-delay: 0.8s; }
   .star:nth-of-type(3n) { animation-delay: 1.6s; }
-  .orb { animation: ${drift} 6s ease-in-out infinite; transform-origin: center; }
+
+  /* Snow is light in every theme: the pale text color on dark themes,
+     white on a light one (where the text color is ink). */
+  .snow { fill: rgb(var(--c-on-surface)); }
+  html[data-mode="light"] & .snow { fill: #ffffff; }
 `;
 
 const STARS: ReadonlyArray<[number, number, number]> = [
-	[28, 30, 1.4], [70, 58, 1], [112, 22, 1.6], [150, 48, 1], [262, 28, 1.5],
-	[296, 62, 1.1], [226, 74, 0.9], [44, 84, 0.9], [188, 16, 1.1],
+	[22, 34, 1.2],
+	[58, 18, 0.9],
+	[84, 52, 1],
+	[118, 26, 1.3],
+	[176, 14, 1],
+	[206, 40, 0.8],
+	[286, 22, 1.1],
+	[304, 66, 0.9],
+	[36, 76, 0.8],
+	[270, 84, 0.7],
 ];
+
+/** Four-point stars: [x, y, size]. */
+const GLINTS: ReadonlyArray<[number, number, number]> = [
+	[46, 44, 5],
+	[196, 66, 4],
+	[296, 44, 3.5],
+];
+
+function glint(x: number, y: number, r: number): string {
+	const k = r * 0.22;
+	return `M${x} ${y - r} L${x + k} ${y - k} L${x + r} ${y} L${x + k} ${y + k} L${x} ${y + r} L${x - k} ${y + k} L${x - r} ${y} L${x - k} ${y - k} Z`;
+}
 
 export function MountainScene({ className }: { className?: string }) {
 	return (
-		<SceneSvg viewBox="0 0 320 200" className={className} role="img" aria-label="Mountains under a night sky">
+		<SceneSvg
+			viewBox="0 0 320 200"
+			className={className}
+			role="img"
+			aria-label="A lit tent below a snow-capped peak at night"
+		>
 			<defs>
-				<radialGradient id="mtn-glow" cx="50%" cy="50%" r="50%">
-					<stop offset="0%" stopColor={C.primary} stopOpacity="0.55" />
-					<stop offset="100%" stopColor={C.primary} stopOpacity="0" />
-				</radialGradient>
-				<linearGradient id="mtn-far" x1="0" y1="0" x2="0" y2="1">
-					<stop offset="0%" stopColor={C.tertiary} stopOpacity="0.5" />
-					<stop offset="100%" stopColor={C.tertiary} stopOpacity="0.08" />
-				</linearGradient>
-				<linearGradient id="mtn-near" x1="0" y1="0" x2="0" y2="1">
-					<stop offset="0%" stopColor={C.primary} stopOpacity="0.7" />
-					<stop offset="100%" stopColor={C.primary} stopOpacity="0.12" />
-				</linearGradient>
+				{/* A crescent: a disc with a bite taken out of it. */}
+				<mask id="mtn-crescent">
+					<circle cx="250" cy="44" r="15" fill="#fff" />
+					<circle cx="243" cy="39" r="13" fill="#000" />
+				</mask>
 			</defs>
 
 			{STARS.map(([x, y, r]) => (
-				<circle key={`${x}-${y}`} className="star" cx={x} cy={y} r={r} fill={C.onVariant} />
+				<circle
+					key={`${x}-${y}`}
+					className="star"
+					cx={x}
+					cy={y}
+					r={r}
+					fill={C.onVariant}
+				/>
+			))}
+			{GLINTS.map(([x, y, r]) => (
+				<path
+					key={`g-${x}-${y}`}
+					className="star"
+					d={glint(x, y, r)}
+					fill={C.onSurface}
+				/>
 			))}
 
-			<g className="orb">
-				<circle cx="218" cy="62" r="46" fill="url(#mtn-glow)" />
-				<circle cx="218" cy="62" r="15" fill={C.primary} opacity="0.9" />
-				<circle cx="218" cy="62" r="5" fill={C.secondary} />
-			</g>
+			<circle
+				cx="250"
+				cy="44"
+				r="15"
+				fill={C.onSurface}
+				mask="url(#mtn-crescent)"
+			/>
 
-			<path d="M0 168 L46 104 L78 136 L124 70 L168 130 L206 96 L258 150 L292 118 L320 146 L320 200 L0 200 Z" fill="url(#mtn-far)" />
-			<path d="M0 200 L0 176 L52 128 L92 164 L146 96 L186 150 L232 120 L282 172 L320 150 L320 200 Z" fill="url(#mtn-near)" />
-			{/* Snow caps */}
-			<path d="M146 96 L132 114 L142 110 L150 120 L158 112 Z" fill={C.bg} opacity="0.55" />
-			<path d="M124 70 L112 88 L122 84 L128 92 L136 86 Z" fill={C.bg} opacity="0.4" />
-			<path d="M0 200 L0 188 Q80 172 160 186 T320 180 L320 200 Z" fill={C.low} />
+			{/* Far range */}
+			<path
+				d="M0 152 L24 130 L44 142 L70 108 L92 128 L118 100 L140 124 L170 96 L196 126 L222 104 L250 134 L276 112 L300 136 L320 122 L320 200 L0 200 Z"
+				fill={C.tertiary}
+				fillOpacity="0.22"
+			/>
+
+			{/* Second summit, behind the main one */}
+			<path
+				d="M238 88 L206 138 L190 176 L246 176 L241 124 Z"
+				fill={C.primary}
+				fillOpacity="0.5"
+			/>
+			<path
+				d="M238 88 L241 124 L246 176 L304 176 L272 130 L260 134 Z"
+				fill={C.primary}
+				fillOpacity="0.26"
+			/>
+			<path
+				className="snow"
+				d="M238 88 L228 104 L234 101 L239 109 L241 124 L247 111 L252 110 Z"
+				opacity="0.6"
+			/>
+
+			{/* Main peak: the face in light, then the face in shadow */}
+			<path
+				d="M36 176 L70 146 L94 152 L122 98 L134 106 L150 42 L156 92 L146 128 L160 176 Z"
+				fill={C.primary}
+				fillOpacity="0.9"
+			/>
+			<path
+				d="M150 42 L170 86 L182 80 L208 134 L226 128 L264 176 L160 176 L146 128 L156 92 Z"
+				fill={C.primary}
+				fillOpacity="0.45"
+			/>
+			{/* Snow: bright where it catches the light, dimmer in shadow */}
+			<path
+				className="snow"
+				d="M150 42 L134 106 L138 96 L145 100 L149 84 L156 92 Z"
+			/>
+			<path
+				className="snow"
+				d="M150 42 L156 92 L162 80 L167 90 L170 86 Z"
+				opacity="0.6"
+			/>
+			<path
+				className="snow"
+				d="M122 98 L112 118 L119 113 L125 121 L134 106 Z"
+				opacity="0.7"
+			/>
+
+			{/* Ground, and the camp */}
+			<path
+				d="M0 200 L0 172 Q40 158 86 169 T180 173 T262 165 T320 173 L320 200 Z"
+				fill={C.highest}
+			/>
+			<path d="M82 173 L96 151 L110 173 Z" fill={C.secondary} />
+			<path d="M96 160 L91 173 L101 173 Z" fill={C.bg} />
 		</SceneSvg>
 	);
 }
 
-/* ── Chat scene: the active character inside orbiting rings ── */
+/* ── Setup art: a model, living inside the device ── */
 
-const Orb = styled.div<{ $accent: string }>`
-  position: relative;
-  width: 112px;
-  height: 112px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: ${({ $accent }) => $accent};
+const SetupSvg = styled.svg`
+  width: 132px;
+  height: 96px;
+  overflow: visible;
 
-  svg.rings {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    animation: ${spin} 28s linear infinite;
-  }
-
-  .halo {
-    position: absolute;
-    inset: 14px;
-    border-radius: 50%;
-    background: radial-gradient(circle, ${({ $accent }) => alpha($accent, "55")} 0%, transparent 70%);
-    animation: ${breathe} 4s ease-in-out infinite;
-  }
-
-  .core {
-    position: relative;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: ${({ $accent }) => alpha($accent, "26")};
-    border: 1px solid ${({ $accent }) => alpha($accent, "80")};
-  }
+  .float { animation: ${drift} 5s ease-in-out infinite; }
+  .float.late { animation-delay: 1.4s; }
+  .ring { animation: ${spin} 40s linear infinite; transform-origin: 66px 50px; }
 `;
 
-export function ChatScene({ accent, icon }: { accent: string; icon: string }) {
+export function SetupArt({ className }: { className?: string }) {
 	return (
-		<Orb $accent={accent} aria-hidden="true">
-			<svg className="rings" viewBox="0 0 112 112" fill="none" aria-hidden="true">
-				<circle cx="56" cy="56" r="52" stroke="currentColor" strokeOpacity="0.18" strokeDasharray="2 7" />
-				<circle cx="56" cy="56" r="40" stroke="currentColor" strokeOpacity="0.3" strokeDasharray="14 10" />
-				<circle cx="56" cy="4" r="3" fill="currentColor" />
-				<circle cx="96" cy="56" r="2" fill="currentColor" fillOpacity="0.6" />
-			</svg>
-			<span className="halo" />
-			<span className="core">
-				<Icon name={icon} size={26} />
-			</span>
-		</Orb>
+		<SetupSvg
+			viewBox="0 0 132 96"
+			fill="none"
+			className={className}
+			aria-hidden="true"
+		>
+			{/* Nothing leaves this circle: the model's whole world is the device. */}
+			<circle
+				className="ring"
+				cx="66"
+				cy="50"
+				r="44"
+				stroke={C.outline}
+				strokeWidth="1"
+				strokeDasharray="2 6"
+				strokeLinecap="round"
+			/>
+
+			{/* The device */}
+			<rect
+				x="43"
+				y="6"
+				width="46"
+				height="84"
+				rx="10"
+				fill={C.low}
+				stroke={C.primary}
+				strokeWidth="1.5"
+			/>
+			<rect x="60" y="11" width="12" height="2.5" rx="1.25" fill={C.outline} />
+
+			{/* The model, inside it */}
+			<g className="float">
+				<path
+					d="M66 33 L80 40.5 L66 48 L52 40.5 Z"
+					fill={C.primary}
+					fillOpacity="0.35"
+					stroke={C.primary}
+					strokeWidth="1.25"
+					strokeLinejoin="round"
+				/>
+				<path
+					d="M52 40.5 L52 56 L66 63.5 L66 48 Z"
+					fill={C.highest}
+					stroke={C.primary}
+					strokeWidth="1.25"
+					strokeLinejoin="round"
+				/>
+				<path
+					d="M80 40.5 L80 56 L66 63.5 L66 48 Z"
+					fill={C.high}
+					stroke={C.primary}
+					strokeWidth="1.25"
+					strokeLinejoin="round"
+				/>
+			</g>
+
+			{/* Ready */}
+			<circle cx="88" cy="80" r="9" fill={C.secondary} />
+			<path
+				d="M84 80 L87 83 L92.5 77"
+				stroke={C.bg}
+				strokeWidth="2"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+
+			<path
+				className="float late"
+				d="M20 26 l1.6 4 4 1.6 -4 1.6 -1.6 4 -1.6 -4 -4 -1.6 4 -1.6 Z"
+				fill={C.secondary}
+			/>
+			<circle className="float late" cx="112" cy="24" r="3" fill={C.tertiary} />
+			<circle className="float" cx="16" cy="64" r="2" fill={C.primary} />
+		</SetupSvg>
 	);
 }
 
@@ -172,24 +306,96 @@ export function EmptyArt({ kind }: { kind: EmptyArtKind }) {
 			{kind === "models" && (
 				<>
 					<g className="float">
-						<path d="M66 14 L96 30 L66 46 L36 30 Z" fill={C.primary} fillOpacity="0.25" stroke={C.primary} strokeWidth="1.5" strokeLinejoin="round" />
-						<path d="M36 30 L36 58 L66 74 L66 46 Z" fill={C.highest} stroke={C.primary} strokeWidth="1.5" strokeLinejoin="round" />
-						<path d="M96 30 L96 58 L66 74 L66 46 Z" fill={C.high} stroke={C.primary} strokeWidth="1.5" strokeLinejoin="round" />
+						<path
+							d="M66 14 L96 30 L66 46 L36 30 Z"
+							fill={C.primary}
+							fillOpacity="0.25"
+							stroke={C.primary}
+							strokeWidth="1.5"
+							strokeLinejoin="round"
+						/>
+						<path
+							d="M36 30 L36 58 L66 74 L66 46 Z"
+							fill={C.highest}
+							stroke={C.primary}
+							strokeWidth="1.5"
+							strokeLinejoin="round"
+						/>
+						<path
+							d="M96 30 L96 58 L66 74 L66 46 Z"
+							fill={C.high}
+							stroke={C.primary}
+							strokeWidth="1.5"
+							strokeLinejoin="round"
+						/>
 					</g>
-					<circle className="float late" cx="108" cy="22" r="4" fill={C.secondary} />
-					<circle className="float late" cx="22" cy="44" r="3" fill={C.tertiary} />
+					<circle
+						className="float late"
+						cx="108"
+						cy="22"
+						r="4"
+						fill={C.secondary}
+					/>
+					<circle
+						className="float late"
+						cx="22"
+						cy="44"
+						r="3"
+						fill={C.tertiary}
+					/>
 				</>
 			)}
 			{kind === "chats" && (
 				<>
 					<g className="float">
-						<rect x="22" y="16" width="62" height="36" rx="12" fill={C.highest} stroke={C.outline} strokeWidth="1.5" />
-						<path d="M34 52 L34 62 L46 52 Z" fill={C.highest} stroke={C.outline} strokeWidth="1.5" strokeLinejoin="round" />
-						<rect x="32" y="28" width="34" height="4" rx="2" fill={C.onVariant} fillOpacity="0.5" />
-						<rect x="32" y="37" width="22" height="4" rx="2" fill={C.onVariant} fillOpacity="0.3" />
+						<rect
+							x="22"
+							y="16"
+							width="62"
+							height="36"
+							rx="12"
+							fill={C.highest}
+							stroke={C.outline}
+							strokeWidth="1.5"
+						/>
+						<path
+							d="M34 52 L34 62 L46 52 Z"
+							fill={C.highest}
+							stroke={C.outline}
+							strokeWidth="1.5"
+							strokeLinejoin="round"
+						/>
+						<rect
+							x="32"
+							y="28"
+							width="34"
+							height="4"
+							rx="2"
+							fill={C.onVariant}
+							fillOpacity="0.5"
+						/>
+						<rect
+							x="32"
+							y="37"
+							width="22"
+							height="4"
+							rx="2"
+							fill={C.onVariant}
+							fillOpacity="0.3"
+						/>
 					</g>
 					<g className="float late">
-						<rect x="58" y="40" width="54" height="32" rx="11" fill={C.primary} fillOpacity="0.2" stroke={C.primary} strokeWidth="1.5" />
+						<rect
+							x="58"
+							y="40"
+							width="54"
+							height="32"
+							rx="11"
+							fill={C.primary}
+							fillOpacity="0.2"
+							stroke={C.primary}
+							strokeWidth="1.5"
+						/>
 						<circle cx="74" cy="56" r="3" fill={C.primary} />
 						<circle cx="85" cy="56" r="3" fill={C.primary} fillOpacity="0.7" />
 						<circle cx="96" cy="56" r="3" fill={C.primary} fillOpacity="0.4" />
@@ -198,18 +404,52 @@ export function EmptyArt({ kind }: { kind: EmptyArtKind }) {
 			)}
 			{kind === "search" && (
 				<g className="float">
-					<circle cx="58" cy="40" r="22" fill={C.highest} stroke={C.primary} strokeWidth="2" />
-					<path d="M74 56 L92 74" stroke={C.primary} strokeWidth="5" strokeLinecap="round" />
-					<path d="M50 34 L66 46 M66 34 L50 46" stroke={C.onVariant} strokeWidth="2.5" strokeLinecap="round" />
+					<circle
+						cx="58"
+						cy="40"
+						r="22"
+						fill={C.highest}
+						stroke={C.primary}
+						strokeWidth="2"
+					/>
+					<path
+						d="M74 56 L92 74"
+						stroke={C.primary}
+						strokeWidth="5"
+						strokeLinecap="round"
+					/>
+					<path
+						d="M50 34 L66 46 M66 34 L50 46"
+						stroke={C.onVariant}
+						strokeWidth="2.5"
+						strokeLinecap="round"
+					/>
 				</g>
 			)}
 			{kind === "characters" && (
 				<>
 					<g className="float">
-						<circle cx="66" cy="34" r="14" fill={C.primary} fillOpacity="0.2" stroke={C.primary} strokeWidth="1.5" />
-						<path d="M40 76 Q40 54 66 54 Q92 54 92 76" fill={C.highest} stroke={C.primary} strokeWidth="1.5" />
+						<circle
+							cx="66"
+							cy="34"
+							r="14"
+							fill={C.primary}
+							fillOpacity="0.2"
+							stroke={C.primary}
+							strokeWidth="1.5"
+						/>
+						<path
+							d="M40 76 Q40 54 66 54 Q92 54 92 76"
+							fill={C.highest}
+							stroke={C.primary}
+							strokeWidth="1.5"
+						/>
 					</g>
-					<path className="float late" d="M104 18 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5 Z" fill={C.secondary} />
+					<path
+						className="float late"
+						d="M104 18 l2.5 6 6 2.5 -6 2.5 -2.5 6 -2.5 -6 -6 -2.5 6 -2.5 Z"
+						fill={C.secondary}
+					/>
 				</>
 			)}
 		</ArtSvg>

@@ -5,6 +5,7 @@ use serde_json::{Map, Value};
 use tauri::{AppHandle, Manager};
 use tokio::fs;
 
+use crate::device;
 use crate::settings::{self, Settings};
 
 #[tauri::command]
@@ -27,7 +28,7 @@ pub async fn reset_settings(app: AppHandle) -> Result<Settings, String> {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StorageInfo {
-    /// Installed models (weights + tokenizer).
+    /// Installed models.
     pub used_bytes: u64,
     pub models_count: u32,
     /// Unfinished downloads still on disk.
@@ -58,16 +59,12 @@ pub async fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
             continue;
         }
         let model_file = path.join("model.gguf");
-        let tok_file = path.join("tokenizer.json");
         let part_file = path.join("model.gguf.part");
 
         info.partial_bytes += file_len(&part_file).await;
-        if model_file.exists() && tok_file.exists() {
+        if model_file.exists() {
             info.models_count += 1;
-            info.used_bytes += file_len(&model_file).await + file_len(&tok_file).await;
-        } else {
-            // Weights without a tokenizer are an unfinished install.
-            info.partial_bytes += file_len(&model_file).await;
+            info.used_bytes += file_len(&model_file).await;
         }
     }
 
@@ -101,43 +98,14 @@ pub struct DeviceInfo {
     /// Physical RAM, when the platform lets us read it. `None` means
     /// unknown — callers must not treat that as "too little".
     pub total_memory_bytes: Option<u64>,
-}
-
-/// Parse the `MemTotal` line of `/proc/meminfo` ("MemTotal:  8040348 kB").
-fn parse_mem_total(meminfo: &str) -> Option<u64> {
-    meminfo
-        .lines()
-        .find(|line| line.starts_with("MemTotal:"))?
-        .split_whitespace()
-        .nth(1)?
-        .parse::<u64>()
-        .ok()
-        .map(|kb| kb * 1024)
+    /// Threads inference runs on when the setting is left on automatic.
+    pub inference_threads: u32,
 }
 
 #[tauri::command]
 pub async fn get_device_info() -> Result<DeviceInfo, String> {
-    // Android and Linux expose RAM through procfs. Other platforms report
-    // unknown rather than pulling in a system-info dependency.
-    let total_memory_bytes = fs::read_to_string("/proc/meminfo")
-        .await
-        .ok()
-        .and_then(|text| parse_mem_total(&text));
-    Ok(DeviceInfo { total_memory_bytes })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_mem_total;
-
-    #[test]
-    fn reads_mem_total() {
-        let sample = "MemTotal:        8040348 kB\nMemFree:          123456 kB\n";
-        assert_eq!(parse_mem_total(sample), Some(8_040_348 * 1024));
-    }
-
-    #[test]
-    fn missing_line_is_unknown() {
-        assert_eq!(parse_mem_total("MemFree: 1 kB\n"), None);
-    }
+    Ok(DeviceInfo {
+        total_memory_bytes: device::total_memory_bytes(),
+        inference_threads: device::inference_threads(),
+    })
 }

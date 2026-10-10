@@ -5,8 +5,8 @@ import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
 import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
-import { modelService, settingsService } from "@/services";
-import type { DownloadedModel, StorageInfo } from "@/services/types";
+import { chatService, modelService, settingsService } from "@/services";
+import type { BenchmarkResult, DownloadedModel, StorageInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { formatBytes, formatGB, formatSpeed } from "@/utils/format";
@@ -157,7 +157,7 @@ const Card = styled.div<{ $active: boolean }>`
   border: 2px solid ${({ $active }) =>
 		$active ? tokens.colors.primary : "transparent"};
   ${({ $active }) => $active && `
-    box-shadow: 0 0 0 1px ${alpha(tokens.colors.primary, "20")}, ${tokens.shadows.ambient};
+    box-shadow: 0 0 0 1px ${alpha(tokens.colors.primary, "20")};
   `}
 `;
 
@@ -186,7 +186,7 @@ const ActiveBadge = styled.span`
   font-weight: ${tokens.typography.fontWeight.bold};
   padding: 0.25rem 0.5rem;
   border-radius: ${tokens.borderRadius.md};
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
 `;
 
@@ -216,7 +216,7 @@ const UseBtn = styled.button<{ $active: boolean }>`
   ${({ $active }) =>
 		$active
 			? `
-    background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+    background: ${tokens.colors.primary};
     color: ${tokens.colors.onPrimaryFixed};
   `
 			: `
@@ -318,7 +318,7 @@ const ProgressBarContainer = styled.div`
 const ProgressBarFill = styled.div<{ $pct: number }>`
   height: 100%;
   width: ${({ $pct }) => $pct}%;
-  background: linear-gradient(90deg, ${tokens.colors.tertiary}, ${tokens.colors.primary});
+  background: ${tokens.colors.primary};
   border-radius: ${tokens.borderRadius.circle};
   transition: width 0.3s ease;
 `;
@@ -430,7 +430,7 @@ const PrimaryCta = styled.button`
   padding: 0.625rem 1.125rem;
   border-radius: ${tokens.borderRadius.xl};
   border: none;
-  background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+  background: ${tokens.colors.primary};
   color: ${tokens.colors.onPrimaryFixed};
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
@@ -455,6 +455,8 @@ export function MyModelsPage() {
 	const { downloads, installedVersion, pauseDownload, resumeDownload, cancelDownload } = useDownloads();
 	const { showConfirm, showAlert } = useConfirm();
 	const { showToast } = useToast();
+	const [measuring, setMeasuring] = useState(false);
+	const [speed, setSpeed] = useState<BenchmarkResult | null>(null);
 	const [search, setSearch] = useState("");
 	const [models, setModels] = useState<DownloadedModel[]>([]);
 	const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
@@ -567,6 +569,18 @@ export function MyModelsPage() {
 		if (ok) cancelDownload(modelId);
 	};
 
+	const handleSpeedTest = async () => {
+		setMeasuring(true);
+		setSpeed(null);
+		try {
+			setSpeed(await chatService.benchmarkModel());
+		} catch (err) {
+			showToast(typeof err === "string" ? err : "The speed test could not run", "error");
+		} finally {
+			setMeasuring(false);
+		}
+	};
+
 	const pending = Object.values(downloads).filter((d) => d.status !== "finished");
 	const storageKnown = availableSpace !== null;
 	const totalSpace = storageKnown ? storage.used_bytes + availableSpace : 0;
@@ -665,10 +679,20 @@ export function MyModelsPage() {
 												Pause
 											</DownloadActionBtn>
 										)}
-										{(dl.status === "paused" || dl.status === "failed") && (
+										{(dl.status === "paused" || dl.status === "failed") && !dl.blockedByWifi && (
 											<DownloadActionBtn type="button" $primary onClick={() => resumeDownload(dl.model)}>
 												<Icon name={dl.status === "failed" ? "refresh" : "play_arrow"} size={16} />
 												{dl.status === "failed" ? "Retry" : "Resume"}
+											</DownloadActionBtn>
+										)}
+										{dl.blockedByWifi && (
+											<DownloadActionBtn
+												type="button"
+												$primary
+												onClick={() => resumeDownload(dl.model, { allowMobileData: true })}
+											>
+												<Icon name="download" size={16} />
+												Use this connection
 											</DownloadActionBtn>
 										)}
 										{dl.status !== "verifying" && (
@@ -735,8 +759,16 @@ export function MyModelsPage() {
 									</CardTop>
 									<CardMeta>
 										<span>{m.size_label}</span>
-										<span>{m.tag}</span>
+										<span>{m.tag === "Legacy" ? "Earlier model · newer ones answer better" : m.tag}</span>
 									</CardMeta>
+									{isActive && speed && (
+										<CardMeta role="status">
+											<span>
+												{speed.tokens_per_second.toFixed(1)} tokens/s writing ·{" "}
+												{speed.prompt_tokens_per_second.toFixed(0)} reading · {speed.threads} threads
+											</span>
+										</CardMeta>
+									)}
 									<CardActions>
 										<UseBtn
 											type="button"
@@ -747,7 +779,12 @@ export function MyModelsPage() {
 											{isActive ? "New chat" : "Use model"}
 										</UseBtn>
 										{isActive && (
-											<SecondaryBtn type="button" onClick={handleUnload}>
+											<SecondaryBtn type="button" onClick={handleSpeedTest} disabled={measuring}>
+												{measuring ? "Measuring…" : "Speed test"}
+											</SecondaryBtn>
+										)}
+										{isActive && (
+											<SecondaryBtn type="button" onClick={handleUnload} disabled={measuring}>
 												Unload
 											</SecondaryBtn>
 										)}

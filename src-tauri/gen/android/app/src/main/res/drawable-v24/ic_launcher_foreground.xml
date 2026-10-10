@@ -26,6 +26,6 @@
   <!-- Center green dot -->
   <path
       android:pathData="M54,48a6,6 0,1 1,0 12a6,6 0,1 1,0 -12z"
-      android:fillColor="#39FF14"/>
+      android:fillColor="#FFC46B"/>
 
 </vector>

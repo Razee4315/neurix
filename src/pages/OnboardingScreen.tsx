@@ -1,90 +1,44 @@
 import { Icon } from "@/components/ui/Icon";
+import { SetupArt } from "@/components/ui/Illustrations";
+import { ModelMeters } from "@/components/ui/Meter";
 import { NeurixLogo } from "@/components/ui/NeurixLogo";
 import { useAppContext } from "@/context/AppContext";
+import { modelService, settingsService } from "@/services";
+import type { ModelInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { nominalRamGb, recommendModel } from "@/utils/modelFit";
 import { vibrate } from "@/utils/platform";
-import { useRef, useState } from "react";
+import { useModelDownload } from "@/utils/useModelDownload";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import styled, { css, keyframes } from "styled-components";
+import styled, { keyframes } from "styled-components";
 
-/* ── Step Data ── */
+/* First run is one decision: which model to download. Neurix can make that
+   decision from the device's memory, so this screen proposes a model and
+   offers a single button. From here to a first chat is one tap and one
+   download, with the full store a tap away for anyone who wants to choose. */
 
-interface OnboardingStep {
-	stepNumber: string;
-	icon: string;
-	iconColor: string;
-	headline: string;
-	highlightWord: string;
-	description: string;
-	badge: string;
-}
-
-const STEPS: OnboardingStep[] = [
-	{
-		stepNumber: "01",
-		icon: "neurology",
-		iconColor: tokens.colors.primary,
-		headline: "Sovereign",
-		highlightWord: "intelligence.",
-		description:
-			"Download a model once and run it right here on your device. No servers, no accounts, no subscription.",
-		badge: "LOCAL PROCESSING",
-	},
-	{
-		stepNumber: "02",
-		icon: "airplanemode_active",
-		iconColor: tokens.colors.secondary,
-		headline: "Run",
-		highlightWord: "offline.",
-		description:
-			"After the download, no connection is needed. It works on a flight, on a mountain road, anywhere.",
-		badge: "ON-DEVICE ONLY",
-	},
-	{
-		stepNumber: "03",
-		icon: "enhanced_encryption",
-		iconColor: tokens.colors.secondary,
-		headline: "Total",
-		highlightWord: "privacy.",
-		description:
-			"Your conversations never leave your device. Nothing is collected or tracked. Next, pick a model — Llama 3.2 1B is a good first one.",
-		badge: "ZERO DATA COLLECTION",
-	},
-];
-
-/* ── Animations ── */
-
-const fadeIn = keyframes`
-  from { opacity: 0; transform: translateY(12px); }
+const rise = keyframes`
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 `;
 
-const iconPulse = keyframes`
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-`;
-
-/* ── Layout ── */
-
 const Container = styled.div`
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
-  height: 100dvh;
-  height: 100vh;
-  background: ${tokens.colors.background};
-  overflow: hidden;
-  position: relative;
+  background: ${tokens.surfaces.page};
+  color: ${tokens.colors.onSurface};
+  padding: max(1rem, env(safe-area-inset-top)) 1.5rem max(1.25rem, env(safe-area-inset-bottom));
+  overflow-y: auto;
 `;
 
-/* ── Header ── */
-
 const Header = styled.header`
-  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1.5rem;
   flex-shrink: 0;
 `;
 
@@ -96,262 +50,214 @@ const LogoGroup = styled.div`
 
 const BrandName = styled.span`
   font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.xl};
   font-weight: ${tokens.typography.fontWeight.bold};
-  letter-spacing: ${tokens.typography.letterSpacing.tighter};
+  letter-spacing: 0.04em;
   color: ${tokens.colors.primary};
 `;
 
-const SkipButton = styled.button`
-  background: none;
-  border: none;
-  color: ${tokens.colors.onSurfaceVariant};
-  font-family: ${tokens.typography.fontFamily.label};
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.medium};
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
-  cursor: pointer;
-  padding: 0.5rem;
-  transition: color ${tokens.transitions.fast};
-
-  &:hover {
-    color: ${tokens.colors.onSurface};
-  }
-`;
-
-/* ── Main Content ── */
-
-const MainContent = styled.main`
+const Main = styled.main`
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
-  padding: 0 2rem;
-  min-height: 0;
-`;
-
-const StepContent = styled.div`
-  max-width: 24rem;
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  animation: ${fadeIn} 0.4s ease-out both;
+  max-width: 26rem;
+  margin: 0 auto;
+  padding: 1.5rem 0;
+  animation: ${rise} 0.35s ease-out both;
 `;
 
-/* ── Icon ── */
-
-const IconCircle = styled.div<{ $color: string }>`
-  width: clamp(64px, 16vw, 80px);
-  height: clamp(64px, 16vw, 80px);
-  border-radius: ${tokens.borderRadius.circle};
-  background: ${({ $color }) => alpha($color, "12")};
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: clamp(1.5rem, 4vh, 2.5rem);
-  animation: ${iconPulse} 3s ease-in-out infinite;
+const Art = styled(SetupArt)`
+  margin: 0 0 1rem -0.5rem;
 `;
 
-/* ── Text ── */
-
-const StepLabel = styled.div`
-  margin-bottom: 0.375rem;
-  font-family: ${tokens.typography.fontFamily.label};
-  font-size: 10px;
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
+const Eyebrow = styled.p`
+  font-size: 11px;
+  font-weight: ${tokens.typography.fontWeight.bold};
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: ${tokens.colors.primary};
-  font-weight: ${tokens.typography.fontWeight.bold};
 `;
 
-const StepHeadline = styled.h1`
+const Title = styled.h1`
+  margin-top: 0.5rem;
   font-family: ${tokens.typography.fontFamily.headline};
-  font-size: clamp(2.25rem, 8vw, 3rem);
+  font-size: clamp(1.75rem, 7vw, 2.25rem);
   font-weight: ${tokens.typography.fontWeight.bold};
-  letter-spacing: ${tokens.typography.letterSpacing.tight};
-  color: ${tokens.colors.onSurface};
-  line-height: ${tokens.typography.lineHeight.tight};
-  margin-bottom: clamp(0.75rem, 2vh, 1.25rem);
+  line-height: 1.1;
 `;
 
-const Highlight = styled.span`
-  color: ${tokens.colors.primary};
-  font-style: italic;
-`;
-
-const StepDescription = styled.p`
-  font-family: ${tokens.typography.fontFamily.body};
+const Lead = styled.p`
+  margin-top: 0.75rem;
   font-size: ${tokens.typography.fontSize.base};
-  color: ${tokens.colors.onSurfaceVariant};
   line-height: ${tokens.typography.lineHeight.relaxed};
-  margin-bottom: clamp(1rem, 3vh, 2rem);
-  max-width: 320px;
+  color: ${tokens.colors.onSurfaceVariant};
 `;
 
-const PrivacyBadge = styled.div`
+const Card = styled.section`
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border-radius: ${tokens.borderRadius.xl};
+  background: ${tokens.colors.surfaceContainerLow};
+  border: 1px solid ${alpha(tokens.colors.primary, "40")};
+  min-height: 9.5rem;
+`;
+
+const CardHead = styled.div`
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
-`;
-
-const PrivacyBadgeLabel = styled.span`
-  font-size: 10px;
-  font-family: ${tokens.typography.fontFamily.label};
-  color: ${tokens.colors.secondary};
-  text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
-  font-weight: ${tokens.typography.fontWeight.semibold};
-`;
-
-/* ── Footer ── */
-
-const FooterSection = styled.footer`
-  width: 100%;
-  padding: 0.75rem 1.5rem 1.5rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-`;
-
-const ProgressDots = styled.div`
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-`;
-
-const ProgressDot = styled.div<{
-	$state: "completed" | "active" | "upcoming";
-}>`
-  height: 4px;
-  border-radius: ${tokens.borderRadius.circle};
-  transition: all ${tokens.transitions.normal};
-
-  ${({ $state }) => {
-		switch ($state) {
-			case "completed":
-				return css`
-          width: 2rem;
-          background: ${alpha(tokens.colors.primary, "33")};
-        `;
-			case "active":
-				return css`
-          width: 3rem;
-          background: ${tokens.colors.primary};
-        `;
-			case "upcoming":
-				return css`
-          width: 2rem;
-          background: ${tokens.colors.surfaceContainerHighest};
-        `;
-		}
-	}}
-`;
-
-const ActionBar = styled.div`
-  width: 100%;
-  max-width: 24rem;
-  display: flex;
-  align-items: center;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 0.75rem;
 `;
 
-const BackButton = styled.button`
-  flex: 1;
-  height: 50px;
-  border-radius: ${tokens.borderRadius.md};
-  background: ${tokens.colors.surfaceContainerHigh};
-  color: ${tokens.colors.onSurface};
-  font-family: ${tokens.typography.fontFamily.label};
+const ModelName = styled.h2`
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize.xl};
   font-weight: ${tokens.typography.fontWeight.bold};
-  font-size: ${tokens.typography.fontSize.sm};
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
-  text-transform: uppercase;
-  border: 1px solid ${alpha(tokens.colors.outlineVariant, "1a")};
-  cursor: pointer;
-  transition: all ${tokens.transitions.normal};
-
-  &:hover {
-    background: ${tokens.colors.surfaceBright};
-  }
-  &:active {
-    transform: scale(0.98);
-  }
 `;
 
-const NextButton = styled.button<{ $fullWidth: boolean }>`
-  flex: ${({ $fullWidth }) => ($fullWidth ? 1 : 2)};
-  height: 50px;
-  border-radius: ${tokens.borderRadius.md};
-  background: linear-gradient(
-    135deg,
-    ${tokens.colors.primary} 0%,
-    ${tokens.colors.primaryContainer} 100%
-  );
-  color: ${tokens.colors.onPrimaryFixed};
-  font-family: ${tokens.typography.fontFamily.label};
-  font-weight: ${tokens.typography.fontWeight.extrabold};
+const ModelSize = styled.span`
+  flex-shrink: 0;
+  font-family: ${tokens.typography.fontFamily.mono};
   font-size: ${tokens.typography.fontSize.sm};
-  letter-spacing: ${tokens.typography.letterSpacing.wider};
-  text-transform: uppercase;
-  border: none;
-  cursor: pointer;
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const ModelText = styled.p`
+  margin-top: 0.375rem;
+  font-size: ${tokens.typography.fontSize.sm};
+  line-height: 1.5;
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const Meters = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem 1rem;
+  margin-top: 0.625rem;
+`;
+
+const Reason = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.75rem;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.secondary};
+`;
+
+const CardPlaceholder = styled.p`
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const Primary = styled.button`
+  margin-top: 1rem;
+  width: 100%;
+  min-height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  box-shadow: ${tokens.shadows.glow.primary};
-  transition: all ${tokens.transitions.normal};
+  border: none;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.primary};
+  color: ${tokens.colors.onPrimaryFixed};
+  font-family: ${tokens.typography.fontFamily.label};
+  font-size: ${tokens.typography.fontSize.md};
+  font-weight: ${tokens.typography.fontWeight.bold};
+  cursor: pointer;
+  transition: transform 0.1s ease, filter ${tokens.transitions.fast};
 
-  &:hover {
-    box-shadow: 0 0 30px ${alpha(tokens.colors.primary, "40")};
-  }
-  &:active {
-    transform: scale(0.98);
-  }
+  &:hover { filter: brightness(1.06); }
+  &:active { transform: scale(0.98); }
+  &:disabled { opacity: 0.5; cursor: default; }
+  &:focus-visible { outline: 2px solid ${tokens.colors.onSurface}; outline-offset: 2px; }
 `;
 
-/* ── Component ── */
+const Secondary = styled.button`
+  margin-top: 0.5rem;
+  width: 100%;
+  min-height: 44px;
+  border: none;
+  background: none;
+  color: ${tokens.colors.onSurfaceVariant};
+  font-size: ${tokens.typography.fontSize.base};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  cursor: pointer;
+
+  &:hover { color: ${tokens.colors.onSurface}; }
+`;
+
+const Facts = styled.ul`
+  list-style: none;
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.375rem 1.25rem;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+
+  li {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+`;
 
 export function OnboardingScreen() {
 	const navigate = useNavigate();
 	const { updateSettings } = useAppContext();
-	const [currentStep, setCurrentStep] = useState(0);
-	const step = STEPS[currentStep];
-	const touchStartRef = useRef(0);
+	const download = useModelDownload();
+	const [model, setModel] = useState<ModelInfo | null>(null);
+	const [deviceMemory, setDeviceMemory] = useState<number | null>(null);
+	const [failed, setFailed] = useState(false);
+	const [starting, setStarting] = useState(false);
 
-	const isFirst = currentStep === 0;
-	const isLast = currentStep === STEPS.length - 1;
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				const [catalog, memory] = await Promise.all([
+					modelService.getCatalog(),
+					settingsService
+						.getDeviceInfo()
+						.then((info) => info.total_memory_bytes)
+						.catch(() => null),
+				]);
+				if (cancelled) return;
+				setDeviceMemory(memory);
+				setModel(recommendModel(catalog, memory));
+			} catch {
+				if (!cancelled) setFailed(true);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
-	// Finishing and skipping both end the tour for good: it is not shown
-	// again on the next launch.
-	const finish = () => {
-		updateSettings({ onboarding_done: true }).catch(() => {});
+	// Either way out ends first-run setup: it is not shown again.
+	const done = () => updateSettings({ onboarding_done: true }).catch(() => {});
+
+	const browse = () => {
+		vibrate(5);
+		done();
 		navigate("/store");
 	};
 
-	const handleNext = () => {
-		vibrate(8);
-		if (isLast) finish();
-		else setCurrentStep((s) => s + 1);
+	const start = async () => {
+		if (!model || starting) return;
+		setStarting(true);
+		try {
+			if (await download(model, deviceMemory)) done();
+		} finally {
+			setStarting(false);
+		}
 	};
 
-	const handleBack = () => {
-		vibrate(5);
-		setCurrentStep((s) => Math.max(0, s - 1));
-	};
-
-	// Swipe left = next, swipe right = back. Swiping never finishes the tour;
-	// leaving it takes a deliberate tap.
-	const handleTouchStart = (e: React.TouchEvent) => {
-		touchStartRef.current = e.touches[0].clientX;
-	};
-	const handleTouchEnd = (e: React.TouchEvent) => {
-		const diff = e.changedTouches[0].clientX - touchStartRef.current;
-		if (diff < -60 && !isLast) handleNext();
-		else if (diff > 60 && !isFirst) handleBack();
-	};
+	const ramGb = nominalRamGb(deviceMemory);
 
 	return (
 		<Container data-testid="onboarding-screen">
@@ -360,55 +266,67 @@ export function OnboardingScreen() {
 					<NeurixLogo size={28} />
 					<BrandName>NEURIX</BrandName>
 				</LogoGroup>
-				<SkipButton type="button" onClick={finish}>
-					SKIP
-				</SkipButton>
 			</Header>
 
-			<MainContent onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-				<StepContent key={currentStep} aria-live="polite">
-					<IconCircle $color={step.iconColor}>
-						<Icon name={step.icon} size={36} fill color={step.iconColor} />
-					</IconCircle>
+			<Main>
+				<Art />
+				<Eyebrow>One step to set up</Eyebrow>
+				<Title>Pick the model that runs on this device</Title>
+				<Lead>
+					Neurix answers with an AI model stored on your device. It is one download; after that
+					everything works with no connection.
+				</Lead>
 
-					<StepLabel>
-						Step {currentStep + 1} of {STEPS.length}
-					</StepLabel>
-					<StepHeadline>
-						{step.headline} <Highlight>{step.highlightWord}</Highlight>
-					</StepHeadline>
-					<StepDescription>{step.description}</StepDescription>
-					<PrivacyBadge>
-						<Icon name="verified_user" size={14} color={tokens.colors.secondary} />
-						<PrivacyBadgeLabel>{step.badge}</PrivacyBadgeLabel>
-					</PrivacyBadge>
-				</StepContent>
-			</MainContent>
-
-			<FooterSection>
-				<ProgressDots aria-hidden="true">
-					{STEPS.map((s, index) => (
-						<ProgressDot
-							key={s.stepNumber}
-							$state={
-								index < currentStep ? "completed" : index === currentStep ? "active" : "upcoming"
-							}
-						/>
-					))}
-				</ProgressDots>
-
-				<ActionBar>
-					{!isFirst && (
-						<BackButton type="button" onClick={handleBack}>
-							BACK
-						</BackButton>
+				<Card aria-live="polite" aria-busy={!model && !failed}>
+					{model ? (
+						<>
+							<CardHead>
+								<ModelName>{model.name}</ModelName>
+								<ModelSize>{model.size_label}</ModelSize>
+							</CardHead>
+							<ModelText>{model.description}</ModelText>
+							<Meters>
+								<ModelMeters quality={model.quality} speed={model.speed} />
+							</Meters>
+							<Reason>
+								<Icon name="check_circle" size={13} />
+								{ramGb
+									? `Our pick for your ${ramGb} GB of memory`
+									: "A good all-rounder to start with"}
+							</Reason>
+						</>
+					) : failed ? (
+						<CardPlaceholder>
+							The model list could not be loaded. You can still pick one from the store.
+						</CardPlaceholder>
+					) : (
+						<CardPlaceholder>Checking what this device can run…</CardPlaceholder>
 					)}
-					<NextButton type="button" onClick={handleNext} $fullWidth={isFirst}>
-						{isLast ? "CHOOSE A MODEL" : "NEXT"}
-						<Icon name={isLast ? "check" : "arrow_forward"} size={20} />
-					</NextButton>
-				</ActionBar>
-			</FooterSection>
+				</Card>
+
+				<Primary type="button" onClick={start} disabled={!model || starting}>
+					<Icon name="download" size={20} />
+					{model ? `Download · ${model.size_label}` : "Download"}
+				</Primary>
+				<Secondary type="button" onClick={browse}>
+					Choose a different model
+				</Secondary>
+			</Main>
+
+			<Facts>
+				<li>
+					<Icon name="verified_user" size={13} color={tokens.colors.secondary} />
+					Chats never leave this device
+				</li>
+				<li>
+					<Icon name="cloud_off" size={13} color={tokens.colors.secondary} />
+					Works offline
+				</li>
+				<li>
+					<Icon name="favorite" size={13} color={tokens.colors.secondary} />
+					Free, no account
+				</li>
+			</Facts>
 		</Container>
 	);
 }

@@ -1,7 +1,7 @@
 {
   "name": "neurix",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.5.0",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -23,12 +23,12 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.6.0",
     "@tauri-apps/plugin-fs": "^2.4.5",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2.5.2",
-    "lucide-react": "^1.50.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.28.0",

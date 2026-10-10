@@ -1,11 +1,18 @@
 /**
- * Theme definitions.
+ * Themes.
  *
- * Every theme supplies the same set of color roles as hex values. At runtime
- * `applyTheme` writes them to `:root` as space-separated RGB triplets
- * (`--c-primary: 143 245 255`) so that `tokens.colors.*` can stay static
- * strings (`rgb(var(--c-primary))`) and still accept an alpha channel.
+ * A theme is more than a palette. Each one sets the colors, the typefaces,
+ * how round the corners are, what sits behind the content, the texture laid
+ * over it and the weight of the icons, so switching theme changes how the
+ * app feels, not only what color it is. Surfaces are flat in every theme:
+ * solid fills, no glows.
+ *
+ * At runtime `applyTheme` writes all of that to `:root` as CSS variables.
+ * Colors are stored as space-separated RGB triplets (`--c-primary: 143 245
+ * 255`) so `tokens.colors.*` can stay static strings
+ * (`rgb(var(--c-primary))`) and still accept an alpha channel.
  */
+import { type IconWeight, setIconWeights } from "./iconWeight";
 
 export interface ThemeColors {
 	background: string;
@@ -36,21 +43,67 @@ export interface ThemeColors {
 
 export type ThemeMode = "dark" | "light";
 
+/** Everything about a theme that is not a color. */
+export interface ThemeStyle {
+	fonts: {
+		headline: string;
+		body: string;
+		/** Buttons, chips and other interface labels. */
+		label: string;
+	};
+	/** Corner radii. `pill` is used for fully rounded shapes. */
+	radius: { sm: string; md: string; lg: string; xl: string; pill: string };
+	/** Background layers painted behind every page, or "none". */
+	backdrop: string;
+	/** A texture laid over the whole interface (grain, scanlines), or "none". */
+	overlay: string;
+	overlayOpacity: number;
+	/** Letter-spacing of headings. */
+	headlineTracking: string;
+	/** Icon stroke style, and the sturdier one used for small icons. */
+	icons: { regular: IconWeight; small: IconWeight };
+}
+
 export interface ThemeDefinition {
 	id: string;
 	name: string;
+	/** A few words on the mood, shown under the name in the picker. */
 	tagline: string;
 	mode: ThemeMode;
 	colors: ThemeColors;
+	style: ThemeStyle;
+}
+
+const SANS = "'Inter', system-ui, sans-serif";
+const GROTESK = "'Space Grotesk', 'Inter', sans-serif";
+const MONO = "'JetBrains Mono', ui-monospace, monospace";
+// Book faces that ship with the platform: Noto Serif on Android, Palatino or
+// Georgia on desktop. Nothing extra has to be bundled.
+const SERIF = "'Iowan Old Style', 'Palatino Linotype', Palatino, 'Noto Serif', Georgia, serif";
+
+/** Fine film grain as an inline SVG. `ink` is the speck color: "0" dark, "1" light. */
+function grain(ink: "0" | "1", strength: number): string {
+	const svg = [
+		"<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'>",
+		"<filter id='n'>",
+		"<feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/>",
+		`<feColorMatrix values='0 0 0 0 ${ink}  0 0 0 0 ${ink}  0 0 0 0 ${ink}  0 0 0 ${strength} 0'/>`,
+		"</filter>",
+		"<rect width='100%' height='100%' filter='url(#n)'/>",
+		"</svg>",
+	].join("");
+	return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }
 
 export const DEFAULT_THEME_ID = "obsidian";
 
 export const THEMES: readonly ThemeDefinition[] = [
 	{
+		// Black glass with a sharp cyan accent: the signature look. Geometric
+		// headlines over a faint dot grid.
 		id: "obsidian",
-		name: "Obsidian Pulse",
-		tagline: "Electric cyan on black glass",
+		name: "Obsidian",
+		tagline: "Black glass, sharp cyan",
 		mode: "dark",
 		colors: {
 			background: "#0e0e0f",
@@ -71,308 +124,172 @@ export const THEMES: readonly ThemeDefinition[] = [
 			onPrimary: "#005d63",
 			onPrimaryFixed: "#003f43",
 			onPrimaryContainer: "#005359",
-			secondary: "#2ff801",
-			secondaryContainer: "#106e00",
+			secondary: "#ffc46b",
+			secondaryContainer: "#5c3d00",
 			tertiary: "#65afff",
 			error: "#ff716c",
 			errorContainer: "#9f0519",
 			onError: "#ffffff",
 		},
-	},
-	{
-		id: "aurora",
-		name: "Midnight Aurora",
-		tagline: "Violet light over a navy sky",
-		mode: "dark",
-		colors: {
-			background: "#0b0d1a",
-			surface: "#0b0d1a",
-			surfaceBright: "#2a2e4d",
-			surfaceContainerLowest: "#06070f",
-			surfaceContainerLow: "#101327",
-			surfaceContainer: "#151930",
-			surfaceContainerHigh: "#1b203b",
-			surfaceContainerHighest: "#232946",
-			onSurface: "#f1f2ff",
-			onSurfaceVariant: "#a7abcc",
-			outline: "#6f7498",
-			outlineVariant: "#3b4064",
-			primary: "#b9a4ff",
-			primaryDim: "#9a7dff",
-			primaryContainer: "#8c6cff",
-			onPrimary: "#2a1570",
-			onPrimaryFixed: "#170a47",
-			onPrimaryContainer: "#22105e",
-			secondary: "#5ef2c4",
-			secondaryContainer: "#0b5a45",
-			tertiary: "#6fd3ff",
-			error: "#ff7a8a",
-			errorContainer: "#8f1230",
-			onError: "#ffffff",
+		style: {
+			fonts: { headline: GROTESK, body: SANS, label: SANS },
+			radius: { sm: "0.125rem", md: "0.25rem", lg: "0.5rem", xl: "0.75rem", pill: "9999px" },
+			backdrop:
+				"radial-gradient(circle at 1px 1px, rgb(var(--c-on-surface) / 0.06) 1px, transparent 1.5px) 0 0 / 22px 22px",
+			overlay: "none",
+			overlayOpacity: 0,
+			headlineTracking: "-0.01em",
+			icons: { regular: "duotone", small: "bold" },
 		},
 	},
 	{
-		id: "karakoram",
-		name: "Karakoram Night",
-		tagline: "Glacier blue with a sunrise edge",
-		mode: "dark",
-		colors: {
-			background: "#0c1218",
-			surface: "#0c1218",
-			surfaceBright: "#2b3945",
-			surfaceContainerLowest: "#060a0e",
-			surfaceContainerLow: "#111921",
-			surfaceContainer: "#162029",
-			surfaceContainerHigh: "#1c2833",
-			surfaceContainerHighest: "#24323f",
-			onSurface: "#eef6fb",
-			onSurfaceVariant: "#9fb3c2",
-			outline: "#6a7f8e",
-			outlineVariant: "#3a4a57",
-			primary: "#9fdcff",
-			primaryDim: "#63c2f5",
-			primaryContainer: "#4db6f0",
-			onPrimary: "#053a57",
-			onPrimaryFixed: "#03273b",
-			onPrimaryContainer: "#04324b",
-			secondary: "#ffb878",
-			secondaryContainer: "#7a4210",
-			tertiary: "#c7b8ff",
-			error: "#ff7d76",
-			errorContainer: "#93100f",
-			onError: "#ffffff",
-		},
-	},
-	{
-		id: "deosai",
-		name: "Deosai Meadow",
-		tagline: "High-plateau greens and wildflower gold",
-		mode: "dark",
-		colors: {
-			background: "#0c120d",
-			surface: "#0c120d",
-			surfaceBright: "#2b3a2d",
-			surfaceContainerLowest: "#060a07",
-			surfaceContainerLow: "#111a13",
-			surfaceContainer: "#162118",
-			surfaceContainerHigh: "#1c2a1f",
-			surfaceContainerHighest: "#243427",
-			onSurface: "#f0f8ee",
-			onSurfaceVariant: "#a4b8a4",
-			outline: "#6f8370",
-			outlineVariant: "#3c4d3e",
-			primary: "#a6f28b",
-			primaryDim: "#7fdc5e",
-			primaryContainer: "#6fd24c",
-			onPrimary: "#12440a",
-			onPrimaryFixed: "#0b2e06",
-			onPrimaryContainer: "#0f3a08",
-			secondary: "#ffd966",
-			secondaryContainer: "#6b5200",
-			tertiary: "#7fd8d0",
-			error: "#ff8274",
-			errorContainer: "#8f160c",
-			onError: "#ffffff",
-		},
-	},
-	{
-		id: "ember",
-		name: "Ember",
-		tagline: "Warm coals for late nights",
-		mode: "dark",
-		colors: {
-			background: "#140e0b",
-			surface: "#140e0b",
-			surfaceBright: "#40302a",
-			surfaceContainerLowest: "#0b0705",
-			surfaceContainerLow: "#1b130f",
-			surfaceContainer: "#221813",
-			surfaceContainerHigh: "#2a1e18",
-			surfaceContainerHighest: "#33251e",
-			onSurface: "#fff4ec",
-			onSurfaceVariant: "#c4ab9d",
-			outline: "#8c7568",
-			outlineVariant: "#54433a",
-			primary: "#ffb07a",
-			primaryDim: "#ff9350",
-			primaryContainer: "#ff8438",
-			onPrimary: "#5a2400",
-			onPrimaryFixed: "#3c1700",
-			onPrimaryContainer: "#4d1e00",
-			secondary: "#ffd76a",
-			secondaryContainer: "#6e5400",
-			tertiary: "#ff8fa3",
-			error: "#ff6b6b",
-			errorContainer: "#96101a",
-			onError: "#ffffff",
-		},
-	},
-	{
-		id: "sakura",
-		name: "Sakura Dusk",
-		tagline: "Blossom pink on deep plum",
-		mode: "dark",
-		colors: {
-			background: "#150d14",
-			surface: "#150d14",
-			surfaceBright: "#412d3f",
-			surfaceContainerLowest: "#0b060b",
-			surfaceContainerLow: "#1c121b",
-			surfaceContainer: "#231722",
-			surfaceContainerHigh: "#2b1d2a",
-			surfaceContainerHighest: "#352433",
-			onSurface: "#fff0fa",
-			onSurfaceVariant: "#c7a9c0",
-			outline: "#8f7389",
-			outlineVariant: "#574253",
-			primary: "#ffa6d6",
-			primaryDim: "#ff7fc3",
-			primaryContainer: "#ff6bb9",
-			onPrimary: "#620b3f",
-			onPrimaryFixed: "#42052a",
-			onPrimaryContainer: "#540836",
-			secondary: "#a9f0c8",
-			secondaryContainer: "#145c38",
-			tertiary: "#c9b3ff",
-			error: "#ff7474",
-			errorContainer: "#93101e",
-			onError: "#ffffff",
-		},
-	},
-	{
-		id: "void",
-		name: "Pure Black",
-		tagline: "True black, minimal glow, OLED friendly",
-		mode: "dark",
-		colors: {
-			background: "#000000",
-			surface: "#000000",
-			surfaceBright: "#2a2a2a",
-			surfaceContainerLowest: "#000000",
-			surfaceContainerLow: "#080808",
-			surfaceContainer: "#0f0f0f",
-			surfaceContainerHigh: "#161616",
-			surfaceContainerHighest: "#1e1e1e",
-			onSurface: "#f5f5f5",
-			onSurfaceVariant: "#a3a3a3",
-			outline: "#6b6b6b",
-			outlineVariant: "#333333",
-			primary: "#f5f5f5",
-			primaryDim: "#d4d4d4",
-			primaryContainer: "#cfcfcf",
-			onPrimary: "#111111",
-			onPrimaryFixed: "#000000",
-			onPrimaryContainer: "#0a0a0a",
-			secondary: "#7ee787",
-			secondaryContainer: "#12501a",
-			tertiary: "#9ecbff",
-			error: "#ff7b72",
-			errorContainer: "#8e1519",
-			onError: "#ffffff",
-		},
-	},
-	{
-		id: "glacier",
-		name: "Glacier",
-		tagline: "Bright, cool daylight",
-		mode: "light",
-		colors: {
-			background: "#f4f8fb",
-			surface: "#f4f8fb",
-			surfaceBright: "#d5e0e8",
-			surfaceContainerLowest: "#ffffff",
-			surfaceContainerLow: "#ffffff",
-			surfaceContainer: "#eaf1f6",
-			surfaceContainerHigh: "#e3ecf2",
-			surfaceContainerHighest: "#d9e4ec",
-			onSurface: "#0f1c26",
-			onSurfaceVariant: "#4a5d6b",
-			outline: "#7b8d9a",
-			outlineVariant: "#c2d0da",
-			primary: "#0b6fa4",
-			primaryDim: "#0a628f",
-			primaryContainer: "#2a93cc",
-			onPrimary: "#ffffff",
-			onPrimaryFixed: "#ffffff",
-			onPrimaryContainer: "#ffffff",
-			secondary: "#1b7f3b",
-			secondaryContainer: "#c9f0d3",
-			tertiary: "#5b4fc4",
-			error: "#c0262d",
-			errorContainer: "#ffd9d6",
-			onError: "#ffffff",
-		},
-	},
-	{
-		id: "apricot",
-		name: "Apricot Blossom",
-		tagline: "Warm paper and orchard orange",
-		mode: "light",
-		colors: {
-			background: "#fbf6ef",
-			surface: "#fbf6ef",
-			surfaceBright: "#e6d9c8",
-			surfaceContainerLowest: "#ffffff",
-			surfaceContainerLow: "#fffdf9",
-			surfaceContainer: "#f4ecdf",
-			surfaceContainerHigh: "#eee4d5",
-			surfaceContainerHighest: "#e6dac8",
-			onSurface: "#2a1d12",
-			onSurfaceVariant: "#6b5645",
-			outline: "#9a8572",
-			outlineVariant: "#d9c9b6",
-			primary: "#b8500f",
-			primaryDim: "#a0450c",
-			primaryContainer: "#e07a2f",
-			onPrimary: "#ffffff",
-			onPrimaryFixed: "#ffffff",
-			onPrimaryContainer: "#ffffff",
-			secondary: "#4d7c1a",
-			secondaryContainer: "#dcefc4",
-			tertiary: "#a23a6e",
-			error: "#ba1f2a",
-			errorContainer: "#ffd9d4",
-			onError: "#ffffff",
-		},
-	},
-	{
+		// Ink on paper: a book. Serif text, warm stock with visible grain and
+		// crisp corners.
 		id: "paper",
 		name: "Paper",
-		tagline: "Plain, quiet, high contrast",
+		tagline: "Ink, serif and daylight",
 		mode: "light",
 		colors: {
-			background: "#f7f7f5",
-			surface: "#f7f7f5",
-			surfaceBright: "#dcdcd8",
-			surfaceContainerLowest: "#ffffff",
-			surfaceContainerLow: "#ffffff",
-			surfaceContainer: "#efefec",
-			surfaceContainerHigh: "#e8e8e4",
-			surfaceContainerHighest: "#dfdfda",
-			onSurface: "#171717",
-			onSurfaceVariant: "#555550",
-			outline: "#8a8a84",
-			outlineVariant: "#cfcfc9",
-			primary: "#1f1f1f",
-			primaryDim: "#111111",
-			primaryContainer: "#3d3d3d",
+			background: "#f6f1e7",
+			surface: "#f6f1e7",
+			surfaceBright: "#ffffff",
+			surfaceContainerLowest: "#fffdf8",
+			surfaceContainerLow: "#f0eadd",
+			surfaceContainer: "#eae3d4",
+			surfaceContainerHigh: "#e3dbca",
+			surfaceContainerHighest: "#d9d0bd",
+			onSurface: "#1f1a14",
+			onSurfaceVariant: "#5c5346",
+			outline: "#8a7f6d",
+			outlineVariant: "#c9bfaa",
+			primary: "#8c2f1b",
+			primaryDim: "#73240f",
+			primaryContainer: "#a13d27",
 			onPrimary: "#ffffff",
 			onPrimaryFixed: "#ffffff",
 			onPrimaryContainer: "#ffffff",
-			secondary: "#1a7f37",
-			secondaryContainer: "#d2f0d9",
-			tertiary: "#0b5cad",
+			secondary: "#1f4e8c",
+			secondaryContainer: "#d6e2f3",
+			tertiary: "#8a5a00",
 			error: "#b3261e",
-			errorContainer: "#fbd9d6",
+			errorContainer: "#f6d6d1",
 			onError: "#ffffff",
+		},
+		style: {
+			fonts: { headline: SERIF, body: SERIF, label: SANS },
+			radius: { sm: "1px", md: "2px", lg: "3px", xl: "5px", pill: "9999px" },
+			backdrop: "none",
+			overlay: grain("0", 0.55),
+			overlayOpacity: 0.22,
+			headlineTracking: "-0.015em",
+			icons: { regular: "light", small: "regular" },
+		},
+	},
+	{
+		// An amber terminal: one typeface, square corners and scanlines.
+		id: "phosphor",
+		name: "Phosphor",
+		tagline: "Amber terminal",
+		mode: "dark",
+		colors: {
+			background: "#050402",
+			surface: "#050402",
+			surfaceBright: "#2e2412",
+			surfaceContainerLowest: "#000000",
+			surfaceContainerLow: "#0d0a04",
+			surfaceContainer: "#141006",
+			surfaceContainerHigh: "#1d1709",
+			surfaceContainerHighest: "#281f0c",
+			onSurface: "#ffe9c2",
+			onSurfaceVariant: "#c9a868",
+			outline: "#8a6f3a",
+			outlineVariant: "#3f3115",
+			primary: "#ffb000",
+			primaryDim: "#e09a00",
+			primaryContainer: "#ffb000",
+			onPrimary: "#2b1a00",
+			onPrimaryFixed: "#2b1a00",
+			onPrimaryContainer: "#2b1a00",
+			secondary: "#ffe08a",
+			secondaryContainer: "#5c4300",
+			tertiary: "#ff7a45",
+			error: "#ff5f56",
+			errorContainer: "#7a1410",
+			onError: "#ffffff",
+		},
+		style: {
+			fonts: { headline: MONO, body: MONO, label: MONO },
+			radius: { sm: "0", md: "0", lg: "0", xl: "0", pill: "2px" },
+			backdrop: "radial-gradient(ellipse at center, transparent 55%, rgb(0 0 0 / 0.6) 100%) no-repeat",
+			overlay:
+				"repeating-linear-gradient(to bottom, rgb(0 0 0 / 0.2) 0, rgb(0 0 0 / 0.2) 1px, transparent 1px, transparent 4px)",
+			overlayOpacity: 1,
+			headlineTracking: "0.02em",
+			icons: { regular: "bold", small: "bold" },
+		},
+	},
+	{
+		// The last light on the mountains: a plum sky, an apricot accent,
+		// soft round shapes and filled icons.
+		id: "dusk",
+		name: "Dusk",
+		tagline: "Soft, warm and rounded",
+		mode: "dark",
+		colors: {
+			background: "#1a1426",
+			surface: "#1a1426",
+			surfaceBright: "#3d3252",
+			surfaceContainerLowest: "#120d1b",
+			surfaceContainerLow: "#211a30",
+			surfaceContainer: "#281f3a",
+			surfaceContainerHigh: "#302644",
+			surfaceContainerHighest: "#3a2f50",
+			onSurface: "#fbf1ea",
+			onSurfaceVariant: "#c4b5c9",
+			outline: "#8d7d96",
+			outlineVariant: "#4d4060",
+			primary: "#ffb38a",
+			primaryDim: "#ff9a66",
+			primaryContainer: "#ff8fa3",
+			onPrimary: "#5a2408",
+			onPrimaryFixed: "#3b1503",
+			onPrimaryContainer: "#4a1020",
+			secondary: "#c7a6ff",
+			secondaryContainer: "#4b2f80",
+			tertiary: "#8fc7ff",
+			error: "#ff8a8a",
+			errorContainer: "#7a1f2e",
+			onError: "#ffffff",
+		},
+		style: {
+			fonts: { headline: SANS, body: SANS, label: SANS },
+			radius: { sm: "0.5rem", md: "0.75rem", lg: "1rem", xl: "1.5rem", pill: "9999px" },
+			backdrop: "none",
+			overlay: grain("1", 0.5),
+			overlayOpacity: 0.07,
+			headlineTracking: "-0.025em",
+			icons: { regular: "fill", small: "fill" },
 		},
 	},
 ];
 
+/** Themes from earlier versions, mapped to the closest current one. */
+const RETIRED: Record<string, string> = {
+	aurora: "dusk",
+	karakoram: "obsidian",
+	deosai: "obsidian",
+	ember: "dusk",
+	sakura: "dusk",
+	void: "phosphor",
+	glacier: "paper",
+	apricot: "paper",
+};
+
 const STORAGE_KEY = "neurix.theme";
 
 export function getTheme(id: string | null | undefined): ThemeDefinition {
-	return THEMES.find((t) => t.id === id) ?? THEMES[0];
+	const current = id ? (RETIRED[id] ?? id) : id;
+	return THEMES.find((t) => t.id === current) ?? THEMES[0];
 }
 
 function toTriplet(hex: string): string {
@@ -382,13 +299,45 @@ function toTriplet(hex: string): string {
 
 const kebab = (key: string) => key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 
-/** Write a theme's colors to `:root` and remember the choice for next launch. */
+/** The CSS variables a theme sets, apart from its colors. */
+export function styleVariables(style: ThemeStyle): Record<string, string> {
+	return {
+		"--font-headline": style.fonts.headline,
+		"--font-body": style.fonts.body,
+		"--font-label": style.fonts.label,
+		"--radius-sm": style.radius.sm,
+		"--radius-md": style.radius.md,
+		"--radius-lg": style.radius.lg,
+		"--radius-xl": style.radius.xl,
+		"--radius-pill": style.radius.pill,
+		"--backdrop": style.backdrop,
+		"--overlay": style.overlay,
+		"--overlay-opacity": String(style.overlayOpacity),
+		"--headline-tracking": style.headlineTracking,
+	};
+}
+
+/**
+ * Every CSS variable a theme defines. Set on `:root` they theme the app;
+ * set on any element they theme just that element's subtree, which is how
+ * the picker draws each swatch in its own theme.
+ */
+export function themeVariables(theme: ThemeDefinition): Record<string, string> {
+	const variables = styleVariables(theme.style);
+	for (const [key, hex] of Object.entries(theme.colors)) {
+		variables[`--c-${kebab(key)}`] = toTriplet(hex);
+	}
+	return variables;
+}
+
+/** Apply a theme to the page and remember the choice for next launch. */
 export function applyTheme(id: string | null | undefined): ThemeDefinition {
 	const theme = getTheme(id);
 	const root = document.documentElement;
-	for (const [key, hex] of Object.entries(theme.colors)) {
-		root.style.setProperty(`--c-${kebab(key)}`, toTriplet(hex));
+	for (const [name, value] of Object.entries(themeVariables(theme))) {
+		root.style.setProperty(name, value);
 	}
+	setIconWeights(theme.style.icons.regular, theme.style.icons.small);
 	root.dataset.theme = theme.id;
 	root.dataset.mode = theme.mode;
 	root.style.colorScheme = theme.mode;

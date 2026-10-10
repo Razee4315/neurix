@@ -27,6 +27,10 @@ pub struct ChatMessage {
     pub role: MessageRole,
     pub content: String,
     pub timestamp: DateTime<Utc>,
+    /// The model's reasoning for this reply, when it produced any. Shown
+    /// collapsed in the chat; never sent back to the model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

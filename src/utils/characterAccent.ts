@@ -15,12 +15,17 @@ export const ACCENT_PALETTE: ReadonlyArray<{ value: string; label: string }> = [
 	{ value: "#c792ea", label: "Lavender" },
 	{ value: "#ff79c6", label: "Pink" },
 	{ value: "#ffb86c", label: "Amber" },
-	{ value: "#2ff801", label: "Cyber green" },
+	{ value: "#ffd95e", label: "Gold" },
 	{ value: "#ff716c", label: "Coral" },
 	{ value: "#adaaab", label: "Slate" },
 ];
 
 export const DEFAULT_ACCENT = ACCENT_PALETTE[0].value;
+
+/** Accents from earlier versions, and what they are shown as now. */
+const RETIRED_ACCENTS: Record<string, string> = {
+	"#2ff801": "#ffd95e",
+};
 
 /**
  * Resolve a character's accent, falling back to the theme primary.
@@ -29,8 +34,9 @@ export const DEFAULT_ACCENT = ACCENT_PALETTE[0].value;
  * darkened so icons and labels keep enough contrast against pale backgrounds.
  */
 export function accentOf(character: Character | null | undefined): string {
-	const c = character?.accent_color;
-	if (!c || !/^#[0-9a-fA-F]{6}$/.test(c)) return tokens.colors.primary;
+	const stored = character?.accent_color;
+	if (!stored || !/^#[0-9a-fA-F]{6}$/.test(stored)) return tokens.colors.primary;
+	const c = RETIRED_ACCENTS[stored.toLowerCase()] ?? stored;
 	if (c.toLowerCase() === DEFAULT_ACCENT) return tokens.colors.primary;
 	if (document.documentElement.dataset.mode === "light") {
 		return `color-mix(in srgb, ${c} 58%, black)`;

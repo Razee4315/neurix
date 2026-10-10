@@ -35,11 +35,19 @@ export const tokens = {
 		scrim: "rgb(0 0 0 / 0.6)",
 	},
 
+	// Whole-page backgrounds. A theme may paint something behind the content
+	// (a glow, a grid); this layers it over the plain background color.
+	surfaces: {
+		page: "var(--backdrop, none), rgb(var(--c-background))",
+	},
+
 	typography: {
+		// Typefaces and corner radii come from the active theme (themes.ts).
+		// The fallbacks are what paints before a theme has been applied.
 		fontFamily: {
-			headline: "'Space Grotesk', sans-serif",
-			body: "'Inter', sans-serif",
-			label: "'Inter', sans-serif",
+			headline: "var(--font-headline, 'Space Grotesk', sans-serif)",
+			body: "var(--font-body, 'Inter', sans-serif)",
+			label: "var(--font-label, 'Inter', sans-serif)",
 			mono: "'JetBrains Mono', monospace",
 		},
 		fontSize: {
@@ -93,22 +101,24 @@ export const tokens = {
 
 	borderRadius: {
 		none: "0",
-		sm: "0.125rem",
-		md: "0.25rem",
-		lg: "0.5rem",
-		xl: "0.75rem",
-		circle: "9999px",
+		sm: "var(--radius-sm, 0.125rem)",
+		md: "var(--radius-md, 0.25rem)",
+		lg: "var(--radius-lg, 0.5rem)",
+		xl: "var(--radius-xl, 0.75rem)",
+		circle: "var(--radius-pill, 9999px)",
 	},
 
 	shadows: {
 		none: "none",
-		ambient: "0 0 32px rgb(var(--c-primary) / 0.06)",
+		ambient: "none",
 		elevated: "0 4px 20px rgba(0, 0, 0, 0.3)",
 		nav: "0 -4px 20px rgba(0, 0, 0, 0.5)",
 		glow: {
-			primary: "0 0 20px rgb(var(--c-primary) / 0.2)",
-			primaryStrong: "0 0 40px rgb(var(--c-primary) / 0.15)",
-			secondary: "0 0 20px rgb(var(--c-secondary) / 0.2)",
+			// The interface is flat by design: nothing glows. These names are
+			// kept so call sites read the same; they all resolve to no shadow.
+			primary: "none",
+			primaryStrong: "none",
+			secondary: "none",
 		},
 	},
 

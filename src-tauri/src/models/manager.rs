@@ -32,12 +32,10 @@ pub async fn get_downloaded_models(models_dir: &Path) -> Result<Vec<DownloadedMo
 
         let model_file = path.join("model.gguf");
         let part_file = path.join("model.gguf.part");
-        let tokenizer_file = path.join("tokenizer.json");
 
-        // A model is only usable with both files. A directory holding the
-        // GGUF but no tokenizer is an interrupted install: it stays out of
-        // this list so the store offers the (now tiny) download again.
-        if model_file.exists() && tokenizer_file.exists() && !part_file.exists() {
+        // The GGUF is self-contained (weights, tokenizer and chat template),
+        // and only appears under its final name once it has been verified.
+        if model_file.exists() && !part_file.exists() {
             let dir_name = entry.file_name().to_string_lossy().to_string();
             if let Some(info) = catalog.iter().find(|m| m.id == dir_name) {
                 let actual_size = fs::metadata(&model_file)
@@ -78,8 +76,8 @@ pub struct PartialDownload {
     pub downloaded_bytes: u64,
 }
 
-/// Interrupted downloads left on disk (a `.part` file, or a GGUF whose
-/// tokenizer never arrived). Lets the UI offer "resume" after a restart.
+/// Interrupted downloads left on disk (a `.part` file). Lets the UI offer
+/// "resume" after a restart.
 pub async fn get_partial_downloads(models_dir: &Path) -> Result<Vec<PartialDownload>, String> {
     let mut result = Vec::new();
     if !models_dir.exists() {
@@ -88,15 +86,10 @@ pub async fn get_partial_downloads(models_dir: &Path) -> Result<Vec<PartialDownl
     for info in catalog::get_catalog() {
         let dir = models_dir.join(&info.id);
         let part = dir.join("model.gguf.part");
-        let model = dir.join("model.gguf");
-        let tokenizer = dir.join("tokenizer.json");
-        let downloaded = if part.exists() {
-            fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0)
-        } else if model.exists() && !tokenizer.exists() {
-            fs::metadata(&model).await.map(|m| m.len()).unwrap_or(0)
-        } else {
+        if !part.exists() {
             continue;
-        };
+        }
+        let downloaded = fs::metadata(&part).await.map(|m| m.len()).unwrap_or(0);
         result.push(PartialDownload {
             id: info.id.clone(),
             name: info.name.clone(),

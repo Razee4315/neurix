@@ -15,6 +15,8 @@ export interface Message {
 	timestamp: string;
 	/** How generation ended, for the "reply was cut short" affordance. */
 	stopReason?: StopReason;
+	/** What a reasoning model wrote before its answer. Shown collapsed. */
+	reasoning?: string;
 }
 
 let counter = 0;
@@ -22,7 +24,7 @@ let counter = 0;
 export function createMessage(
 	role: Message["role"],
 	text: string,
-	extra: Partial<Pick<Message, "timestamp" | "stopReason">> = {},
+	extra: Partial<Pick<Message, "timestamp" | "stopReason" | "reasoning">> = {},
 ): Message {
 	counter += 1;
 	return {
@@ -31,6 +33,7 @@ export function createMessage(
 		text,
 		timestamp: extra.timestamp ?? new Date().toISOString(),
 		...(extra.stopReason ? { stopReason: extra.stopReason } : {}),
+		...(extra.reasoning ? { reasoning: extra.reasoning } : {}),
 	};
 }
 
@@ -81,7 +84,10 @@ export function generateTitle(messages: Message[]): string {
 
 export function fromStored(messages: ChatMessage[]): Message[] {
 	return messages.map((m) =>
-		createMessage(m.role === "user" ? "user" : "ai", m.content, { timestamp: m.timestamp }),
+		createMessage(m.role === "user" ? "user" : "ai", m.content, {
+			timestamp: m.timestamp,
+			reasoning: m.reasoning,
+		}),
 	);
 }
 
@@ -90,6 +96,7 @@ export function toStored(messages: Message[]): ChatMessage[] {
 		role: m.role === "user" ? "user" : "assistant",
 		content: m.text,
 		timestamp: m.timestamp,
+		...(m.reasoning ? { reasoning: m.reasoning } : {}),
 	}));
 }
 
@@ -119,11 +126,10 @@ export function toConversation(messages: Message[], ctx: ConversationContext): C
 
 /** Whether a reply ended early in a way the user can act on. */
 export function wasCutShort(reason: StopReason | undefined): boolean {
-	return reason === "length" || reason === "repetition" || reason === "low_confidence";
+	return reason === "length" || reason === "repetition";
 }
 
 export function cutShortLabel(reason: StopReason | undefined): string {
-	if (reason === "length") return "Reply reached the length limit.";
 	if (reason === "repetition") return "Stopped: the model started repeating itself.";
-	return "Stopped early: the model lost its thread.";
+	return "Reply reached the length limit.";
 }

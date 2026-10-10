@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
 import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
+import { canDownloadInBackground } from "@/services/androidBridge";
 import type { ModelInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
@@ -13,11 +14,6 @@ import { useCatalogModel } from "@/utils/useCatalogModel";
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
-
-const shimmer = keyframes`
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-`;
 
 const fillIn = keyframes`
   from { width: 0%; }
@@ -84,16 +80,8 @@ const BarFill = styled.div<{ $pct: number }>`
   height: 100%;
   width: ${({ $pct }) => $pct}%;
   border-radius: ${tokens.borderRadius.circle};
-  background: linear-gradient(
-    90deg,
-    ${tokens.colors.primary} 0%,
-    ${tokens.colors.primaryContainer} 40%,
-    ${tokens.colors.surfaceBright} 50%,
-    ${tokens.colors.primaryContainer} 60%,
-    ${tokens.colors.primary} 100%
-  );
-  background-size: 200% 100%;
-  animation: ${fillIn} 0.8s ease-out both, ${shimmer} 1.8s ease-in-out 0.8s infinite;
+  background: ${tokens.colors.primary};
+  animation: ${fillIn} 0.8s ease-out both;
   transition: width 0.3s ease;
 `;
 
@@ -173,7 +161,7 @@ const ActionBtn = styled.button<{ $variant?: "danger" | "primary" }>`
   `
 			: $variant === "primary"
 				? `
-    background: linear-gradient(135deg, ${tokens.colors.primary}, ${tokens.colors.primaryContainer});
+    background: ${tokens.colors.primary};
     border: none;
     color: ${tokens.colors.onPrimaryFixed};
   `
@@ -334,8 +322,16 @@ export function DownloadingPage() {
 
 				{(status === "failed" || status === "paused") && dl?.error && (
 					<Reason role="alert">
-						<Icon name="error_outline" size={16} color={tokens.colors.error} />
-						<span>{dl.error}</span>
+						<Icon
+							name={dl.blockedByWifi ? "wifi" : "error_outline"}
+							size={16}
+							color={tokens.colors.error}
+						/>
+						<span>
+							{dl.error}
+							{dl.blockedByWifi &&
+								` This download is ${model.size_label}. Connect to WiFi, or go ahead on this connection.`}
+						</span>
 					</Reason>
 				)}
 
@@ -345,9 +341,11 @@ export function DownloadingPage() {
 
 				{status === "downloading" && (
 					<Hint>
-						{isMobile()
-							? "Keep Neurix open until this finishes. If it's interrupted, it resumes from where it stopped."
-							: "You can keep using Neurix while this downloads. Closing the app pauses it."}
+						{canDownloadInBackground()
+							? "You can switch apps or lock the screen: the download carries on in the background. Closing Neurix from recent apps pauses it, and it resumes from where it stopped."
+							: isMobile()
+								? "Keep Neurix open until this finishes. If it's interrupted, it resumes from where it stopped."
+								: "You can keep using Neurix while this downloads. Closing the app pauses it."}
 					</Hint>
 				)}
 
@@ -394,10 +392,21 @@ export function DownloadingPage() {
 
 				{(status === "paused" || status === "failed") && (
 					<ActionRow>
-						<ActionBtn type="button" $variant="primary" onClick={() => resumeDownload(model)}>
-							<Icon name={status === "failed" ? "refresh" : "play_arrow"} size={16} />
-							{status === "failed" ? "Try again" : "Resume"}
-						</ActionBtn>
+						{dl?.blockedByWifi ? (
+							<ActionBtn
+								type="button"
+								$variant="primary"
+								onClick={() => resumeDownload(model, { allowMobileData: true })}
+							>
+								<Icon name="download" size={16} />
+								Use this connection
+							</ActionBtn>
+						) : (
+							<ActionBtn type="button" $variant="primary" onClick={() => resumeDownload(model)}>
+								<Icon name={status === "failed" ? "refresh" : "play_arrow"} size={16} />
+								{status === "failed" ? "Try again" : "Resume"}
+							</ActionBtn>
+						)}
 						<ActionBtn type="button" $variant="danger" onClick={handleCancel}>
 							Cancel
 						</ActionBtn>

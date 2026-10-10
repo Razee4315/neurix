@@ -7,7 +7,7 @@
   "bundle": {
     "active": true,
     "android": {
-      "minSdkVersion": 24
+      "minSdkVersion": 28
     }
   }
 }

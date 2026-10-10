@@ -620,7 +620,7 @@ export function CharacterPicker({ open, onClose, showModels = false }: Props) {
 			showToast(
 				result === "shared"
 					? "Character shared"
-					: "Character JSON copied — paste anywhere to share",
+					: "Character JSON copied. Paste it anywhere to share.",
 				"success",
 			);
 		} catch (err) {

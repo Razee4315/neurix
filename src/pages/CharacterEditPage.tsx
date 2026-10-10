@@ -818,7 +818,7 @@ export function CharacterEditPage() {
 						required
 					/>
 					<HelperRow>
-						<span>Describe tone and style — short is better.</span>
+						<span>Describe tone and style. Short is better.</span>
 						<Counter
 							$warn={prompt.length > PROMPT_SOFT_CAP && prompt.length < PROMPT_HARD_CAP}
 							$over={prompt.length >= PROMPT_HARD_CAP}

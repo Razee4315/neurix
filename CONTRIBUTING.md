@@ -85,11 +85,20 @@ Open a GitHub issue with:
 ## Adding New Models
 
 To add a model to the catalog, edit `src-tauri/src/models/catalog.rs`. Requirements:
-- Must be available as GGUF Q4_K_M on HuggingFace
-- Must use a Llama-compatible architecture (works with candle's `quantized_llama`)
-- Should be under 4GB (phone-friendly)
-- Must have an accessible `tokenizer.json` (preferably in the GGUF repo)
-- Add the appropriate chat template to the `ChatTemplate` enum and `format_prompt` function
+- A GGUF file on HuggingFace that can be downloaded without logging in
+- An architecture the bundled llama.cpp supports (it loads the file, or it does not; the CI engine test will tell you)
+- A chat template inside the GGUF. Nothing is hand-written per model: the tokenizer and the prompt format are both read from the file
+- The exact file size and its SHA-256 (the LFS `oid` shown on the file's HuggingFace page), so the download can be verified
+- An honest `min_ram_gb`, and `quality` / `speed` ratings relative to the rest of the catalog
+
+To check a model end to end before opening a pull request:
+
+```bash
+cd src-tauri
+NEURIX_TEST_MODEL=/path/to/model.gguf cargo test real_model_end_to_end -- --ignored --nocapture
+```
+
+Mirror the entry in `src/dev/mockTauri.ts` so the browser preview shows it too.
 
 ## License
 

@@ -10,6 +10,8 @@ interface AppContextValue {
 	/** Display name of the selected model, or null when none is loaded. */
 	activeModel: string | null;
 	activeModelId: string | null;
+	/** Everything the backend reports about the loaded model. */
+	activeModelInfo: ActiveModel | null;
 	refreshSettings: () => Promise<void>;
 	refreshActiveModel: () => Promise<ActiveModel | null>;
 	/**
@@ -27,6 +29,7 @@ const AppContext = createContext<AppContextValue>({
 	settingsFailed: false,
 	activeModel: null,
 	activeModelId: null,
+	activeModelInfo: null,
 	refreshSettings: async () => {},
 	refreshActiveModel: async () => null,
 	updateSettings: async () => {
@@ -118,6 +121,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 			settingsFailed,
 			activeModel: active?.name ?? null,
 			activeModelId: active?.id ?? null,
+			activeModelInfo: active,
 			refreshSettings,
 			refreshActiveModel,
 			updateSettings,

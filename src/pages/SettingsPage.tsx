@@ -7,12 +7,13 @@ import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { accentOf } from "@/utils/characterAccent";
-import type { Settings } from "@/services/types";
-import { dataService, historyService, settingsService } from "@/services";
+import type { BenchmarkResult, Settings } from "@/services/types";
+import { chatService, dataService, historyService, settingsService } from "@/services";
+import { alpha } from "@/theme/alpha";
 import { FONT_SCALES, type FontSize, isFontSize } from "@/theme/themes";
 import { isMobile, vibrate } from "@/utils/platform";
 import { tokens } from "@/theme/tokens";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -160,6 +161,82 @@ const Segment = styled.button<{ $active: boolean; $scale: number }>`
   transition: background ${tokens.transitions.fast};
 `;
 
+/* A setting with a handful of fixed choices, shown under its own label. */
+const ChoiceRow = styled.div`
+  padding: 0.75rem 1rem;
+`;
+
+const ChoiceHead = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.625rem;
+`;
+
+const Choices = styled.div<{ $count: number }>`
+  display: grid;
+  grid-template-columns: repeat(${({ $count }) => $count}, 1fr);
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.surfaceContainerHigh};
+`;
+
+const Choice = styled.button<{ $active: boolean }>`
+  min-height: 36px;
+  padding: 0.25rem;
+  border: none;
+  border-radius: ${tokens.borderRadius.md};
+  background: ${({ $active }) => ($active ? tokens.colors.primary : "transparent")};
+  color: ${({ $active }) => ($active ? tokens.colors.onPrimaryFixed : tokens.colors.onSurfaceVariant)};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  cursor: pointer;
+  transition: background ${tokens.transitions.fast};
+
+  &:disabled { opacity: 0.5; cursor: default; }
+  &:focus-visible { outline: 2px solid ${tokens.colors.primary}; outline-offset: 1px; }
+`;
+
+const Result = styled.div`
+  margin: 0 1rem 0.875rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${alpha(tokens.colors.secondary, "14")};
+  border: 1px solid ${alpha(tokens.colors.secondary, "40")};
+  font-size: ${tokens.typography.fontSize.sm};
+  line-height: ${tokens.typography.lineHeight.relaxed};
+  color: ${tokens.colors.onSurface};
+
+  strong {
+    font-family: ${tokens.typography.fontFamily.mono};
+    color: ${tokens.colors.secondary};
+  }
+`;
+
+const CONTEXT_CHOICES = [
+	{ value: 0, label: "Auto" },
+	{ value: 4096, label: "4K" },
+	{ value: 8192, label: "8K" },
+	{ value: 16384, label: "16K" },
+];
+
+const THREAD_CHOICES = [
+	{ value: 0, label: "Auto" },
+	{ value: 2, label: "2" },
+	{ value: 4, label: "4" },
+	{ value: 6, label: "6" },
+	{ value: 8, label: "8" },
+];
+
+/** A plain-language read of a writing speed, in tokens per second. */
+function speedVerdict(tokensPerSecond: number): string {
+	if (tokensPerSecond >= 20) return "Fast: answers appear quicker than you can read them.";
+	if (tokensPerSecond >= 8) return "Comfortable: about reading speed.";
+	if (tokensPerSecond >= 3) return "Slow but usable. A smaller model will feel much quicker.";
+	return "Very slow on this device. Try a smaller model.";
+}
+
 const ErrorCard = styled.div`
   display: flex;
   flex-direction: column;
@@ -186,12 +263,33 @@ type ToggleKey = "wifi_only" | "save_history" | "show_speed";
 
 export function SettingsPage() {
 	const navigate = useNavigate();
-	const { settings, settingsFailed, refreshSettings, updateSettings } = useAppContext();
+	const {
+		settings,
+		settingsFailed,
+		refreshSettings,
+		updateSettings,
+		activeModel,
+		activeModelId,
+		activeModelInfo,
+		loadModel,
+		unloadModel,
+	} = useAppContext();
 	const { activeCharacter } = useCharacters();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [busy, setBusy] = useState<"export" | "import" | null>(null);
+	const [autoThreads, setAutoThreads] = useState<number | null>(null);
+	const [reloading, setReloading] = useState(false);
+	const [testing, setTesting] = useState(false);
+	const [benchmark, setBenchmark] = useState<BenchmarkResult | null>(null);
+
+	useEffect(() => {
+		settingsService
+			.getDeviceInfo()
+			.then((info) => setAutoThreads(info.inference_threads))
+			.catch(() => {});
+	}, []);
 	// Optimistic values shown while a write is in flight. Cleared when the
 	// write settles, so a failed save snaps back to the stored value.
 	const [pending, setPending] = useState<Partial<Settings>>({});
@@ -217,6 +315,42 @@ export function SettingsPage() {
 	const toggle = (key: ToggleKey) => {
 		vibrate(5);
 		save({ [key]: !current(key) });
+	};
+
+	/**
+	 * Context size and thread count are fixed when a model loads, so a
+	 * change is applied by reloading the model that is in use.
+	 */
+	const saveEngineSetting = async (patch: Partial<Settings>) => {
+		vibrate(5);
+		await save(patch);
+		setBenchmark(null);
+		if (!activeModelId) return;
+		setReloading(true);
+		try {
+			await unloadModel();
+			await loadModel(activeModelId);
+			showToast(`${activeModel ?? "Model"} reloaded with the new setting`, "success");
+		} catch (err) {
+			showToast(
+				err instanceof Error ? err.message : "Couldn't reload the model with that setting",
+				"error",
+			);
+		} finally {
+			setReloading(false);
+		}
+	};
+
+	const handleSpeedTest = async () => {
+		setTesting(true);
+		setBenchmark(null);
+		try {
+			setBenchmark(await chatService.benchmarkModel());
+		} catch (err) {
+			showToast(typeof err === "string" ? err : "The speed test could not run", "error");
+		} finally {
+			setTesting(false);
+		}
 	};
 
 	const handleClearHistory = async () => {
@@ -379,7 +513,7 @@ export function SettingsPage() {
 						<RowLeft>
 							<RowIcon>
 								<Icon
-									name={activeCharacter?.icon ?? "auto_awesome"}
+									name={activeCharacter?.icon ?? "smart_toy"}
 									size={18}
 									color={accentOf(activeCharacter)}
 								/>
@@ -388,7 +522,7 @@ export function SettingsPage() {
 								<RowTitle>Default character</RowTitle>
 								<RowSub>
 									{activeCharacter
-										? `${activeCharacter.name} — ${activeCharacter.description || "Custom"}`
+										? `${activeCharacter.name}: ${activeCharacter.description || "Custom"}`
 										: "Choose a personality"}
 								</RowSub>
 							</RowText>
@@ -397,6 +531,95 @@ export function SettingsPage() {
 					</ActionRow>
 					{toggleRow("save_history", "history", "Save chat history", "Keep conversations on this device")}
 					{toggleRow("show_speed", "speed", "Show token speed", "Display generation speed under replies")}
+				</Section>
+
+				<SectionHeading>Performance</SectionHeading>
+				<Section>
+					<ChoiceRow>
+						<ChoiceHead>
+							<RowIcon>
+								<Icon name="memory" size={18} color={tokens.colors.primary} />
+							</RowIcon>
+							<RowText>
+								<RowTitle>Conversation memory</RowTitle>
+								<RowSub>
+									How much of a chat the model keeps in mind. Larger uses more RAM.
+									{activeModelInfo
+										? ` Now: ${activeModelInfo.context_length.toLocaleString()} tokens.`
+										: ""}
+								</RowSub>
+							</RowText>
+						</ChoiceHead>
+						<Choices $count={CONTEXT_CHOICES.length} role="radiogroup" aria-label="Conversation memory">
+							{CONTEXT_CHOICES.map((choice) => {
+								const active = (current("context_size") ?? 0) === choice.value;
+								return (
+									<Choice
+										key={choice.value}
+										type="button"
+										role="radio"
+										aria-checked={active}
+										$active={active}
+										disabled={reloading || testing}
+										onClick={() => !active && saveEngineSetting({ context_size: choice.value })}
+									>
+										{choice.label}
+									</Choice>
+								);
+							})}
+						</Choices>
+					</ChoiceRow>
+					<ChoiceRow>
+						<ChoiceHead>
+							<RowIcon>
+								<Icon name="bolt" size={18} color={tokens.colors.primary} />
+							</RowIcon>
+							<RowText>
+								<RowTitle>Processor threads</RowTitle>
+								<RowSub>
+									{autoThreads
+										? `Auto uses this device's ${autoThreads} fast cores. More is not always faster.`
+										: "Auto uses this device's fast cores. More is not always faster."}
+								</RowSub>
+							</RowText>
+						</ChoiceHead>
+						<Choices $count={THREAD_CHOICES.length} role="radiogroup" aria-label="Processor threads">
+							{THREAD_CHOICES.map((choice) => {
+								const active = (current("threads") ?? 0) === choice.value;
+								return (
+									<Choice
+										key={choice.value}
+										type="button"
+										role="radio"
+										aria-checked={active}
+										$active={active}
+										disabled={reloading || testing}
+										onClick={() => !active && saveEngineSetting({ threads: choice.value })}
+									>
+										{choice.label}
+									</Choice>
+								);
+							})}
+						</Choices>
+					</ChoiceRow>
+					{actionRow(
+						"speed",
+						testing ? "Measuring…" : reloading ? "Reloading model…" : "Run a speed test",
+						activeModel
+							? `Measures ${activeModel} on this device (about 15 seconds)`
+							: "Load a model first, then measure it here",
+						handleSpeedTest,
+						{ disabled: !activeModelId || testing || reloading },
+					)}
+					{benchmark && (
+						<Result role="status">
+							<strong>{benchmark.tokens_per_second.toFixed(1)}</strong> tokens per second writing ·{" "}
+							<strong>{benchmark.prompt_tokens_per_second.toFixed(0)}</strong> reading ·{" "}
+							{benchmark.threads} threads
+							<br />
+							{speedVerdict(benchmark.tokens_per_second)}
+						</Result>
+					)}
 				</Section>
 
 				<SectionHeading>Downloads</SectionHeading>
