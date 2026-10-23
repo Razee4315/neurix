@@ -1,7 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
-import { vibrate } from "@/utils/platform";
+import { isMobile, vibrate } from "@/utils/platform";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
@@ -19,6 +19,7 @@ const NAV_TABS = [
 ] as const;
 
 const NavOuter = styled.div`
+  grid-area: nav;
   width: 100%;
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLow};
@@ -26,6 +27,13 @@ const NavOuter = styled.div`
   padding-bottom: env(safe-area-inset-bottom, 0px);
   display: flex;
   justify-content: center;
+
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    width: 88px;
+    border-top: none;
+    border-right: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
+    padding-bottom: 0;
+  }
 `;
 
 const NavBar = styled.nav`
@@ -36,6 +44,14 @@ const NavBar = styled.nav`
   max-width: 420px;
   height: 60px;
   padding: 0 0.25rem;
+
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    height: auto;
+    padding: 0.75rem 0;
+  }
 `;
 
 const Tab = styled.button<{ $active: boolean }>`
@@ -55,6 +71,13 @@ const Tab = styled.button<{ $active: boolean }>`
 
   &:hover { color: ${({ $active }) => ($active ? tokens.colors.primary : tokens.colors.onSurface)}; }
   &:active { transform: scale(0.92); }
+
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    flex: none;
+    width: 100%;
+    height: 60px;
+    gap: 5px;
+  }
 `;
 
 const Pill = styled.span<{ $active: boolean }>`
@@ -83,10 +106,11 @@ export function BottomNav() {
 	const initialHeightRef = useRef(Math.max(window.screen.height, window.innerHeight));
 
 	// Hide the bar while the on-screen keyboard is up so it doesn't sit
-	// between the input and the keys.
+	// between the input and the keys. Desktop has no on-screen keyboard, and
+	// there a smaller window would otherwise read as one.
 	useEffect(() => {
 		const vv = window.visualViewport;
-		if (!vv) return;
+		if (!vv || !isMobile()) return;
 		const onResize = () => setKeyboardOpen(vv.height < initialHeightRef.current * 0.75);
 		vv.addEventListener("resize", onResize);
 		return () => vv.removeEventListener("resize", onResize);

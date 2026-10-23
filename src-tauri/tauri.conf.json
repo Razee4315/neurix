@@ -8,8 +8,11 @@
       {
         "label": "main",
         "title": "Neurix",
-        "width": 800,
-        "height": 600,
+        "width": 1120,
+        "height": 760,
+        "minWidth": 380,
+        "minHeight": 560,
+        "center": true,
         "resizable": true,
         "fullscreen": false
       }

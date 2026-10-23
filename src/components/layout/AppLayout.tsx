@@ -31,17 +31,30 @@ interface AppLayoutProps {
 	back?: string | true | (() => void);
 }
 
+/**
+ * Phones get the tab bar under the content. Wide windows (desktop) get it as
+ * a rail down the left edge instead, see `BottomNav`.
+ */
 const Shell = styled.div`
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "top" "content" "nav";
   height: 100vh;
   height: 100dvh;
   background: ${tokens.surfaces.page};
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0px);
+
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "nav top" "nav content";
+  }
 `;
 
 const TopBar = styled.header<{ $hasSubtitle: boolean }>`
+  grid-area: top;
   width: 100%;
   display: flex;
   align-items: center;
@@ -136,7 +149,7 @@ const contentIn = keyframes`
 `;
 
 const Content = styled.main`
-  flex: 1;
+  grid-area: content;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
