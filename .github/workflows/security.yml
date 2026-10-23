@@ -1,0 +1,109 @@
+name: Security
+
+# Automated security scanning, separate from ci.yml so the two can be
+# scheduled and triaged independently.
+#
+#   npm-audit     known CVEs in the app's and the website's npm trees
+#   cargo-audit   known CVEs in the Rust tree, from the RustSec advisory DB
+#   gitleaks      secrets committed anywhere in the repository's history
+#   codeql        GitHub's static analysis for the TypeScript frontend
+#   semgrep       community security rulesets (advisory until triaged)
+#
+# Every third-party action is pinned to an immutable commit SHA, so a
+# compromised tag cannot run arbitrary code in this repository.
+
+on:
+  push:
+    branches:
+      - main
+      - 'security/**'
+      - 'audit/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm-audit:
+    name: npm audit (app + website)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Audit the app's dependencies
+        run: npm audit --package-lock-only --audit-level=high
+
+      - name: Audit the website's dependencies
+        run: npm audit --package-lock-only --audit-level=high
+        working-directory: website
+
+  cargo-audit:
+    name: cargo audit (RustSec)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: cargo-audit
+
+      - name: Audit Rust dependencies
+        working-directory: src-tauri
+        run: cargo audit
+
+  gitleaks:
+    name: Secret scanning (full history)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  codeql:
+    name: CodeQL (TypeScript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@0fda7a646fd14a20daf520829ca1ae8847000819 # codeql-bundle-v2.27.3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@0fda7a646fd14a20daf520829ca1ae8847000819 # codeql-bundle-v2.27.3
+
+  semgrep:
+    name: Semgrep (advisory)
+    # Advisory for now: the first run's findings must be triaged before this
+    # is allowed to fail the build. Promote to blocking by removing
+    # `continue-on-error` once the triage table in SECURITY_AUDIT.md is empty.
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Scan
+        run: semgrep scan --config p/security-audit --config p/secrets --metrics=off --exclude-rule generic.secrets.security.detected-generic-api-key
