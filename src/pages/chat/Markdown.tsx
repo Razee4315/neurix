@@ -5,6 +5,7 @@ import { copyText, vibrate } from "@/utils/platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { type ReactNode, memo, useState } from "react";
 import styled from "styled-components";
+import { INLINE, MAX_INLINE_LINE, isTableDivider } from "./markdownPatterns";
 
 /* ── Styles ── */
 
@@ -170,8 +171,6 @@ function CodeCopyButton({ code }: { code: string }) {
 
 /* ── Inline parsing ── */
 
-const INLINE = /(\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\))/g;
-
 function handleLinkClick(e: React.MouseEvent, url: string) {
 	e.preventDefault();
 	// Open in the system browser; the app itself never navigates away.
@@ -179,6 +178,7 @@ function handleLinkClick(e: React.MouseEvent, url: string) {
 }
 
 export function renderInline(text: string): ReactNode[] {
+	if (text.length > MAX_INLINE_LINE) return [text];
 	const nodes: ReactNode[] = [];
 	let lastIndex = 0;
 	let key = 0;
@@ -211,9 +211,6 @@ const splitRow = (line: string) =>
 		.replace(/^\||\|$/g, "")
 		.split("|")
 		.map((cell) => cell.trim());
-
-const isTableDivider = (line: string | undefined) =>
-	line !== undefined && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line);
 
 function renderBlocks(text: string): ReactNode[] {
 	const parts: ReactNode[] = [];
