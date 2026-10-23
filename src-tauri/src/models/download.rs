@@ -312,6 +312,34 @@ async fn download_weights(
     Ok(Outcome::Completed)
 }
 
+// --- Review port (review/security-audit-verification only) -----------------
+// size_slack/check_size copied verbatim from security/hardening-audit (commit
+// ae05d10) WITHOUT their call sites: main's transfer loop and verify_gguf are
+// unchanged, so the tests below can contrast main's behaviour with the fix.
+#[cfg_attr(not(test), allow(dead_code))]
+fn size_slack(model_size: u64) -> u64 {
+    (model_size / 10).max(64 * 1024 * 1024)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+fn check_size(actual_bytes: u64, expected_bytes: u64) -> Result<(), String> {
+    let tolerance = (expected_bytes / 100).max(1024);
+    if actual_bytes + tolerance < expected_bytes {
+        return Err(format!(
+            "Download incomplete: got {} bytes, expected ~{}",
+            actual_bytes, expected_bytes
+        ));
+    }
+    if actual_bytes > expected_bytes + tolerance {
+        return Err(format!(
+            "Downloaded file is larger than expected: got {} bytes, expected ~{}",
+            actual_bytes, expected_bytes
+        ));
+    }
+    Ok(())
+}
+// --- End review port ---------------------------------------------------------
+
 /// Verify a downloaded model file is valid by checking size + GGUF magic bytes.
 /// Returns Err with a user-facing message if the file is not a usable GGUF.
 async fn verify_gguf(path: &Path, expected_bytes: u64) -> Result<(), String> {
@@ -366,5 +394,77 @@ mod tests {
     fn ignores_non_hash_etags() {
         assert_eq!(sha256_from_header("\"abc123\""), None);
         assert_eq!(sha256_from_header(&"z".repeat(64)), None);
+    }
+}
+
+// Tests copied verbatim from security/hardening-audit d89c7d7 (download.rs).
+#[cfg(test)]
+mod ported_tests {
+    use super::{check_size, size_slack};
+
+    const GB: u64 = 1_000_000_000;
+
+    #[test]
+    fn size_may_drift_slightly_but_not_far() {
+        assert!(check_size(GB, GB).is_ok());
+        assert!(check_size(GB - 5_000_000, GB).is_ok());
+        // 1% of 1 GB is 10 MB: 50 MB short must be rejected.
+        assert!(check_size(GB - 50_000_000, GB).is_err());
+        assert!(check_size(GB + 50_000_000, GB).is_err());
+    }
+
+    #[test]
+    fn small_files_get_an_absolute_tolerance() {
+        // 1% of 64 KB is under a KB, so the floor keeps small files workable.
+        assert!(check_size(64 * 1024 + 900, 64 * 1024).is_ok());
+        assert!(check_size(64 * 1024 + 9_000, 64 * 1024).is_err());
+    }
+
+    #[test]
+    fn slack_is_generous_but_bounded() {
+        assert_eq!(size_slack(10 * GB), GB);
+        assert_eq!(size_slack(100 * 1024 * 1024), 64 * 1024 * 1024);
+        assert_eq!(size_slack(0), 64 * 1024 * 1024);
+    }
+}
+
+/// Reviewer-added tests that drive main's REAL verify_gguf. They PASS on
+/// main, and that is the point: main accepts a file 16x the expected size.
+#[cfg(test)]
+mod review_main_behaviour {
+    use super::{check_size, size_slack, verify_gguf};
+
+    fn write_gguf(name: &str, len: usize) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("neurix-review-{name}-{}", std::process::id()));
+        let mut bytes = vec![0u8; len];
+        bytes[..4].copy_from_slice(b"GGUF");
+        std::fs::write(&path, bytes).expect("write temp file");
+        path
+    }
+
+    #[test]
+    fn main_verify_gguf_accepts_an_oversized_file() {
+        let expected: u64 = 64 * 1024;
+        let path = write_gguf("oversized", 16 * 64 * 1024);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let verdict = rt.block_on(verify_gguf(&path, expected));
+        let _ = std::fs::remove_file(&path);
+        assert!(verdict.is_ok(), "main's verify_gguf only rejects too-small files");
+        // The ported check rejects the same input.
+        assert!(check_size(16 * 64 * 1024, expected).is_err());
+    }
+
+    #[test]
+    fn cap_follows_content_length_so_a_huge_claim_disables_it() {
+        // The branch's in-loop cap is `total_bytes + size_slack(model.size_bytes)`
+        // with total_bytes taken from the server's Content-Length. A server that
+        // claims 10 TB for a 1 GB model gets a ~10 TB budget.
+        let model_size: u64 = 1_000_000_000;
+        let claimed: u64 = 10_000_000_000_000;
+        let budget = claimed + size_slack(model_size);
+        assert!(budget > 9_000 * model_size);
     }
 }

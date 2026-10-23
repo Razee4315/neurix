@@ -1,0 +1,57 @@
+name: Review verification
+
+# Throwaway workflow for the independent review of security/hardening-audit.
+# Lives only on review/security-audit-verification; never merge it.
+#
+#   config-guard   executable regression check for the config-only findings
+#                  (N-01, N-02, N-03, N-07, N-09): main must FAIL, the
+#                  audited branch must PASS.
+#   gitleaks-full  a real full-history secret scan over every branch. The
+#                  audited branch's gitleaks job only scans the PR range on
+#                  pull_request and the last commit (--log-opts=-1) on push.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  config-guard:
+    name: Config regression guard (main vs audited branch)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fetch both refs
+        run: git fetch origin main security/hardening-audit
+      - name: main must fail the guard
+        run: |
+          if python .github/review/config_guard.py origin/main; then
+            echo "::error::guard passed on main; it cannot detect the bugs"; exit 1
+          fi
+      - name: audited branch must pass the guard
+        run: python .github/review/config_guard.py origin/security/hardening-audit
+
+  gitleaks-full:
+    name: gitleaks, full history, all branches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Fetch every branch
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+      - name: Install gitleaks 8.24.3 (checksum verified)
+        run: |
+          V=8.24.3
+          curl -sSfL -o gl.tgz "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_linux_x64.tar.gz"
+          curl -sSfL -o sums.txt "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_checksums.txt"
+          grep " gitleaks_${V}_linux_x64.tar.gz\$" sums.txt | sha256sum -c -
+          tar -xzf gl.tgz gitleaks
+      - name: Scan all commits on all refs
+        run: |
+          echo "commits in scope: $(git rev-list --all | wc -l)"
+          ./gitleaks git --redact -v --exit-code 1 --log-opts="--all" .
