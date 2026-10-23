@@ -91,6 +91,8 @@ pub async fn download_model_files(
     let client = reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .read_timeout(READ_TIMEOUT)
+        // Redirects (HuggingFace sends one to its CDN) must stay on TLS.
+        .https_only(true)
         .build()
         .map_err(|e| format!("Could not start download: {}", e))?;
 
@@ -170,18 +172,53 @@ async fn download_weights(
     }
 
     let is_resumed = status == 206;
+
+    // A 206 must continue exactly where the partial file ends, or the bytes
+    // appended would not line up with the ones already on disk.
+    if is_resumed {
+        let start = response
+            .headers()
+            .get(reqwest::header::CONTENT_RANGE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(content_range_start);
+        if start != Some(existing_bytes) {
+            let _ = fs::remove_file(part_path).await;
+            return fail(
+                channel,
+                "The server resumed the download at the wrong place. Please download it again."
+                    .to_string(),
+            )
+            .map(|_| Outcome::Completed);
+        }
+    }
+
     let total_bytes = if already_complete {
         existing_bytes
     } else if is_resumed {
-        existing_bytes
-            + response
+        existing_bytes.saturating_add(
+            response
                 .content_length()
-                .unwrap_or_else(|| model.size_bytes.saturating_sub(existing_bytes))
+                .unwrap_or_else(|| model.size_bytes.saturating_sub(existing_bytes)),
+        )
     } else {
         // Server ignored the range request: start over.
         existing_bytes = 0;
         response.content_length().unwrap_or(model.size_bytes)
     };
+
+    // The ceiling comes from the catalog, never from the server: a hostile
+    // or broken server that claims a huge Content-Length must not get a huge
+    // budget to fill the disk with.
+    let cap = transfer_cap(model.size_bytes, model.sha256.is_some());
+    if total_bytes > cap {
+        let _ = fs::remove_file(part_path).await;
+        return fail(
+            channel,
+            "The server offered far more data than this model should be, so the download was not started."
+                .to_string(),
+        )
+        .map(|_| Outcome::Completed);
+    }
 
     let _ = channel.send(DownloadEvent::Started { total_bytes });
 
@@ -234,7 +271,22 @@ async fn download_weights(
                         return fail(channel, format!("Could not write to storage: {}", e))
                             .map(|_| Outcome::Completed);
                     }
-                    downloaded += chunk.len() as u64;
+                    downloaded = downloaded.saturating_add(chunk.len() as u64);
+
+                    // A broken or hostile server must not be able to fill the
+                    // disk by streaming endless bytes: stop once the transfer
+                    // passes the catalog's ceiling, and free the space.
+                    if downloaded > cap {
+                        drop(file);
+                        let _ = fs::remove_file(part_path).await;
+                        return fail(
+                            channel,
+                            "The server sent far more data than this model should be. \
+                             The download was stopped."
+                                .to_string(),
+                        )
+                        .map(|_| Outcome::Completed);
+                    }
 
                     let elapsed = last_update.elapsed();
                     if elapsed.as_millis() >= PROGRESS_INTERVAL_MS {
@@ -312,6 +364,56 @@ async fn download_weights(
     Ok(Outcome::Completed)
 }
 
+/// How much larger than the catalog size a pinned model's transfer may get
+/// before it is treated as hostile. Generous: it covers measurement drift,
+/// not a different file.
+fn size_slack(model_size: u64) -> u64 {
+    (model_size / 10).max(64 * 1024 * 1024)
+}
+
+/// The most bytes a model's transfer may reach. Entries with a pinned
+/// checksum carry exact sizes; legacy entries carry estimates (one is ~15%
+/// under the real file), so they get more room rather than false rejections.
+fn transfer_cap(size_bytes: u64, pinned: bool) -> u64 {
+    let slack = if pinned {
+        size_slack(size_bytes)
+    } else {
+        (size_bytes / 2).max(256 * 1024 * 1024)
+    };
+    size_bytes.saturating_add(slack)
+}
+
+/// The first byte offset of a `Content-Range: bytes START-END/TOTAL` header.
+fn content_range_start(value: &str) -> Option<u64> {
+    let range = value.trim().strip_prefix("bytes ")?;
+    let (start, _) = range.split_once('-')?;
+    start.trim().parse().ok()
+}
+
+/// Whether a downloaded file's size is close enough to the expected one.
+/// Rejects both too small (incomplete, lying Content-Length) and too large
+/// (the bytes on disk are not the model the catalog describes).
+fn check_size(actual_bytes: u64, expected_bytes: u64) -> Result<(), String> {
+    // Allow a small fudge factor — some servers report Content-Length slightly
+    // off from the actual body. But anything more than ~1% off is suspicious.
+    let tolerance = (expected_bytes / 100).max(1024);
+    if actual_bytes.saturating_add(tolerance) < expected_bytes {
+        return Err(format!(
+            "Download incomplete: got {} bytes, expected ~{}",
+            actual_bytes, expected_bytes
+        ));
+    }
+    // Too large is just as wrong: it means the bytes on disk are not the
+    // model the catalog describes.
+    if actual_bytes > expected_bytes.saturating_add(tolerance) {
+        return Err(format!(
+            "Downloaded file is larger than expected: got {} bytes, expected ~{}",
+            actual_bytes, expected_bytes
+        ));
+    }
+    Ok(())
+}
+
 /// Verify a downloaded model file is valid by checking size + GGUF magic bytes.
 /// Returns Err with a user-facing message if the file is not a usable GGUF.
 async fn verify_gguf(path: &Path, expected_bytes: u64) -> Result<(), String> {
@@ -320,15 +422,7 @@ async fn verify_gguf(path: &Path, expected_bytes: u64) -> Result<(), String> {
         .map_err(|e| format!("Cannot stat downloaded file: {}", e))?
         .len();
 
-    // Allow a small fudge factor — some servers report Content-Length slightly
-    // off from the actual body. But anything more than ~1% off is suspicious.
-    let tolerance = (expected_bytes / 100).max(1024);
-    if actual_bytes + tolerance < expected_bytes {
-        return Err(format!(
-            "Download incomplete: got {} bytes, expected ~{}",
-            actual_bytes, expected_bytes
-        ));
-    }
+    check_size(actual_bytes, expected_bytes)?;
 
     let mut f = fs::File::open(path)
         .await
@@ -353,7 +447,7 @@ async fn verify_gguf(path: &Path, expected_bytes: u64) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::sha256_from_header;
+    use super::{check_size, content_range_start, sha256_from_header, size_slack, transfer_cap};
 
     #[test]
     fn extracts_quoted_sha256() {
@@ -366,5 +460,59 @@ mod tests {
     fn ignores_non_hash_etags() {
         assert_eq!(sha256_from_header("\"abc123\""), None);
         assert_eq!(sha256_from_header(&"z".repeat(64)), None);
+    }
+
+    const GB: u64 = 1_000_000_000;
+
+    #[test]
+    fn size_may_drift_slightly_but_not_far() {
+        assert!(check_size(GB, GB).is_ok());
+        assert!(check_size(GB - 5_000_000, GB).is_ok());
+        // 1% of 1 GB is 10 MB: 50 MB short must be rejected.
+        assert!(check_size(GB - 50_000_000, GB).is_err());
+        assert!(check_size(GB + 50_000_000, GB).is_err());
+    }
+
+    #[test]
+    fn small_files_get_an_absolute_tolerance() {
+        // 1% of 64 KB is under a KB, so the floor keeps small files workable.
+        assert!(check_size(64 * 1024 + 900, 64 * 1024).is_ok());
+        assert!(check_size(64 * 1024 + 9_000, 64 * 1024).is_err());
+    }
+
+    #[test]
+    fn slack_is_generous_but_bounded() {
+        assert_eq!(size_slack(10 * GB), GB);
+        assert_eq!(size_slack(100 * 1024 * 1024), 64 * 1024 * 1024);
+        assert_eq!(size_slack(0), 64 * 1024 * 1024);
+    }
+
+    #[test]
+    fn cap_comes_from_the_catalog_not_the_server() {
+        // A pinned 1 GB model may reach 1.1 GB, whatever Content-Length says.
+        assert_eq!(transfer_cap(GB, true), GB + GB / 10);
+        // A 10 TB claim is far over it and is refused before any byte lands.
+        assert!(10_000 * GB > transfer_cap(GB, true));
+    }
+
+    #[test]
+    fn legacy_estimates_get_room_for_their_real_size() {
+        // llama-3.2-1b is listed at 700 MB; the real file is ~808 MB.
+        assert!(transfer_cap(700_000_000, false) > 808_000_000);
+        assert!(transfer_cap(700_000_000, true) < 808_000_000);
+    }
+
+    #[test]
+    fn cap_does_not_overflow() {
+        assert_eq!(transfer_cap(u64::MAX, true), u64::MAX);
+        assert!(check_size(u64::MAX, u64::MAX).is_ok());
+    }
+
+    #[test]
+    fn reads_the_start_of_a_content_range() {
+        assert_eq!(content_range_start("bytes 100-999/1000"), Some(100));
+        assert_eq!(content_range_start("bytes 0-0/1"), Some(0));
+        assert_eq!(content_range_start("bytes */1000"), None);
+        assert_eq!(content_range_start("items 1-2/3"), None);
     }
 }

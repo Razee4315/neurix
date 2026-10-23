@@ -30,6 +30,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege: CI only builds and tests, it never needs to write
+# anything. The release workflow grants its own, separate permissions.
+permissions:
+  contents: read
+
 jobs:
   frontend:
     name: Frontend (lint, tests, build)

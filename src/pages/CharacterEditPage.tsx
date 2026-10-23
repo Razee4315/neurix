@@ -8,7 +8,7 @@ import { chatService } from "@/services";
 import type { Character, InferenceEvent } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
-import { ACCENT_PALETTE, DEFAULT_ACCENT } from "@/utils/characterAccent";
+import { ACCENT_PALETTE, DEFAULT_ACCENT, isAccentHex } from "@/utils/characterAccent";
 import { LIMITS } from "@/utils/characterLimits";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { shortId } from "@/utils/format";
@@ -487,11 +487,12 @@ function padStarters(list: string[] | undefined): string[] {
 }
 
 function draftFrom(seed: Character | undefined, name: string): Draft {
+	const accent = seed?.accent_color;
 	return {
 		name,
 		description: seed?.description ?? "",
 		icon: seed?.icon ?? ICON_CHOICES[0],
-		accentColor: seed?.accent_color ?? DEFAULT_ACCENT,
+		accentColor: isAccentHex(accent) ? accent : DEFAULT_ACCENT,
 		prompt: seed?.system_prompt ?? "",
 		temperature: seed?.temperature ?? 0.7,
 		topP: seed?.top_p ?? 0.9,

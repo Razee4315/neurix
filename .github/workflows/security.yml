@@ -1,0 +1,125 @@
+name: Security
+
+# Automated security scanning, separate from ci.yml so the two can be
+# scheduled and triaged independently.
+#
+#   npm-audit     known CVEs in the app's and the website's npm trees
+#   cargo-audit   known CVEs in the Rust tree, from the RustSec advisory DB
+#   gitleaks      secrets committed anywhere in the repository's history
+#   codeql        GitHub's static analysis for the TypeScript frontend
+#   semgrep       community security rulesets (advisory until triaged)
+#
+# Every third-party action is pinned to an immutable commit SHA, so a
+# compromised tag cannot run arbitrary code in this repository.
+
+on:
+  push:
+    branches:
+      - main
+      - 'security/**'
+      - 'audit/**'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm-audit:
+    name: npm audit (app + website)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Audit the app's dependencies
+        run: npm audit --package-lock-only --audit-level=high
+
+      - name: Audit the website's dependencies
+        run: npm audit --package-lock-only --audit-level=high
+        working-directory: website
+
+  cargo-audit:
+    name: cargo audit (RustSec)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: cargo-audit
+
+      - name: Audit Rust dependencies
+        working-directory: src-tauri
+        run: cargo audit
+
+  gitleaks:
+    name: Secret scanning (full history)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # The CLI, not gitleaks-action: the action scans only the PR's commits
+      # on pull_request and only the last commit on push, whatever the
+      # checkout depth. This scans every commit on every branch.
+      - name: Fetch every branch
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Install gitleaks 8.24.3 (checksum verified)
+        run: |
+          V=8.24.3
+          curl -sSfL -O "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_linux_x64.tar.gz"
+          curl -sSfL -o sums.txt "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_checksums.txt"
+          grep " gitleaks_${V}_linux_x64.tar.gz\$" sums.txt | sha256sum -c -
+          tar -xzf "gitleaks_${V}_linux_x64.tar.gz" gitleaks
+
+      - name: Scan every commit on every branch
+        run: |
+          echo "commits in scope: $(git rev-list --all | wc -l)"
+          ./gitleaks git --redact -v --exit-code 1 --log-opts="--all" .
+
+  codeql:
+    name: CodeQL (TypeScript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@0fda7a646fd14a20daf520829ca1ae8847000819 # codeql-bundle-v2.27.3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@0fda7a646fd14a20daf520829ca1ae8847000819 # codeql-bundle-v2.27.3
+
+  semgrep:
+    name: Semgrep (advisory)
+    # Advisory for now: the first run's findings must be triaged before this
+    # is allowed to fail the build. `--error` makes the scan exit non-zero on
+    # findings, so removing `continue-on-error` is all promotion takes.
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    container:
+      # Pinned by digest so the scanner itself cannot be swapped under us.
+      # Bump deliberately: tag 1.182.1 as of 2026-10.
+      image: semgrep/semgrep@sha256:451b3d875c00dac7ed5db5293e584a07de11449a409c10b3c2d2652f429630b6
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Scan
+        run: semgrep scan --error --config p/security-audit --config p/secrets --metrics=off --exclude-rule generic.secrets.security.detected-generic-api-key

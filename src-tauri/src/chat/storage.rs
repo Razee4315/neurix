@@ -221,6 +221,44 @@ pub async fn load_all(chats_dir: &Path) -> Result<Vec<Conversation>, String> {
         .collect())
 }
 
+/// Ceilings for what one conversation may hold on disk. The app itself stays
+/// far below them (a reply is at most 2048 tokens, a draft 16k characters);
+/// they exist for conversations that arrive in an imported backup, where a
+/// single huge line would otherwise freeze the chat view that renders it.
+const MAX_TITLE: usize = 200;
+const MAX_REF: usize = 128;
+const MAX_MESSAGES: usize = 10_000;
+const MAX_MESSAGE_BYTES: usize = 128 * 1024;
+
+/// Clamp a conversation to the ceilings above, keeping the newest messages,
+/// and pull timestamps from the future back to now (a future `updated_at`
+/// would pin a conversation to the top of the list forever).
+fn bound(conv: &mut Conversation) {
+    use crate::settings::truncate_in_place;
+
+    truncate_in_place(&mut conv.title, MAX_TITLE);
+    truncate_in_place(&mut conv.model_id, MAX_REF);
+    truncate_in_place(&mut conv.model_name, MAX_REF);
+    for field in [&mut conv.character_id, &mut conv.character_name] {
+        if let Some(v) = field.as_mut() {
+            truncate_in_place(v, MAX_REF);
+        }
+    }
+    if conv.messages.len() > MAX_MESSAGES {
+        conv.messages.drain(..conv.messages.len() - MAX_MESSAGES);
+    }
+    let now = Utc::now();
+    for msg in conv.messages.iter_mut() {
+        truncate_in_place(&mut msg.content, MAX_MESSAGE_BYTES);
+        if let Some(r) = msg.reasoning.as_mut() {
+            truncate_in_place(r, MAX_MESSAGE_BYTES);
+        }
+        msg.timestamp = msg.timestamp.min(now);
+    }
+    conv.created_at = conv.created_at.min(now);
+    conv.updated_at = conv.updated_at.min(now);
+}
+
 pub async fn save_conversation(chats_dir: &Path, conversation: &Conversation) -> Result<(), String> {
     validate_id(&conversation.id)?;
     fs::create_dir_all(chats_dir).await.map_err(|e| e.to_string())?;
@@ -229,6 +267,7 @@ pub async fn save_conversation(chats_dir: &Path, conversation: &Conversation) ->
     // A conversation is created once. Callers resend the whole object on
     // every save, so keep the original creation time from disk.
     let mut to_write = conversation.clone();
+    bound(&mut to_write);
     if let Ok(existing) = fs::read_to_string(&path).await {
         if let Ok(header) = serde_json::from_str::<ConversationHeader>(&existing) {
             to_write.created_at = header.created_at;
@@ -265,7 +304,43 @@ pub async fn clear_all(chats_dir: &Path) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{snippet_around, validate_id};
+    use super::{
+        bound, snippet_around, validate_id, ChatMessage, Conversation, MessageRole,
+        MAX_MESSAGES, MAX_MESSAGE_BYTES,
+    };
+    use chrono::{Duration, Utc};
+
+    #[test]
+    fn bound_clamps_an_imported_conversation() {
+        let future = Utc::now() + Duration::days(3650);
+        let msg = |content: String| ChatMessage {
+            role: MessageRole::User,
+            content,
+            timestamp: future,
+            reasoning: None,
+        };
+        let mut messages: Vec<ChatMessage> = (0..MAX_MESSAGES).map(|i| msg(i.to_string())).collect();
+        messages.push(msg("[".repeat(1_000_000)));
+        let mut conv = Conversation {
+            id: "c1".to_string(),
+            title: "t".repeat(10_000),
+            model_id: "m".to_string(),
+            model_name: "m".to_string(),
+            character_id: None,
+            character_name: None,
+            created_at: future,
+            updated_at: future,
+            messages,
+        };
+        bound(&mut conv);
+        assert_eq!(conv.messages.len(), MAX_MESSAGES);
+        // The oldest message went, the newest (huge) one was kept and cut.
+        assert_eq!(conv.messages[0].content, "1");
+        assert_eq!(conv.messages.last().unwrap().content.len(), MAX_MESSAGE_BYTES);
+        assert!(conv.title.len() <= 200);
+        assert!(conv.updated_at <= Utc::now());
+        assert!(conv.messages[0].timestamp <= Utc::now());
+    }
 
     #[test]
     fn snippet_marks_truncation() {
