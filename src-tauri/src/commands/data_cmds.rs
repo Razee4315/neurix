@@ -167,37 +167,40 @@ pub async fn export_data_to_file(app: AppHandle) -> Result<Option<String>, Strin
 /// webview passes no path. Returns `None` when the dialog was dismissed.
 #[tauri::command]
 pub async fn import_data_from_file(app: AppHandle) -> Result<Option<ImportSummary>, String> {
-    let parsed = tauri::async_runtime::spawn_blocking(move || -> Result<Option<Backup>, String> {
-        let Some(target) = app
-            .dialog()
-            .file()
-            .add_filter("Neurix backup", &["json"])
-            .blocking_pick_file()
-        else {
-            return Ok(None);
-        };
-        // Read at most one byte beyond the cap: a hostile file is rejected
-        // without ever being held in memory whole.
-        let mut options = OpenOptions::new();
-        options.read(true);
-        let mut file = app
-            .fs()
-            .open(target, options)
-            .map_err(|e| format!("Could not open the backup file: {e}"))?;
-        let mut limited = Vec::new();
-        (&mut file)
-            .take(MAX_BACKUP_BYTES + 1)
-            .read_to_end(&mut limited)
-            .map_err(|e| format!("Could not read the backup file: {e}"))?;
-        if limited.len() as u64 > MAX_BACKUP_BYTES {
-            return Err(format!(
-                "This backup is too large to import (the limit is {} MB).",
-                MAX_BACKUP_BYTES / (1024 * 1024)
-            ));
+    let parsed = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        move || -> Result<Option<Backup>, String> {
+            let Some(target) = app
+                .dialog()
+                .file()
+                .add_filter("Neurix backup", &["json"])
+                .blocking_pick_file()
+            else {
+                return Ok(None);
+            };
+            // Read at most one byte beyond the cap: a hostile file is
+            // rejected without ever being held in memory whole.
+            let mut options = OpenOptions::new();
+            options.read(true);
+            let mut file = app
+                .fs()
+                .open(target, options)
+                .map_err(|e| format!("Could not open the backup file: {e}"))?;
+            let mut limited = Vec::new();
+            (&mut file)
+                .take(MAX_BACKUP_BYTES + 1)
+                .read_to_end(&mut limited)
+                .map_err(|e| format!("Could not read the backup file: {e}"))?;
+            if limited.len() as u64 > MAX_BACKUP_BYTES {
+                return Err(format!(
+                    "This backup is too large to import (the limit is {} MB).",
+                    MAX_BACKUP_BYTES / (1024 * 1024)
+                ));
+            }
+            let data = String::from_utf8(limited)
+                .map_err(|_| "This file is not a valid Neurix backup.".to_string())?;
+            parse_backup(&data).map(Some)
         }
-        let data = String::from_utf8(limited)
-            .map_err(|_| "This file is not a valid Neurix backup.".to_string())?;
-        parse_backup(&data).map(Some)
     })
     .await
     .map_err(|e| format!("Backup dialog failed: {e}"))??;
