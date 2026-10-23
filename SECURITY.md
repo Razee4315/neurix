@@ -7,14 +7,30 @@ Neurix is designed with privacy as a core principle:
 - **All inference runs on-device** — no data is sent to external servers
 - **No accounts or authentication** — nothing to compromise
 - **No telemetry or analytics** — no tracking of any kind
-- **Conversations stored locally** — encrypted at rest by the OS file system
-- **Models downloaded over HTTPS** — from HuggingFace's CDN
+- **Conversations stored locally** — as JSON inside the app's data directory
+  (`%APPDATA%` on Windows, app-private storage on Android). The data is not
+  encrypted by Neurix itself; it is separated from other apps by the
+  operating system's per-user and per-app sandboxing. Full-disk encryption,
+  where the OS offers it, protects it at rest.
+- **Models downloaded over HTTPS** — from HuggingFace, and verified against
+  a SHA-256 checksum pinned in the app's catalog before a file becomes a
+  model the app will load.
+- **Least-privilege webview** — the UI layer has no direct file-system or
+  network capability; backup import/export run through native dialogs in
+  the Rust backend.
+
+## Automated Scanning
+
+Every pull request runs a security workflow (`.github/workflows/security.yml`)
+with dependency audits (npm and RustSec), CodeQL static analysis, Semgrep,
+and gitleaks secret scanning over the full git history.
 
 ## Supported Versions
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | Yes      |
+| 0.5.x   | Yes       |
+| < 0.5   | No        |
 
 ## Reporting a Vulnerability
 
