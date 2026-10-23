@@ -18,6 +18,10 @@ const BACKUP_VERSION: u32 = 1;
 /// maximum sizes the app itself produces stays far below this; the cap only
 /// stops a hostile or corrupt file from being read into memory whole.
 const MAX_BACKUP_BYTES: u64 = 512 * 1024 * 1024;
+/// Ceiling on how many conversations one backup may carry. The byte cap
+/// bounds total size, but a file of minimal records could otherwise expand
+/// into millions of files written to disk.
+const MAX_BACKUP_CONVERSATIONS: usize = 10_000;
 
 /// Everything a user would want to carry to another device: their chats and
 /// their custom characters. Models are not included — they are large and can
@@ -43,6 +47,18 @@ pub struct ImportSummary {
 /// unit tested, and so the size limit is checked before the bytes are parsed.
 fn parse_backup(data: &str) -> Result<Backup, String> {
     serde_json::from_str(data).map_err(|_| "This file is not a valid Neurix backup.".to_string())
+}
+
+/// Reject backups whose shape is abusive even though the bytes fit the cap.
+fn validate_backup(backup: &Backup) -> Result<(), String> {
+    if backup.conversations.len() > MAX_BACKUP_CONVERSATIONS {
+        return Err(format!(
+            "This backup holds {} conversations; the limit is {}. Split it and import the parts.",
+            backup.conversations.len(),
+            MAX_BACKUP_CONVERSATIONS
+        ));
+    }
+    Ok(())
 }
 
 /// Assemble a backup from everything stored on this device.
@@ -199,7 +215,9 @@ pub async fn import_data_from_file(app: AppHandle) -> Result<Option<ImportSummar
             }
             let data = String::from_utf8(limited)
                 .map_err(|_| "This file is not a valid Neurix backup.".to_string())?;
-            parse_backup(&data).map(Some)
+            let backup = parse_backup(&data)?;
+            validate_backup(&backup)?;
+            Ok(Some(backup))
         }
     })
     .await
@@ -239,6 +257,47 @@ mod tests {
         .expect("parse keeps the version field");
         assert_eq!(backup.version, 99);
         assert!(apply_backup_decision(&backup).is_err());
+    }
+
+    fn conversation(id: &str) -> Conversation {
+        Conversation {
+            id: id.to_string(),
+            title: "t".to_string(),
+            model_id: "m".to_string(),
+            model_name: "m".to_string(),
+            character_id: None,
+            character_name: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            messages: vec![],
+        }
+    }
+
+    #[test]
+    fn conversation_count_is_capped() {
+        let many: Vec<Conversation> = (0..MAX_BACKUP_CONVERSATIONS)
+            .map(|i| conversation(&format!("c{i}")))
+            .collect();
+        let backup = Backup {
+            kind: BACKUP_KIND.to_string(),
+            version: BACKUP_VERSION,
+            exported_at: "2026-01-01T00:00:00Z".to_string(),
+            custom_characters: vec![],
+            conversations: many,
+        };
+        assert!(validate_backup(&backup).is_ok());
+
+        let one_too_many = Backup {
+            conversations: backup
+                .conversations
+                .iter()
+                .cloned()
+                .chain([conversation("overflow")])
+                .collect(),
+            ..backup
+        };
+        let err = validate_backup(&one_too_many).expect_err("over the cap must be rejected");
+        assert!(err.contains("conversations"), "{err}");
     }
 
     /// The kind/version gate of apply_backup, extracted for tests.
