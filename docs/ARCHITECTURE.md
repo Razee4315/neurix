@@ -213,15 +213,20 @@ strings (`rgb(var(--c-primary))`). Translucent variants go through
 `alpha(color, "1f")` rather than string concatenation. Icons are inline
 SVGs from `lucide-react`, looked up by name in `components/ui/Icon.tsx`.
 
-The CSP in `tauri.conf.json` enforces this: only `huggingface.co` is on
-the `connect-src` allowlist.
+The CSP in `tauri.conf.json` enforces this: `connect-src` allows only the
+app's own origin and the IPC endpoints — no remote host at all. Model
+downloads run in the Rust backend (reqwest), never in the webview.
 
-## Why `withGlobalTauri: true`
+## Why `withGlobalTauri` is off
 
-Set in `tauri.conf.json`. This exposes `window.__TAURI__` so debugging
-in the Android WebView is easier — you can poke at IPC from the
-inspector. There's no security cost because the CSP and capabilities
-already constrain what's reachable.
+`tauri.conf.json` sets `withGlobalTauri: false`. The global would expose
+`window.__TAURI__` — the whole IPC surface — to any script running in the
+webview, which widens what an HTML injection can reach. Nothing in the
+frontend needs it (the npm `@tauri-apps/*` packages carry their own
+bindings), and the security-relevant reach of the webview is what the
+capability file grants, which is minimal: see `src-tauri/capabilities/main.json`.
+Backups deliberately run through Rust-side native dialogs, so the webview
+has no file-system capability at all.
 
 ## File layout
 
