@@ -23,7 +23,7 @@ fn default_log_level() -> log::LevelFilter {
 use commands::{
     character_cmds::get_preset_characters,
     chat_cmds::{benchmark_model, get_active_model, run_inference, stop_inference, unload_model},
-    data_cmds::{export_data, import_data},
+    data_cmds::{export_data_to_file, import_data_from_file},
     history_cmds::{
         clear_all_conversations, delete_conversation, get_conversations, load_conversation,
         save_conversation, search_conversations,
@@ -70,6 +70,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
+        // The fs plugin stays as a Rust-only library for backup file IO
+        // (dialogs return content:// URLs on Android). It deliberately gets
+        // NO capability: the webview cannot call it.
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
@@ -99,8 +102,8 @@ pub fn run() {
             check_available_space,
             get_available_space,
             get_device_info,
-            export_data,
-            import_data,
+            export_data_to_file,
+            import_data_from_file,
             get_preset_characters,
         ])
         .run(tauri::generate_context!())

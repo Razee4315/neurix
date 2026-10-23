@@ -635,15 +635,20 @@ const handlers: Record<string, (args: Args) => unknown> = {
 		total_memory_bytes: knobs.ramGb === null ? null : knobs.ramGb * 1024 ** 3,
 		inference_threads: 4,
 	}),
-	export_data: (): Backup => ({
-		kind: "neurix.backup",
-		version: 1,
-		exported_at: new Date().toISOString(),
-		custom_characters: state.settings.custom_characters ?? [],
-		conversations: Object.values(state.conversations),
-	}),
-	import_data: (a) => {
-		const backup = a.backup as Backup;
+	export_data_to_file: () => {
+		// Pretend the native dialog ran and the file was written.
+		lastWrittenFile = JSON.stringify({
+			kind: "neurix.backup",
+			version: 1,
+			exported_at: new Date().toISOString(),
+			custom_characters: state.settings.custom_characters ?? [],
+			conversations: Object.values(state.conversations),
+		});
+		return "neurix-backup.json";
+	},
+	import_data_from_file: () => {
+		if (!lastWrittenFile) return null;
+		const backup = JSON.parse(lastWrittenFile) as Backup;
 		if (backup?.kind !== "neurix.backup") throw "This file is not a Neurix backup.";
 		for (const c of backup.conversations ?? []) state.conversations[c.id] = c;
 		const incoming = backup.custom_characters ?? [];
@@ -657,17 +662,10 @@ const handlers: Record<string, (args: Args) => unknown> = {
 	},
 	"plugin:notification|is_permission_granted": () => true,
 	"plugin:notification|request_permission": () => "granted",
-	"plugin:dialog|save": () => "neurix-backup.json",
-	"plugin:dialog|open": () => (lastWrittenFile ? "neurix-backup.json" : null),
-	"plugin:fs|read_text_file": () => Array.from(new TextEncoder().encode(lastWrittenFile)),
 };
 
 mockIPC(async (cmd, payload) => {
 	knobs.calls[cmd] = (knobs.calls[cmd] ?? 0) + 1;
-	if (cmd === "plugin:fs|write_text_file") {
-		lastWrittenFile = new TextDecoder().decode(payload as unknown as Uint8Array);
-		return null;
-	}
 	const handler = handlers[cmd];
 	if (handler) return handler((payload ?? {}) as Args);
 	// Unhandled plugin calls (notifications, opener) are harmless no-ops here.
