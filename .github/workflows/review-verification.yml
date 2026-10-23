@@ -47,10 +47,10 @@ jobs:
       - name: Install gitleaks 8.24.3 (checksum verified)
         run: |
           V=8.24.3
-          curl -sSfL -o gl.tgz "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_linux_x64.tar.gz"
+          curl -sSfL -O "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_linux_x64.tar.gz"
           curl -sSfL -o sums.txt "https://github.com/gitleaks/gitleaks/releases/download/v$V/gitleaks_${V}_checksums.txt"
           grep " gitleaks_${V}_linux_x64.tar.gz\$" sums.txt | sha256sum -c -
-          tar -xzf gl.tgz gitleaks
+          tar -xzf "gitleaks_${V}_linux_x64.tar.gz" gitleaks
       - name: Scan all commits on all refs
         run: |
           echo "commits in scope: $(git rev-list --all | wc -l)"
