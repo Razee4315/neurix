@@ -62,7 +62,7 @@ Automated scanning now runs on every pull request: `npm audit` (app + website), 
 
 **Attacker types considered**
 
-- **Anonymous network attacker** (MITM / DNS): HTTPS with rustls; catalog-pinned SHA-256 for all store models; magic-byte + size checks. Can at worst cause denial of service.
+- **Anonymous network attacker** (MITM / DNS): HTTPS with rustls; catalog-pinned SHA-256 for all current store models (not the 8 legacy entries, D-02); magic-byte + size checks. Can at worst cause denial of service.
 - **Malicious model author**: a GGUF whose *text output* is rendered by the webview (XSS attempt), or whose *binary structure* attacks llama.cpp. Output is rendered through a React-only markdown renderer with an `https?://`-only link regex — no `innerHTML` anywhere in the app. Binary structure is upstream llama.cpp's exposure (out of scope per SECURITY.md, catalog checksums limit replacement attacks).
 - **Malicious file** (shared backup/character, or a picked file): the import paths validate ids, clamp string lengths, filter preset-id impersonation, cap size, and — after this audit — never let the webview touch the filesystem directly.
 - **Logged-in user attacking their own app**: no multi-tenant surface exists; the realistic variant is social-engineering a user into importing a hostile backup, covered above.
@@ -91,11 +91,11 @@ Automated scanning now runs on every pull request: `npm audit` (app + website), 
 | N-01 | Webview could read/write arbitrary files (fs plugin granted with no path scope) | **High** | CWE-732 / CWE-250 | `src-tauri/capabilities/main.json` (fs:allow-read/write-text-file); effective scope confirmed unscoped in `gen/schemas/acl-manifests.json` ("without any pre-configured scope") | Any script execution in the webview (chained from N-02, a malicious model reply, or one compromised npm package) calls `readTextFile("C:/Users/...")` via `window.__TAURI__` and exfiltrates every chat; `writeTextFile` plants files. No user interaction needed. | **Fixed** — export/import moved into Rust commands that own the native dialog and file IO (`export_data_to_file` / `import_data_from_file`); all fs and dialog JS capabilities removed; fs plugin kept as a Rust-only library (no IPC capability); Android `content://` still works via `Fs::open`. Tests for the parse path. | `b85ddc3`, `91b3979`, `5779a88` |
 | N-02 | CSP allowed `script-src 'unsafe-inline'` | **High** | CWE-79 | `src-tauri/tauri.conf.json:21` | Tauri injects its runtime scripts with nonces/hashes; `unsafe-inline` bypasses that protection, so a single HTML injection anywhere in the webview (e.g. a hostile model reply if the markdown renderer is ever weakened) becomes script execution with IPC access. | **Fixed** — `script-src 'self'`; `style-src 'unsafe-inline'` kept (styled-components runtime `<style>`). `connect-src` narrowed to `'self' ipc: http://ipc.localhost` (the webview never fetches huggingface.co; the `ipc:` schemes future-proof the Linux build). | `a87b309` |
 | N-03 | Full Tauri API exposed as `window.__TAURI__` | Medium | CWE-749 | `src-tauri/tauri.conf.json:6` (`withGlobalTauri: true`) | Gives injected/compromised scripts a ready handle to every IPC command (chained with N-01 pre-fix). Nothing in the codebase uses the global — the frontend imports the npm packages. | **Fixed** — `withGlobalTauri: false`. | `a87b309` |
-| N-04 | Model download accepted unbounded data; oversized files passed verification | Medium | CWE-770 / CWE-409 | `src-tauri/src/models/download.rs` | A broken or hostile server (or a rerouted CDN) streams past the model's stated size and fills the disk; the post-download check only rejected *small* files, so oversized garbage with a GGUF header renamed into place. | **Fixed** — transfer aborts at `total + max(10%, 64 MB)` slack; `check_size` rejects both directions (unit tests). SHA-256 verification still runs after. | `ae05d10` |
+| N-04 | Model download accepted unbounded data; oversized files passed verification | Medium | CWE-770 / CWE-409 | `src-tauri/src/models/download.rs` | A broken or hostile server (or a rerouted CDN) streams past the model's stated size and fills the disk; the post-download check only rejected *small* files, so oversized garbage with a GGUF header renamed into place. | **Fixed** — the ceiling comes from the catalog size, never from the server: a `Content-Length` over it is refused before any byte is written, and the transfer aborts and deletes the `.part` once it passes it (pinned models: +max(10%, 64 MB); legacy estimates: +max(50%, 256 MB)). A 206 must resume at the partial file's length. `check_size` rejects both directions. SHA-256 verification still runs after. Unit tests on the helpers; the async loop itself is untested. | `ae05d10` |
 | N-05 | 13 npm vulnerabilities (2 critical, 5 high) | Medium (dev-chain) | CWE-1104 | `package-lock.json` | Mostly dev toolchain (vite/vitest/babel/postcss); the two criticals were tinypool RCE reachable only by running untrusted test code; react-router open redirects unreachable (no untrusted links). Still: fixed, not argued away. | **Fixed** — react-router-dom 6→7, vitest 3→5, transitive bumps. `npm audit`: 13 → **0**. Lint, typecheck, and all 66 unit tests pass. | `9edb084` |
 | N-06 | 18 RustSec vulnerabilities in the TLS/network stack | Medium | CWE-1104 | `src-tauri/Cargo.lock` | rustls/webpki/quinn/quick-xml DoS-class issues in the crates that terminate the app's only TLS connection (model downloads). | **Fixed** — lockfile-only updates: rustls 0.23.46, rustls-webpki 0.103.16, webpki-roots 1.0.11, quinn-proto 0.11.19, quick-xml 0.41.0 (via parent bumps notify-rust 4.18, plist 1.10). `cargo audit`: 18 → **0** vulnerabilities. | `699a843` |
 | N-07 | CI ran with the repository's default (write-scoped) token; new actions tag-pinned | Medium | CWE-250 | `.github/workflows/ci.yml` (no `permissions:` block) | A compromised action or a script-injection bug in CI would run with a write-scoped token; tag-pinned actions are mutable upstream. The repo's default workflow permission is read/write (per `release.yml` setup notes). | **Fixed** — `ci.yml` declares `permissions: contents: read`. The new `security.yml` pins every third-party action to a commit SHA *and its Semgrep container to an image digest*, and uses least-privilege job permissions (`security-events: write` only where CodeQL needs it). Existing release/deploy workflows deliberately untouched (see D-01). | `faf1dff`, `9062f27` |
-| N-08 | Backup import had no size or memory bound | Low | CWE-409 | `src-tauri/src/commands/data_cmds.rs` | A hostile "backup" file shared socially and imported read whole into memory — a multi-GB file could exhaust the device; a file of minimal records could expand into millions of written files. | **Fixed** — streamed read capped at 512 MB + 1 byte via `io::Read::take`, imports reject backups over 10,000 conversations, format/version validated. Unit tests. | `91b3979`, `9ba92e8` |
+| N-08 | Backup import had no size or memory bound | Low | CWE-409 | `src-tauri/src/commands/data_cmds.rs` | A hostile "backup" file shared socially and imported read whole into memory — a multi-GB file could exhaust the device; a file of minimal records could expand into millions of written files. | **Fixed** — read capped at 128 MB + 1 byte via `io::Read::take`; the 10,000-conversation and 1,000-character limits are enforced while parsing; kind/version gate (`check_header`) runs before anything is written; every saved conversation is clamped (message size, count, title, future timestamps) and every character field is bounded in `sanitize()`. Unit tests. | `91b3979`, `9ba92e8` |
 | N-09 | `opener:allow-open-url` granted without scope | Low | CWE-732 | `src-tauri/capabilities/main.json` | The webview could ask the OS to open *any* URL/scheme (e.g. `file:`, `ms-msdt:`, custom handlers). Both call sites only ever pass `https://` URLs, so the capability now enforces exactly that. | **Fixed** — `opener:default` (which bundles the unscoped grant) removed; scoped `https://**` allow-list added. | `b85ddc3` |
 | N-10 | SECURITY.md overclaimed storage encryption | Low | CWE-1230 | `SECURITY.md` | Claimed chats are "encrypted at rest by the OS file system"; on default Windows/Android they are plaintext JSON behind OS sandboxing. A policy that overstates protection misleads security reviewers and users. | **Fixed** — accurate description + updated supported versions + documents the new scanning. | `fafb89a` |
 | N-11 | ARCHITECTURE.md documented the unsafe configuration as intentional | Low | CWE-1230 | `docs/ARCHITECTURE.md:216-224` | The doc explained why `withGlobalTauri: true` was set and asserted "there's no security cost" — the exact reasoning the audit disproved — and described a `connect-src` huggingface.co allowlist entry that the hardened CSP removed. Docs that rationalize a weak configuration steer future changes back toward it. | **Fixed** — both sections now describe the current configuration and the reasoning for it. | `f4f2425` |
@@ -106,7 +106,7 @@ Regression tests added: backup parser (garbage rejection, defaults, version pres
 
 ## 5. Triaged automated-scan results
 
-**gitleaks (full history): clean.** No secrets in any commit.
+**gitleaks (full history): clean.** No secrets in any commit. (Correction from the independent review: the original gitleaks-action job scanned only the PR's commits on pull_request and only the last commit on push. The job now runs the gitleaks CLI over every commit on every branch, and that scan is clean.)
 
 **CodeQL (TypeScript, security-extended): clean.**
 
@@ -150,7 +150,7 @@ Worth recording so future changes don't regress it:
 
 - **IPC commands validate everything**: conversation ids are strict `[A-Za-z0-9_-]` (path-traversal tested), model ids must be catalog entries before any path join or delete, inference parameters are clamped server-side, settings pass a sanitize+clamp layer regardless of caller.
 - **Atomic writes** for conversations (temp file + rename), keeping corrupt-chat states impossible on crash.
-- **Download integrity**: HTTPS-only (rustls), catalog-pinned SHA-256 for all store models, GGUF magic-byte check, size checks, cancellation-aware resume.
+- **Download integrity**: HTTPS-only (rustls), catalog-pinned SHA-256 for all current store models (legacy entries: D-02), GGUF magic-byte check, size checks, cancellation-aware resume.
 - **No `innerHTML` / `dangerouslySetInnerHTML` / `eval` anywhere in the app**; model output goes through a React-node markdown renderer whose link regex only admits `https?://`; shared-character import validates icons against an allowlist and colors against `#rrggbb`.
 - **Fail-closed WiFi-only logic on mobile**, re-enforced in Rust, not just the UI.
 - Android: bridge exposes exactly two methods, service not exported, cleartext traffic disabled in release, `FLAG_IMMUTABLE` PendingIntent.
@@ -184,3 +184,32 @@ Worth recording so future changes don't regress it:
 - [x] `main` untouched; no tags or releases created; release/deploy workflows unmodified
 
 *Report generated as part of the Phase 5 deliverable; commit hashes reference `security/hardening-audit`.*
+
+## Third pass: fixes from the independent review
+
+An independent review of this branch (`REVIEW_SECURITY_AUDIT.md` on
+`review/security-audit-verification`) confirmed N-01 to N-11 and found the
+gaps below. All are fixed on this branch:
+
+- **N-04 was half fixed.** The download cap followed the server's
+  `Content-Length`, so a huge claim gave a huge budget. The cap now comes from
+  the catalog; oversized offers are refused up front; a breach deletes the
+  `.part`; arithmetic saturates; a 206 must resume at the right offset; the
+  client is `https_only`.
+- **Backup import could still exhaust memory or freeze the UI.** The byte cap
+  is 128 MB (was 512 MB), the count limits run while parsing, conversations
+  are clamped on every save, and character `id`, `icon`, `accent_color` and
+  timestamps are bounded in `sanitize()`. The editor no longer passes an
+  unchecked `accent_color` into CSS.
+- **Quadratic markdown regex.** The inline pattern and the table-divider check
+  were quadratic on long lines of `[` or spaces. Both are bounded, lines over
+  8,000 characters render as plain text, and tests cover it
+  (`markdownPatterns.test.ts`).
+- **Native backup dialogs lost their parent window on desktop.** They are now
+  parented to the main window, as the JS dialog was.
+- **Hollow tests.** The backup tests now exercise the real `check_header` gate
+  and the parse-time limits instead of a copy of the gate or a constant.
+- **CI claims.** gitleaks now really scans the full history, and Semgrep runs
+  with `--error`, so removing `continue-on-error` is enough to make it blocking.
+- **Docs.** `SECURITY.md` no longer claims pinned checksums for the legacy
+  models, names `%LOCALAPPDATA%`, and discloses Android system backup.
