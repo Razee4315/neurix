@@ -236,6 +236,20 @@ async fn download_weights(
                     }
                     downloaded += chunk.len() as u64;
 
+                    // A broken or hostile server must not be able to fill the
+                    // disk by streaming endless bytes: stop once the transfer
+                    // clearly exceeds the model's stated size.
+                    if downloaded > total_bytes + size_slack(model.size_bytes) {
+                        drop(file);
+                        return fail(
+                            channel,
+                            "The server sent far more data than this model should be. \
+                             The download was stopped."
+                                .to_string(),
+                        )
+                        .map(|_| Outcome::Completed);
+                    }
+
                     let elapsed = last_update.elapsed();
                     if elapsed.as_millis() >= PROGRESS_INTERVAL_MS {
                         let instant =
@@ -312,14 +326,17 @@ async fn download_weights(
     Ok(Outcome::Completed)
 }
 
-/// Verify a downloaded model file is valid by checking size + GGUF magic bytes.
-/// Returns Err with a user-facing message if the file is not a usable GGUF.
-async fn verify_gguf(path: &Path, expected_bytes: u64) -> Result<(), String> {
-    let actual_bytes = fs::metadata(path)
-        .await
-        .map_err(|e| format!("Cannot stat downloaded file: {}", e))?
-        .len();
+/// How much larger than the stated model size a transfer may get before it
+/// is treated as hostile. Generous: it covers a lying Content-Length and a
+/// resumed file that is briefly longer, not subtle measurement drift.
+fn size_slack(model_size: u64) -> u64 {
+    (model_size / 10).max(64 * 1024 * 1024)
+}
 
+/// Whether a downloaded file's size is close enough to the expected one.
+/// Rejects both too small (incomplete, lying Content-Length) and too large
+/// (the bytes on disk are not the model the catalog describes).
+fn check_size(actual_bytes: u64, expected_bytes: u64) -> Result<(), String> {
     // Allow a small fudge factor — some servers report Content-Length slightly
     // off from the actual body. But anything more than ~1% off is suspicious.
     let tolerance = (expected_bytes / 100).max(1024);
@@ -329,6 +346,26 @@ async fn verify_gguf(path: &Path, expected_bytes: u64) -> Result<(), String> {
             actual_bytes, expected_bytes
         ));
     }
+    // Too large is just as wrong: it means the bytes on disk are not the
+    // model the catalog describes.
+    if actual_bytes > expected_bytes + tolerance {
+        return Err(format!(
+            "Downloaded file is larger than expected: got {} bytes, expected ~{}",
+            actual_bytes, expected_bytes
+        ));
+    }
+    Ok(())
+}
+
+/// Verify a downloaded model file is valid by checking size + GGUF magic bytes.
+/// Returns Err with a user-facing message if the file is not a usable GGUF.
+async fn verify_gguf(path: &Path, expected_bytes: u64) -> Result<(), String> {
+    let actual_bytes = fs::metadata(path)
+        .await
+        .map_err(|e| format!("Cannot stat downloaded file: {}", e))?
+        .len();
+
+    check_size(actual_bytes, expected_bytes)?;
 
     let mut f = fs::File::open(path)
         .await
@@ -353,7 +390,7 @@ async fn verify_gguf(path: &Path, expected_bytes: u64) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::sha256_from_header;
+    use super::{check_size, sha256_from_header, size_slack};
 
     #[test]
     fn extracts_quoted_sha256() {
@@ -366,5 +403,30 @@ mod tests {
     fn ignores_non_hash_etags() {
         assert_eq!(sha256_from_header("\"abc123\""), None);
         assert_eq!(sha256_from_header(&"z".repeat(64)), None);
+    }
+
+    const GB: u64 = 1_000_000_000;
+
+    #[test]
+    fn size_may_drift_slightly_but_not_far() {
+        assert!(check_size(GB, GB).is_ok());
+        assert!(check_size(GB - 5_000_000, GB).is_ok());
+        // 1% of 1 GB is 10 MB: 50 MB short must be rejected.
+        assert!(check_size(GB - 50_000_000, GB).is_err());
+        assert!(check_size(GB + 50_000_000, GB).is_err());
+    }
+
+    #[test]
+    fn small_files_get_an_absolute_tolerance() {
+        // 1% of 64 KB is under a KB, so the floor keeps small files workable.
+        assert!(check_size(64 * 1024 + 900, 64 * 1024).is_ok());
+        assert!(check_size(64 * 1024 + 9_000, 64 * 1024).is_err());
+    }
+
+    #[test]
+    fn slack_is_generous_but_bounded() {
+        assert_eq!(size_slack(10 * GB), GB);
+        assert_eq!(size_slack(100 * 1024 * 1024), 64 * 1024 * 1024);
+        assert_eq!(size_slack(0), 64 * 1024 * 1024);
     }
 }
