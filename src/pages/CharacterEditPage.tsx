@@ -61,6 +61,8 @@ const ICON_CHOICES = [
 /* ── Styles ── */
 
 const Page = styled.div`
+  max-width: 44rem;
+  margin: 0 auto;
   padding: 1rem 1.25rem 2rem;
   display: flex;
   flex-direction: column;

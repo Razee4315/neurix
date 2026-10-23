@@ -11,6 +11,8 @@ const fadeIn = keyframes`
 `;
 
 const Page = styled.div`
+  max-width: 44rem;
+  margin: 0 auto;
   padding: 1.25rem;
   display: flex;
   flex-direction: column;

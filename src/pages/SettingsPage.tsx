@@ -20,6 +20,8 @@ import styled from "styled-components";
 /* ── Styles ── */
 
 const Page = styled.div`
+  max-width: 44rem;
+  margin: 0 auto;
   padding: 1.25rem;
 `;
 

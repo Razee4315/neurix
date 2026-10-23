@@ -122,6 +122,12 @@ export const tokens = {
 		},
 	},
 
+	// Window widths where the layout changes. `wide` is where the tab bar
+	// becomes a side rail, roughly a desktop window or a landscape tablet.
+	breakpoints: {
+		wide: "900px",
+	},
+
 	transitions: {
 		fast: "150ms cubic-bezier(0.4, 0, 0.2, 1)",
 		normal: "200ms cubic-bezier(0.4, 0, 0.2, 1)",
