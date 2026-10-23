@@ -31,6 +31,13 @@ const MAX_CHAR_SYSTEM_PROMPT: usize = 8192;
 const MAX_CHAR_GREETING: usize = 500;
 const MAX_CHAR_STARTERS: usize = 8;
 const MAX_CHAR_STARTER_LEN: usize = 200;
+/// Fields the user never types but that arrive in backups and patches. The
+/// app's own values are far shorter; the caps stop a crafted file from
+/// parking megabytes in the settings store, which is re-read constantly.
+const MAX_CHAR_ID: usize = 128;
+const MAX_CHAR_ICON: usize = 32;
+const MAX_TIMESTAMP: usize = 40;
+const MAX_REF_ID: usize = 128;
 /// Longest reply a character may request. The engine additionally caps a
 /// reply at half the context window, so the prompt always has room.
 pub const MAX_REPLY_TOKENS: u32 = 2048;
@@ -88,7 +95,7 @@ impl Default for Settings {
     }
 }
 
-fn truncate_in_place(s: &mut String, max: usize) {
+pub(crate) fn truncate_in_place(s: &mut String, max: usize) {
     if s.len() > max {
         // Avoid splitting a multibyte UTF-8 codepoint mid-byte.
         let mut cut = max;
@@ -97,6 +104,13 @@ fn truncate_in_place(s: &mut String, max: usize) {
         }
         s.truncate(cut);
     }
+}
+
+/// A plain `#rrggbb` colour: the only accent form the UI may put into CSS.
+fn is_hex_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value[1..].bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 impl Settings {
@@ -114,11 +128,33 @@ impl Settings {
         truncate_in_place(&mut self.font_size, 16);
         truncate_in_place(&mut self.theme, 32);
 
+        for id in [&mut self.last_model_id, &mut self.active_character_id] {
+            if id.as_ref().is_some_and(|v| v.len() > MAX_REF_ID) {
+                *id = None;
+            }
+        }
+
+        // Ids are references (from chats and active_character_id), so an
+        // over-long or foreign one is dropped rather than rewritten, and a
+        // repeated one keeps only its first copy.
+        let mut seen = std::collections::HashSet::new();
+        self.custom_characters.retain(|ch| {
+            ch.id.starts_with("custom:") && ch.id.len() <= MAX_CHAR_ID && seen.insert(ch.id.clone())
+        });
         if self.custom_characters.len() > MAX_CUSTOM_CHARACTERS {
             self.custom_characters.truncate(MAX_CUSTOM_CHARACTERS);
         }
         for ch in self.custom_characters.iter_mut() {
             ch.is_preset = false;
+            truncate_in_place(&mut ch.icon, MAX_CHAR_ICON);
+            if !ch.accent_color.as_deref().is_some_and(is_hex_color) {
+                ch.accent_color = None;
+            }
+            for stamp in [&mut ch.created_at, &mut ch.last_used_at] {
+                if stamp.as_ref().is_some_and(|v| v.len() > MAX_TIMESTAMP) {
+                    *stamp = None;
+                }
+            }
             ch.temperature = ch.temperature.clamp(0.0, 2.0);
             ch.top_p = ch.top_p.clamp(0.05, 1.0);
             ch.max_tokens = ch.max_tokens.clamp(16, MAX_REPLY_TOKENS);
@@ -233,6 +269,53 @@ mod tests {
         auto.sanitize();
         assert_eq!(auto.context_size, 0);
         assert_eq!(auto.threads, 0);
+    }
+
+    fn character(id: &str) -> Character {
+        Character {
+            id: id.to_string(),
+            name: "n".to_string(),
+            description: String::new(),
+            icon: "school".to_string(),
+            accent_color: Some("#112233".to_string()),
+            system_prompt: String::new(),
+            temperature: 0.7,
+            top_p: 0.9,
+            max_tokens: 512,
+            conversation_starters: vec![],
+            greeting: None,
+            is_preset: false,
+            created_at: None,
+            last_used_at: None,
+        }
+    }
+
+    #[test]
+    fn sanitize_bounds_character_fields_from_backups() {
+        let mut hostile = character("custom:a");
+        hostile.icon = "x".repeat(10_000);
+        hostile.accent_color = Some("red;position:fixed;inset:0".to_string());
+        hostile.created_at = Some("9".repeat(10_000));
+        let mut s = Settings {
+            custom_characters: vec![
+                hostile,
+                character("custom:a"),
+                character(&format!("custom:{}", "z".repeat(500))),
+                character("preset:tutor"),
+                character("custom:b"),
+            ],
+            active_character_id: Some("q".repeat(10_000)),
+            ..Settings::default()
+        };
+        s.sanitize();
+        let ids: Vec<&str> = s.custom_characters.iter().map(|c| c.id.as_str()).collect();
+        assert_eq!(ids, ["custom:a", "custom:b"]);
+        let a = &s.custom_characters[0];
+        assert_eq!(a.icon.len(), MAX_CHAR_ICON);
+        assert_eq!(a.accent_color, None);
+        assert_eq!(a.created_at, None);
+        assert_eq!(s.custom_characters[1].accent_color.as_deref(), Some("#112233"));
+        assert_eq!(s.active_character_id, None);
     }
 
     #[test]

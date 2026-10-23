@@ -28,6 +28,15 @@ const RETIRED_ACCENTS: Record<string, string> = {
 };
 
 /**
+ * Whether a stored accent is a plain `#rrggbb` colour. Accents reach CSS
+ * through styled-components, so anything else (from an imported backup, say)
+ * must never be used as one.
+ */
+export function isAccentHex(value: string | null | undefined): value is string {
+	return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+/**
  * Resolve a character's accent, falling back to the theme primary.
  *
  * The palette is tuned for dark surfaces. On light themes the same hues are
@@ -35,7 +44,7 @@ const RETIRED_ACCENTS: Record<string, string> = {
  */
 export function accentOf(character: Character | null | undefined): string {
 	const stored = character?.accent_color;
-	if (!stored || !/^#[0-9a-fA-F]{6}$/.test(stored)) return tokens.colors.primary;
+	if (!isAccentHex(stored)) return tokens.colors.primary;
 	const c = RETIRED_ACCENTS[stored.toLowerCase()] ?? stored;
 	if (c.toLowerCase() === DEFAULT_ACCENT) return tokens.colors.primary;
 	if (document.documentElement.dataset.mode === "light") {
