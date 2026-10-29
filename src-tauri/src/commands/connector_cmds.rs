@@ -146,3 +146,215 @@ pub async fn read_folder(path: String, max_chars: usize) -> Result<FolderSnapsho
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ── Gmail ──────────────────────────────────────────────────────────────
+//
+// Read over IMAP with an app password (Google offers one once 2-Step
+// Verification is on). The mailbox is opened read-only (EXAMINE) and
+// messages are fetched with BODY.PEEK, so nothing is marked as read.
+
+#[derive(Serialize)]
+pub struct MailSummary {
+    pub from: String,
+    pub subject: String,
+    pub date: String,
+    /// Start of the plain-text body.
+    pub snippet: String,
+}
+
+#[cfg(desktop)]
+const SNIPPET_CHARS: usize = 600;
+
+#[cfg(desktop)]
+fn plain_text(mail: &mailparse::ParsedMail) -> Option<String> {
+    if mail.subparts.is_empty() {
+        if mail.ctype.mimetype.starts_with("text/plain") {
+            return mail.get_body().ok();
+        }
+        if mail.ctype.mimetype.starts_with("text/html") {
+            // Crude tag strip: enough for a snippet.
+            let html = mail.get_body().ok()?;
+            let re = regex_lite_strip(&html);
+            return Some(re);
+        }
+        return None;
+    }
+    mail.subparts
+        .iter()
+        .find_map(|p| if p.ctype.mimetype == "text/plain" { p.get_body().ok() } else { None })
+        .or_else(|| mail.subparts.iter().find_map(plain_text))
+}
+
+#[cfg(desktop)]
+fn regex_lite_strip(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => {
+                in_tag = false;
+                out.push(' ');
+            }
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+#[cfg(desktop)]
+fn squash(text: &str, limit: usize) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(limit).collect()
+}
+
+/// The newest `limit` emails in the inbox, newest first.
+#[cfg(desktop)]
+#[tauri::command]
+pub async fn gmail_fetch(email: String, app_password: String, limit: u32) -> Result<Vec<MailSummary>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<MailSummary>, String> {
+        let tls = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
+        let client = imap::connect(("imap.gmail.com", 993), "imap.gmail.com", &tls)
+            .map_err(|e| format!("Couldn't reach Gmail: {e}"))?;
+        let password: String = app_password.chars().filter(|c| !c.is_whitespace()).collect();
+        let mut session = client.login(&email, &password).map_err(|_| {
+            "Gmail refused the sign-in. Check the address and use an app password, not your Google password.".to_string()
+        })?;
+        let mailbox = session.examine("INBOX").map_err(|e| e.to_string())?;
+        let total = mailbox.exists;
+        if total == 0 {
+            let _ = session.logout();
+            return Ok(Vec::new());
+        }
+        let first = total.saturating_sub(limit.max(1) - 1).max(1);
+        let fetched = session
+            .fetch(format!("{first}:{total}"), "BODY.PEEK[]")
+            .map_err(|e| e.to_string())?;
+        let mut mails: Vec<MailSummary> = fetched
+            .iter()
+            .filter_map(|m| {
+                let raw = m.body()?;
+                let parsed = mailparse::parse_mail(raw).ok()?;
+                let header = |name: &str| {
+                    parsed
+                        .headers
+                        .iter()
+                        .find(|h| h.get_key_ref().eq_ignore_ascii_case(name))
+                        .map(|h| h.get_value())
+                        .unwrap_or_default()
+                };
+                Some(MailSummary {
+                    from: header("From"),
+                    subject: header("Subject"),
+                    date: header("Date"),
+                    snippet: squash(&plain_text(&parsed).unwrap_or_default(), SNIPPET_CHARS),
+                })
+            })
+            .collect();
+        mails.reverse();
+        let _ = session.logout();
+        Ok(mails)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn gmail_fetch(_email: String, _app_password: String, _limit: u32) -> Result<Vec<MailSummary>, String> {
+    Err("Gmail is available in the desktop app.".into())
+}
+
+// ── GitHub ─────────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct GithubIssue {
+    pub number: u64,
+    pub title: String,
+    pub kind: String,
+}
+
+#[derive(Serialize)]
+pub struct GithubSnapshot {
+    pub repo: String,
+    pub description: String,
+    pub stars: u64,
+    pub language: String,
+    pub readme: String,
+    pub open_items: Vec<GithubIssue>,
+}
+
+const README_CHARS: usize = 3_000;
+
+/// Public data of a GitHub repository: description, README and open issues.
+#[tauri::command]
+pub async fn github_fetch(repo: String) -> Result<GithubSnapshot, String> {
+    let repo = repo
+        .trim()
+        .trim_start_matches("https://github.com/")
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .to_string();
+    if repo.split('/').count() != 2 {
+        return Err("Use the form owner/repository, for example Razee4315/neurix.".into());
+    }
+    let client = reqwest::Client::builder()
+        .user_agent("Neurix")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let get = |path: String| {
+        let client = client.clone();
+        async move {
+            let res = client
+                .get(format!("https://api.github.com/repos/{path}"))
+                .header("Accept", "application/vnd.github+json")
+                .send()
+                .await
+                .map_err(|e| format!("Couldn't reach GitHub: {e}"))?;
+            if res.status().as_u16() == 404 {
+                return Err("GitHub has no public repository by that name.".to_string());
+            }
+            if !res.status().is_success() {
+                return Err(format!("GitHub answered {}", res.status()));
+            }
+            let body = res.text().await.map_err(|e| e.to_string())?;
+            serde_json::from_str::<serde_json::Value>(&body).map_err(|e| e.to_string())
+        }
+    };
+
+    let info = get(repo.clone()).await?;
+    let readme = match get(format!("{repo}/readme")).await {
+        Ok(v) => {
+            let b64: String = v["content"].as_str().unwrap_or("").chars().filter(|c| !c.is_whitespace()).collect();
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .ok()
+                .and_then(|bytes| String::from_utf8(bytes).ok())
+                .map(|t| t.chars().take(README_CHARS).collect())
+                .unwrap_or_default()
+        }
+        Err(_) => String::new(),
+    };
+    let open_items = get(format!("{repo}/issues?state=open&per_page=15"))
+        .await
+        .ok()
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .map(|i| GithubIssue {
+            number: i["number"].as_u64().unwrap_or(0),
+            title: i["title"].as_str().unwrap_or("").to_string(),
+            kind: if i.get("pull_request").is_some() { "pull request" } else { "issue" }.to_string(),
+        })
+        .collect();
+
+    Ok(GithubSnapshot {
+        repo: info["full_name"].as_str().unwrap_or(&repo).to_string(),
+        description: info["description"].as_str().unwrap_or("").to_string(),
+        stars: info["stargazers_count"].as_u64().unwrap_or(0),
+        language: info["language"].as_str().unwrap_or("").to_string(),
+        readme,
+        open_items,
+    })
+}

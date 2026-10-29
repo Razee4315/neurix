@@ -12,7 +12,7 @@ import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { copyText, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
-import { folderContext, setFolderEnabled, useFolders } from "@/utils/connectors";
+import { connectorContext, setFolderEnabled, setGmailEnabled, setRepoEnabled, useConnectors } from "@/utils/connectors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
@@ -170,7 +170,8 @@ export function ChatPage() {
 	const { activeCharacter, allCharacters, setActiveCharacter, loaded: charactersLoaded } = useCharacters();
 	const { showToast } = useToast();
 	const prefs = usePrefs();
-	const connectedFolders = useFolders();
+	const connectors = useConnectors();
+	const connectedFolders = connectors.folders;
 
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState(readDraft);
@@ -505,7 +506,7 @@ export function ChatPage() {
 
 		try {
 			const baseSystem = character?.system_prompt ?? settings?.system_prompt ?? "";
-			const folders = await folderContext();
+			const folders = await connectorContext();
 			if (!isCurrent()) return;
 			await chatService.runInference(
 				{
@@ -1041,6 +1042,31 @@ export function ChatPage() {
 									>
 										<Icon name="folder_open" size={14} />
 										<span>{folder.name}</span>
+									</FolderChip>
+								))}
+								{connectors.gmail?.signedIn && (
+									<FolderChip
+										type="button"
+										$on={connectors.gmail.enabled}
+										aria-pressed={connectors.gmail.enabled}
+										title={connectors.gmail.enabled ? "Reading your newest emails. Click to stop." : "Click to use your inbox"}
+										onClick={() => setGmailEnabled(!connectors.gmail?.enabled)}
+									>
+										<Icon name="mail" size={14} />
+										<span>Gmail</span>
+									</FolderChip>
+								)}
+								{connectors.repos.map((r) => (
+									<FolderChip
+										key={r.repo}
+										type="button"
+										$on={r.enabled}
+										aria-pressed={r.enabled}
+										title={r.enabled ? `Reading ${r.repo}. Click to stop.` : `Click to use ${r.repo}`}
+										onClick={() => setRepoEnabled(r.repo, !r.enabled)}
+									>
+										<Icon name="github" size={14} />
+										<span>{r.repo.split("/")[1]}</span>
 									</FolderChip>
 								))}
 								<ComposerSpacer />

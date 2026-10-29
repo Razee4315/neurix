@@ -672,6 +672,17 @@ const handlers: Record<string, (args: Args) => unknown> = {
 			{ path: "logo.png", size_bytes: 9000, content: null, truncated: false },
 		],
 	}),
+	gmail_fetch: () => [
+		{ from: "Ana Lewis <ana@example.com>", subject: "Rota swap Thursday", date: "Wed, 29 Oct 2026 09:12", snippet: "Can I swap my Thursday morning with Ben?" },
+	],
+	github_fetch: ({ repo }) => ({
+		repo,
+		description: "Your AI. Your phone. No cloud.",
+		stars: 12,
+		language: "TypeScript",
+		readme: "# Neurix\nOffline LLMs on your device.",
+		open_items: [{ number: 11, title: "Assistant icon", kind: "pull request" }],
+	}),
 	"plugin:notification|is_permission_granted": () => true,
 	"plugin:notification|request_permission": () => "granted",
 };
