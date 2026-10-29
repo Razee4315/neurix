@@ -156,9 +156,12 @@ const PrimarySlot = styled.div`
   flex: 1;
 `;
 
+/* Opacity only: a transform here would become the containing block of
+   every position: fixed popup opened from a page (the character picker in
+   Settings), trapping it inside the content area. */
 const contentIn = keyframes`
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 `;
 
 const Content = styled.main`

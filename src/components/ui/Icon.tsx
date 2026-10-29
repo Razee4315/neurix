@@ -1,4 +1,4 @@
-import { NeurixMark } from "@/components/ui/NeurixLogo";
+import { NeurixGlyph } from "@/components/ui/NeurixLogo";
 import {
 	ALargeSmall,
 	ArrowDown,
@@ -97,7 +97,7 @@ import type { ComponentType } from "react";
  * the quiet style of desktop AI tools. A filled state is drawn with a
  * slightly heavier stroke instead of a solid shape.
  */
-type Glyph = LucideIcon | ComponentType<{ size?: number; className?: string }>;
+type Glyph = LucideIcon | ComponentType<{ size?: number; className?: string; color?: string }>;
 
 /** Icons are decoration: the text next to them carries the meaning. */
 const DECORATIVE: Record<string, string> = { "aria-hidden": "true", focusable: "false" };
@@ -167,7 +167,7 @@ const ICONS = new Map<string, Glyph>(Object.entries({
 	search: Search,
 	self_improvement: Flower2,
 	sentiment_satisfied: Smile,
-	smart_toy: NeurixMark,
+	smart_toy: NeurixGlyph,
 	settings: Settings,
 	share: Share,
 	shield: Shield,

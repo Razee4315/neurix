@@ -11,13 +11,44 @@ interface MarkProps {
 	 * the mark sits on, so the ribbon reads as lying over the pillars.
 	 */
 	knockout?: string;
+	/** One color (`color`, else the text color), for use as an icon on any tile. */
+	mono?: boolean;
+	color?: string;
 }
 
 /**
  * The Neurix mark: an N made of two pillars and a clay ribbon laid across
  * them. Pillars take the text color, the ribbon the accent.
  */
-export function NeurixMark({ size = 24, className, knockout = "rgb(var(--c-background))" }: MarkProps) {
+export function NeurixMark({
+	size = 24,
+	className,
+	knockout = "rgb(var(--c-background))",
+	mono = false,
+	color,
+}: MarkProps) {
+	if (mono) {
+		const ink = color ?? "currentColor";
+		return (
+			<svg
+				width={size}
+				height={size}
+				viewBox="0 0 24 24"
+				fill="none"
+				xmlns="http://www.w3.org/2000/svg"
+				className={className}
+				aria-hidden="true"
+				focusable="false"
+				style={{ flexShrink: 0 }}
+			>
+				<g fill={ink} opacity="0.55">
+					<rect x="4" y="4" width="4.2" height="16" rx="2.1" />
+					<rect x="15.8" y="4" width="4.2" height="16" rx="2.1" />
+				</g>
+				<line x1="6.1" y1="6.1" x2="17.9" y2="17.9" stroke={ink} strokeWidth="4.2" strokeLinecap="round" />
+			</svg>
+		);
+	}
 	return (
 		<svg
 			width={size}
@@ -83,4 +114,9 @@ export function NeurixLogo({ size = 40, className }: NeurixLogoProps) {
 			</g>
 		</svg>
 	);
+}
+
+/** The mark as an icon: one color, so it sits on any tile. */
+export function NeurixGlyph({ size, className, color }: { size?: number; className?: string; color?: string }) {
+	return <NeurixMark mono size={size} className={className} color={color} />;
 }

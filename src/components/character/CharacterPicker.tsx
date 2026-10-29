@@ -64,6 +64,18 @@ const Sheet = styled.div<{ $dragY: number; $dragging: boolean }>`
   transition: ${({ $dragging }) =>
 		$dragging ? "none" : `transform ${tokens.transitions.fast}`};
   touch-action: pan-y;
+
+  /* Desktop: a centered dialog rather than a phone sheet. */
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    top: 0;
+    height: fit-content;
+    max-height: 82dvh;
+    margin: auto;
+    border-radius: 1rem;
+    padding: 0.5rem 1.25rem 1.25rem;
+    border: 1px solid ${alpha(tokens.colors.outlineVariant, "99")};
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.35);
+  }
 `;
 
 /* The grabber zone is the entire top strip — bigger touch target than the
@@ -74,6 +86,13 @@ const GrabberZone = styled.div`
   -webkit-tap-highlight-color: transparent;
 
   &:active { cursor: grabbing; }
+
+  /* Nothing to drag on desktop. */
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    visibility: hidden;
+    padding: 0;
+    height: 0.5rem;
+  }
 `;
 
 const Grabber = styled.div`
