@@ -22,7 +22,6 @@ import {
 	RELATIONSHIPS,
 	TRAITS,
 	compilePersona,
-	emptyPersona,
 	normalizePersona,
 	personaSampling,
 	relationshipOf,
@@ -57,9 +56,6 @@ interface Draft {
 	persona: Persona;
 }
 
-function blankDraft(): Draft {
-	return { name: "", tagline: "", icon: AVATARS[0], accent: ACCENT_PALETTE[6].value, greeting: "", persona: emptyPersona() };
-}
 
 function draftFromTemplate(t: FriendTemplate): Draft {
 	return {
