@@ -2,6 +2,7 @@ import { Icon } from "@/components/ui/Icon";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
 import { useAppContext } from "@/context/AppContext";
 import { historyService } from "@/services";
+import { CHAT_STARTED, HISTORY_CHANGED } from "@/services/historyService";
 import type { ConversationMeta } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
@@ -20,7 +21,6 @@ const SECTIONS = [
 	{ icon: "deployed_code", label: "Models", path: "/models", owns: [] },
 	{ icon: "storefront", label: "Model library", path: "/store", owns: ["/downloading"] },
 	{ icon: "plug", label: "Connectors", path: "/connectors", owns: [] },
-	{ icon: "settings", label: "Settings", path: "/settings", owns: ["/about"] },
 ] as const;
 
 const RECENT_LIMIT = 30;
@@ -251,23 +251,51 @@ export function Sidebar() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const { activeModel } = useAppContext();
-	const [recents, setRecents] = useState<ConversationMeta[] | null>(null);
+	const [recents, setRecents] = useState<(ConversationMeta & { pending?: boolean })[] | null>(null);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const footRef = useRef<HTMLDivElement>(null);
 	const openId = (location.state as { conversationId?: string } | null)?.conversationId;
 
-	// Re-read on every navigation so a chat saved a moment ago shows up.
+	// The chat open in the chat page, when it was started there rather than
+	// opened from the list.
+	const [liveId, setLiveId] = useState<string | null>(null);
+
+	// Re-read on every navigation and whenever a chat is saved or deleted.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: location.key marks a navigation
 	useEffect(() => {
 		let alive = true;
-		historyService
-			.getConversations()
-			.then((list) => alive && setRecents(list.slice(0, RECENT_LIMIT)))
-			.catch(() => alive && setRecents([]));
+		const load = () =>
+			historyService
+				.getConversations()
+				.then((list) =>
+					alive &&
+					setRecents((prev) => {
+						// Keep a just-started chat on top until its first save lands.
+						const pending = (prev ?? []).filter((p) => p.pending && !list.some((c) => c.id === p.id));
+						return [...pending, ...list].slice(0, RECENT_LIMIT);
+					}),
+				)
+				.catch(() => alive && setRecents((prev) => prev ?? []));
+		load();
+		window.addEventListener(HISTORY_CHANGED, load);
 		return () => {
 			alive = false;
+			window.removeEventListener(HISTORY_CHANGED, load);
 		};
 	}, [location.key]);
+
+	useEffect(() => {
+		const onStart = (e: Event) => {
+			const { id, title } = (e as CustomEvent<{ id: string; title: string }>).detail;
+			setLiveId(id);
+			setRecents((prev) => [
+				{ id, title, model_name: "", updated_at: new Date().toISOString(), pending: true },
+				...(prev ?? []).filter((c) => c.id !== id),
+			]);
+		};
+		window.addEventListener(CHAT_STARTED, onStart);
+		return () => window.removeEventListener(CHAT_STARTED, onStart);
+	}, []);
 
 	useEffect(() => {
 		if (!menuOpen) return;
@@ -313,7 +341,13 @@ export function Sidebar() {
 			</Brand>
 
 			<Group>
-				<Row type="button" onClick={() => navigate("/chat", { state: { freshChat: true } })}>
+				<Row
+					type="button"
+					onClick={() => {
+						setLiveId(null);
+						navigate("/chat", { state: { freshChat: true } });
+					}}
+				>
 					<NewChatIcon>
 						<Icon name="add" size={14} fill />
 					</NewChatIcon>
@@ -345,8 +379,11 @@ export function Sidebar() {
 						key={entry.id}
 						type="button"
 						title={entry.title}
-						$active={location.pathname === "/chat" && openId === entry.id}
-						onClick={() => navigate("/chat", { state: { conversationId: entry.id } })}
+						$active={location.pathname === "/chat" && (openId ?? liveId) === entry.id}
+						onClick={() => {
+							setLiveId(null);
+							navigate("/chat", { state: { conversationId: entry.id } });
+						}}
 					>
 						<span>{entry.title || "Untitled chat"}</span>
 					</RecentRow>

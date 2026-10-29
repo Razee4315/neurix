@@ -8,7 +8,7 @@ import { BootScreen } from "@/components/ui/BootScreen";
 import { SplashScreen } from "@/pages/SplashScreen";
 import { GlobalStyles, theme } from "@/theme";
 import { Suspense, lazy } from "react";
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ThemeProvider } from "styled-components";
 
 const OnboardingScreen = lazy(() =>
@@ -45,6 +45,15 @@ const CharacterEditPage = lazy(() =>
 	import("@/pages/CharacterEditPage").then((m) => ({ default: m.CharacterEditPage })),
 );
 
+/**
+ * The chat page starts over on every navigation to it, so "New chat" and a
+ * chat picked from the sidebar open even while a chat is already showing.
+ */
+function ChatRoute() {
+	const location = useLocation();
+	return <ChatPage key={location.key} />;
+}
+
 function App() {
 	return (
 		<ErrorBoundary>
@@ -65,7 +74,7 @@ function App() {
 								<Route path="/store/model" element={<ModelDetailPage />} />
 								<Route path="/downloading" element={<DownloadingPage />} />
 								<Route path="/models" element={<MyModelsPage />} />
-								<Route path="/chat" element={<ChatPage />} />
+								<Route path="/chat" element={<ChatRoute />} />
 								<Route path="/chat/history" element={<ChatHistoryPage />} />
 								<Route path="/settings" element={<SettingsPage />} />
 								<Route path="/about" element={<AboutPage />} />

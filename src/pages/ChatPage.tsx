@@ -6,6 +6,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { chatService, historyService, modelService } from "@/services";
+import { CHAT_STARTED } from "@/services/historyService";
 import type { InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
@@ -573,6 +574,15 @@ export function ChatPage() {
 
 			const context = live.current.messages;
 			show([...context, createMessage("user", text)]);
+			// List a new chat in the sidebar right away, before the reply.
+			if (live.current.saveHistory && !live.current.conversationId) {
+				live.current.conversationId = crypto.randomUUID();
+				window.dispatchEvent(
+					new CustomEvent(CHAT_STARTED, {
+						detail: { id: live.current.conversationId, title: text.slice(0, 80) },
+					}),
+				);
+			}
 			setInput("");
 			writeDraft("");
 			setOpenActionsId(null);
