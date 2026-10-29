@@ -266,6 +266,7 @@ type ToggleKey = "wifi_only" | "save_history" | "show_speed";
 
 export function SettingsPage() {
 	const prefs = usePrefs();
+	const phone = isMobile();
 	const navigate = useNavigate();
 	const {
 		settings,
@@ -572,12 +573,14 @@ export function SettingsPage() {
 					</ActionRow>
 					{toggleRow("save_history", "history", "Save chat history", "Keep conversations on this device")}
 					{toggleRow("show_speed", "speed", "Show token speed", "Display generation speed under replies")}
-					{prefRow(
-						"enterSends",
-						"keyboard_return",
-						"Send with Enter",
-						prefs.enterSends ? "Shift+Enter adds a new line" : "Cmd/Ctrl+Enter sends, Enter adds a line",
-					)}
+					{/* Touch keyboards always add a line on Enter, so this is desktop only. */}
+					{!phone &&
+						prefRow(
+							"enterSends",
+							"keyboard_return",
+							"Send with Enter",
+							prefs.enterSends ? "Shift+Enter adds a new line" : "Cmd/Ctrl+Enter sends, Enter adds a line",
+						)}
 					{prefRow("showStarters", "emoji_objects", "Suggested prompts", "Show prompt ideas on a new chat")}
 					{prefRow("autoCopy", "content_copy", "Copy replies automatically", "Put each finished reply on the clipboard")}
 					{prefRow(
@@ -586,6 +589,8 @@ export function SettingsPage() {
 						"Privacy reminder",
 						"Show the on-device note under the message box",
 					)}
+					{/* A phone screen is narrower than either width. */}
+					{!phone && (
 					<ToggleRow>
 						<RowLeft>
 							<RowIcon>
@@ -605,6 +610,7 @@ export function SettingsPage() {
 							aria-label="Wide chat"
 						/>
 					</ToggleRow>
+					)}
 				</Section>
 
 				<SectionHeading>Connectors</SectionHeading>
@@ -612,7 +618,7 @@ export function SettingsPage() {
 					{actionRow(
 						"data_object",
 						"Connectors",
-						"Gmail, Google Drive, Outlook, Slack and local folders",
+						phone ? "Documents, Gmail and GitHub" : "Local folders, Gmail and GitHub",
 						() => navigate("/connectors"),
 						{ chevron: true },
 					)}

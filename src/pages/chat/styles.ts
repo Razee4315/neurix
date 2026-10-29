@@ -250,7 +250,9 @@ export const WelcomeTitle = styled.h2`
   font-size: 2.125rem;
   font-weight: ${tokens.typography.fontWeight.regular};
 
-  @media (max-width: 600px) { font-size: 1.625rem; gap: 0.5rem; }
+  /* On a phone the greeting wraps, so the mark goes above it instead of
+     floating beside a two-line heading. */
+  @media (max-width: 600px) { flex-direction: column; font-size: 1.625rem; gap: 0.625rem; }
   letter-spacing: -0.02em;
   line-height: 1.15;
   color: ${tokens.colors.onSurface};
@@ -381,6 +383,8 @@ export const FolderChip = styled.button<{ $on: boolean }>`
   font-size: ${tokens.typography.fontSize.sm};
   cursor: pointer;
 
+  @media (max-width: 600px) { max-width: 9rem; }
+
   > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 `;
 
@@ -399,6 +403,13 @@ export const ComposerChips = styled.div`
   overflow-x: auto;
   scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
+
+  /* A phone fits only a chip or two: fade the edge so the rest read as
+     scrollable instead of cut off. */
+  @media (max-width: 600px) {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
+  }
 
   > * { flex-shrink: 0; }
 `;

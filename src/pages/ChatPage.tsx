@@ -13,7 +13,15 @@ import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { copyText, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
-import { connectorContext, setFolderEnabled, withContext, setGmailEnabled, setRepoEnabled, useConnectors } from "@/utils/connectors";
+import {
+	connectorContext,
+	setAllDocsEnabled,
+	setFolderEnabled,
+	setGmailEnabled,
+	setRepoEnabled,
+	useConnectors,
+	withContext,
+} from "@/utils/connectors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
@@ -173,6 +181,7 @@ export function ChatPage() {
 	const prefs = usePrefs();
 	const connectors = useConnectors();
 	const connectedFolders = connectors.folders;
+	const docsOn = connectors.docs.some((d) => d.enabled);
 
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState(readDraft);
@@ -1054,6 +1063,20 @@ export function ChatPage() {
 										<span>{folder.name}</span>
 									</FolderChip>
 								))}
+								{connectors.docs.length > 0 && (
+									<FolderChip
+										type="button"
+										$on={docsOn}
+										aria-pressed={docsOn}
+										title={docsOn ? "Reading your documents for this chat. Tap to stop." : "Tap to use your documents"}
+										onClick={() => setAllDocsEnabled(!docsOn)}
+									>
+										<Icon name="description" size={14} />
+										<span>
+											{connectors.docs.length === 1 ? connectors.docs[0].name : `${connectors.docs.length} documents`}
+										</span>
+									</FolderChip>
+								)}
 								{connectors.gmail?.signedIn && (
 									<FolderChip
 										type="button"

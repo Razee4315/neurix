@@ -9,9 +9,10 @@ import {
 import { useSyncExternalStore } from "react";
 
 /**
- * Connected sources, remembered on this device: local folders, a Gmail
- * inbox and GitHub repositories. Enabled sources are read before each reply
- * and handed to the model as context.
+ * Connected sources, remembered on this device: local folders (desktop),
+ * documents picked on a phone, a Gmail inbox and GitHub repositories.
+ * Enabled sources are read before each reply and handed to the model as
+ * context.
  */
 export interface ConnectedFolder {
 	path: string;
@@ -35,8 +36,22 @@ export interface ConnectedRepo {
 	description: string;
 }
 
+/**
+ * A text file picked on a phone. Phones can't hand an app a whole folder
+ * to read later, so the text is copied in when the file is picked.
+ */
+export interface ConnectedDoc {
+	id: string;
+	name: string;
+	enabled: boolean;
+	text: string;
+	/** True when the file was longer than `DOC_CHARS` and was cut. */
+	truncated: boolean;
+}
+
 interface State {
 	folders: ConnectedFolder[];
+	docs: ConnectedDoc[];
 	gmail: GmailAccount | null;
 	repos: ConnectedRepo[];
 }
@@ -48,17 +63,27 @@ export const CONTEXT_CHARS = 8_000;
 const GMAIL_LIMIT = 8;
 const GMAIL_CACHE_MS = 2 * 60_000;
 const GITHUB_CACHE_MS = 10 * 60_000;
+/** Text kept per document, and how many documents, so storage stays small. */
+const DOC_CHARS = 40_000;
+const MAX_DOCS = 20;
+/** Extensions read as text when the picker gives no useful type. */
+const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|ya?ml|toml|xml|html?|log|ini|rtf|tex|srt|vtt)$/i;
 
 function read(): State {
 	try {
 		const raw = localStorage.getItem(KEY);
 		if (raw) {
 			const s = JSON.parse(raw) as State;
-			return { ...s, gmail: s.gmail ? { ...s.gmail, signedIn: false } : null };
+			return { ...s, docs: s.docs ?? [], gmail: s.gmail ? { ...s.gmail, signedIn: false } : null };
 		}
-		return { folders: JSON.parse(localStorage.getItem(OLD_FOLDERS_KEY) ?? "[]"), gmail: null, repos: [] };
+		return {
+			folders: JSON.parse(localStorage.getItem(OLD_FOLDERS_KEY) ?? "[]"),
+			docs: [],
+			gmail: null,
+			repos: [],
+		};
 	} catch {
-		return { folders: [], gmail: null, repos: [] };
+		return { folders: [], docs: [], gmail: null, repos: [] };
 	}
 }
 
@@ -109,6 +134,57 @@ export function setFolderEnabled(path: string, enabled: boolean) {
 
 export function removeFolder(path: string) {
 	save({ ...state, folders: state.folders.filter((f) => f.path !== path) });
+}
+
+/**
+ * Copy picked files in as documents. Files that aren't text (images, PDFs,
+ * Word files) are skipped and named in `skipped`.
+ */
+export async function addDocuments(files: File[]): Promise<{ added: ConnectedDoc[]; skipped: string[] }> {
+	const added: ConnectedDoc[] = [];
+	const skipped: string[] = [];
+	for (const file of files) {
+		const looksText = file.type.startsWith("text/") || file.type === "application/json" || TEXT_EXT.test(file.name);
+		if (!looksText) {
+			skipped.push(file.name);
+			continue;
+		}
+		try {
+			const full = await file.text();
+			if (full.slice(0, 2000).includes("\u0000")) {
+				skipped.push(file.name);
+				continue;
+			}
+			added.push({
+				id: `${file.name}:${file.size}:${file.lastModified}`,
+				name: file.name,
+				enabled: true,
+				text: full.slice(0, DOC_CHARS),
+				truncated: full.length > DOC_CHARS,
+			});
+		} catch {
+			skipped.push(file.name);
+		}
+	}
+	if (added.length > 0) {
+		const ids = new Set(added.map((d) => d.id));
+		const docs = [...state.docs.filter((d) => !ids.has(d.id)), ...added].slice(-MAX_DOCS);
+		save({ ...state, docs });
+	}
+	return { added, skipped };
+}
+
+export function setDocEnabled(id: string, enabled: boolean) {
+	save({ ...state, docs: state.docs.map((d) => (d.id === id ? { ...d, enabled } : d)) });
+}
+
+/** Turn every document on or off at once (the chip under the message box). */
+export function setAllDocsEnabled(enabled: boolean) {
+	save({ ...state, docs: state.docs.map((d) => ({ ...d, enabled })) });
+}
+
+export function removeDoc(id: string) {
+	save({ ...state, docs: state.docs.filter((d) => d.id !== id) });
 }
 
 /** Sign in to Gmail and read the inbox once to prove it works. */
@@ -220,8 +296,10 @@ const LISTED_FILES = 40;
  */
 export async function connectorContext(question = ""): Promise<string> {
 	const folders = state.folders.filter((f) => f.enabled);
+	const docs = state.docs.filter((d) => d.enabled);
 	const repos = state.repos.filter((r) => r.enabled);
-	const sources = folders.length + repos.length + (state.gmail?.enabled && gmailPassword ? 1 : 0);
+	const sources =
+		folders.length + repos.length + (docs.length > 0 ? 1 : 0) + (state.gmail?.enabled && gmailPassword ? 1 : 0);
 	if (sources === 0) return "";
 	const share = Math.floor(CONTEXT_CHARS / sources);
 	const parts: string[] = [];
@@ -238,6 +316,12 @@ export async function connectorContext(question = ""): Promise<string> {
 		} catch {
 			// Folder moved or unreadable: answer without it.
 		}
+	}
+	if (docs.length > 0) {
+		const files = docs.map((d) => ({ path: d.name, size_bytes: d.text.length, content: d.text, truncated: d.truncated }));
+		const chosen = relevantFiles(files, question, share);
+		const bodies = chosen.map((f) => `--- File: ${f.path} ---\n${f.content}`).join("\n\n");
+		parts.push(`Documents shared from this device: ${docs.map((d) => d.name).join(", ")}.\n\n${bodies}`);
 	}
 	try {
 		const mail = await gmailBlock();

@@ -32,6 +32,7 @@ import {
 	EllipsisVertical,
 	Eraser,
 	ExternalLink,
+	FileText,
 	FlaskConical,
 	Flower2,
 	FolderOpen,
@@ -44,6 +45,7 @@ import {
 	Heart,
 	History,
 	Info,
+	Laptop,
 	Layers,
 	Lightbulb,
 	LockKeyhole,
@@ -192,6 +194,8 @@ const ICONS = new Map<string, Glyph>(Object.entries({
 	notes: BookText,
 	github: Github,
 	plug: Plug,
+	description: FileText,
+	laptop: Laptop,
 }));
 
 export function isKnownIcon(name: string): boolean {

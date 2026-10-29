@@ -123,10 +123,11 @@ export const THEMES: readonly ThemeDefinition[] = [
 			primaryDim: "#c6613f",
 			primaryContainer: "#d97757",
 			onPrimary: "#ffffff",
-			onPrimaryFixed: "#ffffff",
+			// Text on clay. White reads at only 3.1:1 there, so labels use ink.
+			onPrimaryFixed: "#1f1e1d",
 			onPrimaryContainer: "#ffffff",
-			secondary: "#8fb996",
-			secondaryContainer: "#26402b",
+			secondary: "#d6b98c",
+			secondaryContainer: "#4a3d26",
 			tertiary: "#8ab4f8",
 			error: "#ef7a6a",
 			errorContainer: "#5c201a",
@@ -330,6 +331,11 @@ export function themeVariables(theme: ThemeDefinition): Record<string, string> {
 	return variables;
 }
 
+/** `SystemBarsBridge` in the Android app (MainActivity.kt). */
+type BarsWindow = Window & {
+	NeurixBars?: { setColors(top: string, bottom: string, light: boolean): void };
+};
+
 /** Apply a theme to the page and remember the choice for next launch. */
 export function applyTheme(id: string | null | undefined): ThemeDefinition {
 	const theme = getTheme(id);
@@ -344,6 +350,17 @@ export function applyTheme(id: string | null | undefined): ThemeDefinition {
 	document
 		.querySelector('meta[name="theme-color"]')
 		?.setAttribute("content", theme.colors.background);
+	// Android: match the status bar to the top bar and the navigation bar to
+	// the tab bar, with bar icons that stay readable on light themes.
+	try {
+		(window as BarsWindow).NeurixBars?.setColors(
+			theme.colors.background,
+			theme.colors.surfaceContainerLow,
+			theme.mode === "light",
+		);
+	} catch {
+		// Not on Android, or an older build without the bridge.
+	}
 	try {
 		localStorage.setItem(STORAGE_KEY, theme.id);
 	} catch {

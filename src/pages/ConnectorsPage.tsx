@@ -5,12 +5,15 @@ import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { pickFolder, readFolder } from "@/services/connectorService";
 import {
+	addDocuments,
 	addFolder,
 	connectGmail,
 	connectRepo,
 	disconnectGmail,
+	removeDoc,
 	removeFolder,
 	removeRepo,
+	setDocEnabled,
 	setFolderEnabled,
 	setGmailEnabled,
 	setRepoEnabled,
@@ -18,20 +21,25 @@ import {
 } from "@/utils/connectors";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { isMobile } from "@/utils/platform";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import styled from "styled-components";
 
 /**
- * Connectors: the tools the assistant can read from. Local folders work
- * now: the folder is picked in a native dialog and read on this device.
- * Signing in to online services comes in a later release, so those
- * Connect buttons say so instead of pretending to connect.
+ * Connectors: the tools the assistant can read from. Local folders,
+ * documents, Gmail and GitHub work now; the rest are listed as coming soon
+ * instead of pretending to connect.
+ *
+ * Phones and computers differ in what they can reach. A phone can't hand an
+ * app a folder to read later, so phones get Documents (files picked one by
+ * one and copied in) and the desktop gets Local folders.
  */
 
 /** Connectors that work in this build; the rest are listed as coming soon. */
-const LIVE = new Set(["files", "gmail", "github"]);
-/** Need the desktop app: IMAP and reading folders from disk. */
-const DESKTOP_ONLY = new Set(["files", "gmail"]);
+const LIVE = new Set(["files", "docs", "gmail", "github"]);
+/** Reading whole folders from disk needs the desktop app. */
+const DESKTOP_ONLY = new Set(["files"]);
+/** Picking single files is how phones share documents. */
+const PHONE_ONLY = new Set(["docs"]);
 
 interface Connector {
 	id: string;
@@ -53,11 +61,21 @@ const CONNECTORS: Connector[] = [
 		access: "On this device",
 	},
 	{
+		id: "docs",
+		name: "Documents",
+		icon: "description",
+		tint: "#b0603f",
+		description:
+			"Pick text, Markdown, CSV or JSON files on this phone for the assistant to read.",
+		access: "On this device",
+	},
+	{
 		id: "gmail",
 		name: "Gmail",
 		icon: "mail",
 		tint: "#ea4335",
-		description: "Search and summarise your email, draft replies for you to send.",
+		description:
+			"Search and summarise your email, draft replies for you to send.",
 		access: "Read only",
 	},
 	{
@@ -181,6 +199,9 @@ const Description = styled.p`
 
 const ConnectBtn = styled.button`
   height: 30px;
+
+  @media (pointer: coarse) { height: 36px; padding: 0 0.875rem; }
+
   padding: 0 0.75rem;
   border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
   border-radius: ${tokens.borderRadius.lg};
@@ -285,6 +306,9 @@ const IconBtn = styled.button`
   justify-content: center;
   width: 30px;
   height: 30px;
+  flex-shrink: 0;
+
+  @media (pointer: coarse) { width: 40px; height: 40px; }
   border: none;
   border-radius: ${tokens.borderRadius.lg};
   background: transparent;
@@ -314,6 +338,10 @@ const Form = styled.form`
 
 const Field = styled.input`
   height: 34px;
+
+  /* 16px keeps mobile browsers from zooming into the field. */
+  @media (pointer: coarse) { height: 42px; font-size: 16px; }
+
   padding: 0 0.75rem;
   border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
   border-radius: ${tokens.borderRadius.lg};
@@ -330,6 +358,7 @@ const Field = styled.input`
 const FormRow = styled.div`
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
 `;
 
@@ -374,16 +403,38 @@ const Custom = styled.button`
   strong { color: ${tokens.colors.onSurface}; font-weight: ${tokens.typography.fontWeight.medium}; }
 `;
 
+const HiddenInput = styled.input`
+  display: none;
+`;
+
+const DesktopNote = styled.p`
+  margin: 0.625rem 0 0;
+  font-size: ${tokens.typography.fontSize.xs};
+  line-height: 1.5;
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
 export function ConnectorsPage() {
 	const { showToast } = useToast();
-	const { folders, gmail, repos } = useConnectors();
+	const { folders, docs, gmail, repos } = useConnectors();
 	const [openForm, setOpenForm] = useState<"gmail" | "github" | null>(null);
 	const [email, setEmail] = useState("");
 	const [appPassword, setAppPassword] = useState("");
 	const [repoInput, setRepoInput] = useState("");
 	const [working, setWorking] = useState(false);
 	const [picking, setPicking] = useState(false);
-	const comingSoon = (name: string) => showToast(`${name} connects in the next release`, "info");
+	const fileInput = useRef<HTMLInputElement>(null);
+	const phone = isMobile();
+	const comingSoon = (name: string) =>
+		showToast(`${name} connects in the next release`, "info");
+
+	const runsHere = (id: string) =>
+		phone ? !DESKTOP_ONLY.has(id) : !PHONE_ONLY.has(id);
+	const available = CONNECTORS.filter((c) => LIVE.has(c.id) && runsHere(c.id));
+	const desktopOnly = phone
+		? CONNECTORS.filter((c) => DESKTOP_ONLY.has(c.id))
+		: [];
+	const soon = CONNECTORS.filter((c) => !LIVE.has(c.id));
 
 	const submitGmail = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -392,7 +443,10 @@ export function ConnectorsPage() {
 			const mails = await connectGmail(email, appPassword);
 			setAppPassword("");
 			setOpenForm(null);
-			showToast(`Gmail connected: read your ${mails.length} newest emails`, "success");
+			showToast(
+				`Gmail connected: read your ${mails.length} newest emails`,
+				"success",
+			);
 		} catch (err) {
 			showToast(err instanceof Error ? err.message : String(err), "error");
 		} finally {
@@ -407,7 +461,10 @@ export function ConnectorsPage() {
 			const snap = await connectRepo(repoInput);
 			setRepoInput("");
 			setOpenForm(null);
-			showToast(`Connected ${snap.repo}: ${snap.open_items.length} open issues and pull requests`, "success");
+			showToast(
+				`Connected ${snap.repo}: ${snap.open_items.length} open issues and pull requests`,
+				"success",
+			);
 		} catch (err) {
 			showToast(err instanceof Error ? err.message : String(err), "error");
 		} finally {
@@ -429,7 +486,10 @@ export function ConnectorsPage() {
 				return;
 			}
 			addFolder(snapshot);
-			showToast(`Connected ${snapshot.name}: ${snapshot.text_files} readable files`, "success");
+			showToast(
+				`Connected ${snapshot.name}: ${snapshot.text_files} readable files`,
+				"success",
+			);
 		} catch (err) {
 			showToast(err instanceof Error ? err.message : String(err), "error");
 		} finally {
@@ -437,318 +497,373 @@ export function ConnectorsPage() {
 		}
 	};
 
+	const onFilesPicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const files = Array.from(e.target.files ?? []);
+		e.target.value = "";
+		if (files.length === 0) return;
+		setPicking(true);
+		try {
+			const { added, skipped } = await addDocuments(files);
+			if (added.length > 0) {
+				const names =
+					added.length === 1 ? added[0].name : `${added.length} documents`;
+				const note =
+					skipped.length === 0
+						? ""
+						: skipped.length === 1
+							? `. Skipped ${skipped[0]}, which isn't text`
+							: `. Skipped ${skipped.length} files that aren't text`;
+				showToast(`Added ${names}${note}`, "success");
+			} else {
+				showToast(
+					"Those files aren't text. Pick .txt, .md, .csv or .json files.",
+					"error",
+				);
+			}
+		} finally {
+			setPicking(false);
+		}
+	};
+
+	const actions = (c: Connector) => {
+		if (!runsHere(c.id)) return <SoonTag>Desktop app</SoonTag>;
+		if (!LIVE.has(c.id)) return <SoonTag>Soon</SoonTag>;
+		const count = (n: number) =>
+			n > 0 && (
+				<Badge>
+					<Icon name="check" size={12} />
+					{n}
+				</Badge>
+			);
+		switch (c.id) {
+			case "files":
+				return (
+					<>
+						{count(folders.length)}
+						<ConnectBtn
+							type="button"
+							onClick={connectFolder}
+							disabled={picking}
+						>
+							{folders.length > 0 ? "Add" : "Connect"}
+						</ConnectBtn>
+					</>
+				);
+			case "docs":
+				return (
+					<>
+						{count(docs.length)}
+						<ConnectBtn
+							type="button"
+							onClick={() => fileInput.current?.click()}
+							disabled={picking}
+						>
+							{docs.length > 0 ? "Add" : "Pick files"}
+						</ConnectBtn>
+					</>
+				);
+			case "gmail":
+				return (
+					<>
+						{gmail?.signedIn && (
+							<Badge>
+								<Icon name="check" size={12} />
+								On
+							</Badge>
+						)}
+						<ConnectBtn
+							type="button"
+							onClick={() => setOpenForm(openForm === "gmail" ? null : "gmail")}
+						>
+							{gmail?.signedIn ? "Change" : gmail ? "Sign in again" : "Connect"}
+						</ConnectBtn>
+					</>
+				);
+			case "github":
+				return (
+					<>
+						{count(repos.length)}
+						<ConnectBtn
+							type="button"
+							onClick={() =>
+								setOpenForm(openForm === "github" ? null : "github")
+							}
+						>
+							{repos.length > 0 ? "Add" : "Connect"}
+						</ConnectBtn>
+					</>
+				);
+			default:
+				return <SoonTag>Soon</SoonTag>;
+		}
+	};
+
+	const card = (c: Connector) => (
+		<Card key={c.id}>
+			<CardTop>
+				<Tile $tint={c.tint}>
+					<Icon name={c.icon} size={18} />
+				</Tile>
+				<Name>
+					<strong>{c.name}</strong>
+					<span>{c.access}</span>
+				</Name>
+				{actions(c)}
+			</CardTop>
+			<Description>{c.description}</Description>
+			{c.id === "gmail" && openForm === "gmail" && (
+				<Form onSubmit={submitGmail}>
+					<Field
+						type="email"
+						inputMode="email"
+						placeholder="you@gmail.com"
+						value={email}
+						onChange={(e) => setEmail(e.target.value)}
+						required
+						autoComplete="off"
+						autoCapitalize="none"
+					/>
+					<Field
+						type="password"
+						placeholder="App password (16 letters)"
+						value={appPassword}
+						onChange={(e) => setAppPassword(e.target.value)}
+						required
+						autoComplete="off"
+						autoCapitalize="none"
+					/>
+					<LinkBtn
+						type="button"
+						onClick={() =>
+							openUrl("https://myaccount.google.com/apppasswords").catch(
+								() => {},
+							)
+						}
+					>
+						Create an app password in your Google account (needs 2-Step
+						Verification)
+					</LinkBtn>
+					<FormRow>
+						<PrimaryBtn type="submit" disabled={working}>
+							{working ? "Checking…" : "Connect Gmail"}
+						</PrimaryBtn>
+						<Description>
+							{phone
+								? "Read only. The password stays in memory until the app closes."
+								: "Read only. The password stays in memory until you quit."}
+						</Description>
+					</FormRow>
+				</Form>
+			)}
+			{c.id === "github" && openForm === "github" && (
+				<Form onSubmit={submitRepo}>
+					<Field
+						placeholder="owner/repository, e.g. Razee4315/neurix"
+						value={repoInput}
+						onChange={(e) => setRepoInput(e.target.value)}
+						required
+						autoComplete="off"
+						autoCapitalize="none"
+						autoCorrect="off"
+						spellCheck={false}
+					/>
+					<FormRow>
+						<PrimaryBtn type="submit" disabled={working}>
+							{working ? "Reading…" : "Connect repository"}
+						</PrimaryBtn>
+						<Description>Public repositories.</Description>
+					</FormRow>
+				</Form>
+			)}
+		</Card>
+	);
+
+	const connected = (
+		<>
+			{(gmail || repos.length > 0) && (
+				<>
+					<Heading>Connected accounts</Heading>
+					<FolderList>
+						{gmail && (
+							<FolderRow>
+								<Icon name="mail" size={18} color={tokens.colors.primary} />
+								<FolderText>
+									<strong>Gmail · {gmail.email}</strong>
+									<span>
+										{gmail.signedIn
+											? "Newest emails, read only"
+											: "Sign in again to use it (password is not stored)"}
+									</span>
+								</FolderText>
+								<Switch
+									type="button"
+									role="switch"
+									$on={gmail.enabled}
+									aria-checked={gmail.enabled}
+									aria-label="Use Gmail in chats"
+									onClick={() => setGmailEnabled(!gmail.enabled)}
+								/>
+								<IconBtn
+									type="button"
+									title="Disconnect"
+									aria-label="Disconnect Gmail"
+									onClick={disconnectGmail}
+								>
+									<Icon name="close" size={16} />
+								</IconBtn>
+							</FolderRow>
+						)}
+						{repos.map((r) => (
+							<FolderRow key={r.repo}>
+								<Icon name="github" size={18} color={tokens.colors.primary} />
+								<FolderText>
+									<strong>{r.repo}</strong>
+									<span>{r.description || "Public repository"}</span>
+								</FolderText>
+								<Switch
+									type="button"
+									role="switch"
+									$on={r.enabled}
+									aria-checked={r.enabled}
+									aria-label={`Use ${r.repo} in chats`}
+									onClick={() => setRepoEnabled(r.repo, !r.enabled)}
+								/>
+								<IconBtn
+									type="button"
+									title="Disconnect"
+									aria-label={`Disconnect ${r.repo}`}
+									onClick={() => removeRepo(r.repo)}
+								>
+									<Icon name="close" size={16} />
+								</IconBtn>
+							</FolderRow>
+						))}
+					</FolderList>
+				</>
+			)}
+			{docs.length > 0 && (
+				<>
+					<Heading>Documents</Heading>
+					<FolderList>
+						{docs.map((d) => (
+							<FolderRow key={d.id}>
+								<Icon
+									name="description"
+									size={18}
+									color={tokens.colors.primary}
+								/>
+								<FolderText>
+									<strong>{d.name}</strong>
+									<span>
+										{d.text.length.toLocaleString()} characters
+										{d.truncated ? ", the start of a longer file" : ""}
+									</span>
+								</FolderText>
+								<Switch
+									type="button"
+									role="switch"
+									$on={d.enabled}
+									aria-checked={d.enabled}
+									aria-label={`Use ${d.name} in chats`}
+									onClick={() => setDocEnabled(d.id, !d.enabled)}
+								/>
+								<IconBtn
+									type="button"
+									title="Remove"
+									aria-label={`Remove ${d.name}`}
+									onClick={() => removeDoc(d.id)}
+								>
+									<Icon name="close" size={16} />
+								</IconBtn>
+							</FolderRow>
+						))}
+					</FolderList>
+				</>
+			)}
+			{!phone && folders.length > 0 && (
+				<>
+					<Heading>Connected folders</Heading>
+					<FolderList>
+						{folders.map((f) => (
+							<FolderRow key={f.path}>
+								<Icon
+									name="folder_open"
+									size={18}
+									color={tokens.colors.primary}
+								/>
+								<FolderText>
+									<strong>{f.name}</strong>
+									<span title={f.path}>
+										{f.textFiles} readable of {f.files} files · {f.path}
+									</span>
+								</FolderText>
+								<Switch
+									type="button"
+									role="switch"
+									$on={f.enabled}
+									aria-checked={f.enabled}
+									aria-label={`Use ${f.name} in chats`}
+									title={f.enabled ? "Used in chats" : "Not used in chats"}
+									onClick={() => setFolderEnabled(f.path, !f.enabled)}
+								/>
+								<IconBtn
+									type="button"
+									aria-label={`Disconnect ${f.name}`}
+									title="Disconnect"
+									onClick={() => removeFolder(f.path)}
+								>
+									<Icon name="close" size={16} />
+								</IconBtn>
+							</FolderRow>
+						))}
+					</FolderList>
+				</>
+			)}
+		</>
+	);
+
 	return (
 		<AppLayout title="Connectors">
 			<Page>
+				<HiddenInput
+					ref={fileInput}
+					type="file"
+					multiple
+					onChange={onFilesPicked}
+				/>
 				<Intro>
-					Connectors let the assistant read from the tools you already use. Data is fetched and
-					processed on this device, and the assistant only reads. It never sends, posts or deletes
-					without asking you first.
+					Connectors let the assistant read from the tools you already use. Data
+					is fetched and processed on this device, and the assistant only reads.
+					It never sends, posts or deletes without asking you first.
 				</Intro>
 				<Heading>Available</Heading>
-				<Grid>
-					{CONNECTORS.filter((c) => LIVE.has(c.id)).map((c) => (
-						<Card key={c.id}>
-							<CardTop>
-								<Tile $tint={c.tint}>
-									<Icon name={c.icon} size={18} />
-								</Tile>
-								<Name>
-									<strong>{c.name}</strong>
-									<span>{c.access}</span>
-								</Name>
-								{isMobile() && DESKTOP_ONLY.has(c.id) ? (
-									<SoonTag>Desktop app</SoonTag>
-								) : c.id === "files" ? (
-									<>
-										{folders.length > 0 && (
-											<Badge>
-												<Icon name="check" size={12} />
-												{folders.length}
-											</Badge>
-										)}
-										<ConnectBtn type="button" onClick={connectFolder} disabled={picking}>
-											{folders.length > 0 ? "Add" : "Connect"}
-										</ConnectBtn>
-									</>
-								) : c.id === "gmail" ? (
-									<>
-										{gmail?.signedIn && (
-											<Badge>
-												<Icon name="check" size={12} />
-												On
-											</Badge>
-										)}
-										<ConnectBtn type="button" onClick={() => setOpenForm(openForm === "gmail" ? null : "gmail")}>
-											{gmail?.signedIn ? "Change" : gmail ? "Sign in again" : "Connect"}
-										</ConnectBtn>
-									</>
-								) : c.id === "github" ? (
-									<>
-										{repos.length > 0 && (
-											<Badge>
-												<Icon name="check" size={12} />
-												{repos.length}
-											</Badge>
-										)}
-										<ConnectBtn type="button" onClick={() => setOpenForm(openForm === "github" ? null : "github")}>
-											{repos.length > 0 ? "Add" : "Connect"}
-										</ConnectBtn>
-									</>
-								) : (
-									<SoonTag>Soon</SoonTag>
-								)}
-							</CardTop>
-							<Description>{c.description}</Description>
-							{c.id === "gmail" && openForm === "gmail" && (
-								<Form onSubmit={submitGmail}>
-									<Field
-										type="email"
-										placeholder="you@gmail.com"
-										value={email}
-										onChange={(e) => setEmail(e.target.value)}
-										required
-										autoComplete="off"
-									/>
-									<Field
-										type="password"
-										placeholder="App password (16 letters)"
-										value={appPassword}
-										onChange={(e) => setAppPassword(e.target.value)}
-										required
-										autoComplete="off"
-									/>
-									<LinkBtn
-										type="button"
-										onClick={() => openUrl("https://myaccount.google.com/apppasswords").catch(() => {})}
-									>
-										Create an app password in your Google account (needs 2-Step Verification)
-									</LinkBtn>
-									<FormRow>
-										<PrimaryBtn type="submit" disabled={working}>
-											{working ? "Checking…" : "Connect Gmail"}
-										</PrimaryBtn>
-										<Description>Read only. The password stays in memory until you quit.</Description>
-									</FormRow>
-								</Form>
-							)}
-							{c.id === "github" && openForm === "github" && (
-								<Form onSubmit={submitRepo}>
-									<Field
-										placeholder="owner/repository, e.g. Razee4315/neurix"
-										value={repoInput}
-										onChange={(e) => setRepoInput(e.target.value)}
-										required
-										autoComplete="off"
-									/>
-									<FormRow>
-										<PrimaryBtn type="submit" disabled={working}>
-											{working ? "Reading…" : "Connect repository"}
-										</PrimaryBtn>
-										<Description>Public repositories.</Description>
-									</FormRow>
-								</Form>
-							)}
-						</Card>
-					))}
-				</Grid>
+				<Grid>{available.map(card)}</Grid>
+				{phone && connected}
 				<Heading>Coming soon</Heading>
-				<Grid>
-					{CONNECTORS.filter((c) => !LIVE.has(c.id)).map((c) => (
-						<Card key={c.id}>
-							<CardTop>
-								<Tile $tint={c.tint}>
-									<Icon name={c.icon} size={18} />
-								</Tile>
-								<Name>
-									<strong>{c.name}</strong>
-									<span>{c.access}</span>
-								</Name>
-								{isMobile() && DESKTOP_ONLY.has(c.id) ? (
-									<SoonTag>Desktop app</SoonTag>
-								) : c.id === "files" ? (
-									<>
-										{folders.length > 0 && (
-											<Badge>
-												<Icon name="check" size={12} />
-												{folders.length}
-											</Badge>
-										)}
-										<ConnectBtn type="button" onClick={connectFolder} disabled={picking}>
-											{folders.length > 0 ? "Add" : "Connect"}
-										</ConnectBtn>
-									</>
-								) : c.id === "gmail" ? (
-									<>
-										{gmail?.signedIn && (
-											<Badge>
-												<Icon name="check" size={12} />
-												On
-											</Badge>
-										)}
-										<ConnectBtn type="button" onClick={() => setOpenForm(openForm === "gmail" ? null : "gmail")}>
-											{gmail?.signedIn ? "Change" : gmail ? "Sign in again" : "Connect"}
-										</ConnectBtn>
-									</>
-								) : c.id === "github" ? (
-									<>
-										{repos.length > 0 && (
-											<Badge>
-												<Icon name="check" size={12} />
-												{repos.length}
-											</Badge>
-										)}
-										<ConnectBtn type="button" onClick={() => setOpenForm(openForm === "github" ? null : "github")}>
-											{repos.length > 0 ? "Add" : "Connect"}
-										</ConnectBtn>
-									</>
-								) : (
-									<SoonTag>Soon</SoonTag>
-								)}
-							</CardTop>
-							<Description>{c.description}</Description>
-							{c.id === "gmail" && openForm === "gmail" && (
-								<Form onSubmit={submitGmail}>
-									<Field
-										type="email"
-										placeholder="you@gmail.com"
-										value={email}
-										onChange={(e) => setEmail(e.target.value)}
-										required
-										autoComplete="off"
-									/>
-									<Field
-										type="password"
-										placeholder="App password (16 letters)"
-										value={appPassword}
-										onChange={(e) => setAppPassword(e.target.value)}
-										required
-										autoComplete="off"
-									/>
-									<LinkBtn
-										type="button"
-										onClick={() => openUrl("https://myaccount.google.com/apppasswords").catch(() => {})}
-									>
-										Create an app password in your Google account (needs 2-Step Verification)
-									</LinkBtn>
-									<FormRow>
-										<PrimaryBtn type="submit" disabled={working}>
-											{working ? "Checking…" : "Connect Gmail"}
-										</PrimaryBtn>
-										<Description>Read only. The password stays in memory until you quit.</Description>
-									</FormRow>
-								</Form>
-							)}
-							{c.id === "github" && openForm === "github" && (
-								<Form onSubmit={submitRepo}>
-									<Field
-										placeholder="owner/repository, e.g. Razee4315/neurix"
-										value={repoInput}
-										onChange={(e) => setRepoInput(e.target.value)}
-										required
-										autoComplete="off"
-									/>
-									<FormRow>
-										<PrimaryBtn type="submit" disabled={working}>
-											{working ? "Reading…" : "Connect repository"}
-										</PrimaryBtn>
-										<Description>Public repositories.</Description>
-									</FormRow>
-								</Form>
-							)}
-						</Card>
-					))}
-				</Grid>
-				{(gmail || repos.length > 0) && (
+				<Grid>{soon.map(card)}</Grid>
+				{!phone && connected}
+				{phone ? (
 					<>
-						<Heading>Connected accounts</Heading>
-						<FolderList>
-							{gmail && (
-								<FolderRow>
-									<Icon name="mail" size={18} color={tokens.colors.primary} />
-									<FolderText>
-										<strong>Gmail · {gmail.email}</strong>
-										<span>{gmail.signedIn ? "Newest emails, read only" : "Sign in again to use it (password is not stored)"}</span>
-									</FolderText>
-									<Switch
-										type="button"
-										role="switch"
-										$on={gmail.enabled}
-										aria-checked={gmail.enabled}
-										aria-label="Use Gmail in chats"
-										onClick={() => setGmailEnabled(!gmail.enabled)}
-									/>
-									<IconBtn type="button" title="Disconnect" aria-label="Disconnect Gmail" onClick={disconnectGmail}>
-										<Icon name="close" size={16} />
-									</IconBtn>
-								</FolderRow>
-							)}
-							{repos.map((r) => (
-								<FolderRow key={r.repo}>
-									<Icon name="github" size={18} color={tokens.colors.primary} />
-									<FolderText>
-										<strong>{r.repo}</strong>
-										<span>{r.description || "Public repository"}</span>
-									</FolderText>
-									<Switch
-										type="button"
-										role="switch"
-										$on={r.enabled}
-										aria-checked={r.enabled}
-										aria-label={`Use ${r.repo} in chats`}
-										onClick={() => setRepoEnabled(r.repo, !r.enabled)}
-									/>
-									<IconBtn type="button" title="Disconnect" aria-label={`Disconnect ${r.repo}`} onClick={() => removeRepo(r.repo)}>
-										<Icon name="close" size={16} />
-									</IconBtn>
-								</FolderRow>
-							))}
-						</FolderList>
+						<Heading>In the desktop app</Heading>
+						<Grid>{desktopOnly.map(card)}</Grid>
+						<DesktopNote>
+							The desktop app can also read whole folders and, in a later
+							release, connect to MCP servers on your computer or network.
+						</DesktopNote>
 					</>
+				) : (
+					<Custom
+						type="button"
+						onClick={() => comingSoon("Custom MCP servers")}
+					>
+						<Icon name="add" size={18} />
+						<span>
+							<strong>Add a custom connector</strong>
+							<br />
+							Any MCP server running on this computer or your network
+						</span>
+					</Custom>
 				)}
-				{folders.length > 0 && (
-					<>
-						<Heading>Connected folders</Heading>
-						<FolderList>
-							{folders.map((f) => (
-								<FolderRow key={f.path}>
-									<Icon name="folder_open" size={18} color={tokens.colors.primary} />
-									<FolderText>
-										<strong>{f.name}</strong>
-										<span title={f.path}>
-											{f.textFiles} readable of {f.files} files · {f.path}
-										</span>
-									</FolderText>
-									<Switch
-										type="button"
-										role="switch"
-										$on={f.enabled}
-										aria-checked={f.enabled}
-										aria-label={`Use ${f.name} in chats`}
-										title={f.enabled ? "Used in chats" : "Not used in chats"}
-										onClick={() => setFolderEnabled(f.path, !f.enabled)}
-									/>
-									<IconBtn
-										type="button"
-										aria-label={`Disconnect ${f.name}`}
-										title="Disconnect"
-										onClick={() => removeFolder(f.path)}
-									>
-										<Icon name="close" size={16} />
-									</IconBtn>
-								</FolderRow>
-							))}
-						</FolderList>
-					</>
-				)}
-				<Custom type="button" onClick={() => comingSoon("Custom MCP servers")}>
-					<Icon name="add" size={18} />
-					<span>
-						<strong>Add a custom connector</strong>
-						<br />
-						Any MCP server running on this computer or your network
-					</span>
-				</Custom>
 			</Page>
 		</AppLayout>
 	);
