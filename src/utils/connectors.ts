@@ -174,7 +174,51 @@ async function repoBlock(repo: ConnectedRepo, chars: number): Promise<string> {
  * The enabled folders as one block of text for the system prompt, or ""
  * when none are enabled. Folders that can't be read are skipped.
  */
-export async function connectorContext(): Promise<string> {
+/** Words worth matching: lowercase, 3+ letters, no common filler. */
+const STOP = new Set("the and for with that this what who how why when where which from have are was were you your about into does did can could would should will there their them they his her its our out not all any".split(" "));
+function words(text: string): string[] {
+	return (text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).filter((w) => !STOP.has(w));
+}
+
+/**
+ * Pick the files that matter for this question. A folder can hold far more
+ * than a small model reads, so files are scored by how many of the
+ * question's words appear in their name and text, and the best fill the
+ * budget. With no matching words, the first files are used.
+ */
+function relevantFiles(files: FolderSnapshot["files"], question: string, budget: number) {
+	const q = new Set(words(question));
+	const scored = files
+		.filter((f) => f.content)
+		.map((f, i) => {
+			const hay = `${f.path} ${f.content}`.toLowerCase();
+			let score = 0;
+			for (const w of q) if (hay.includes(w)) score += f.path.toLowerCase().includes(w) ? 3 : 1;
+			return { f, score, i };
+		})
+		.sort((a, b) => b.score - a.score || a.i - b.i);
+	const picked: typeof files = [];
+	let used = 0;
+	for (const { f } of scored) {
+		const text = f.content ?? "";
+		if (used + text.length > budget && picked.length > 0) continue;
+		picked.push({ ...f, content: text.slice(0, budget - used) });
+		used += Math.min(text.length, budget - used);
+		if (used >= budget) break;
+	}
+	return picked;
+}
+
+/** How much of each folder is read before the relevant part is picked. */
+const SCAN_CHARS = 120_000;
+/** File names listed for the model, so it knows what else is there. */
+const LISTED_FILES = 40;
+
+/**
+ * Everything the enabled connectors know that bears on `question`, as one
+ * block to put in front of it, or "" when nothing is enabled.
+ */
+export async function connectorContext(question = ""): Promise<string> {
 	const folders = state.folders.filter((f) => f.enabled);
 	const repos = state.repos.filter((r) => r.enabled);
 	const sources = folders.length + repos.length + (state.gmail?.enabled && gmailPassword ? 1 : 0);
@@ -183,13 +227,14 @@ export async function connectorContext(): Promise<string> {
 	const parts: string[] = [];
 	for (const folder of folders) {
 		try {
-			const snap = await readFolder(folder.path, share);
-			const listing = snap.files.map((f) => `- ${f.path}`).join("\n");
-			const bodies = snap.files
-				.filter((f) => f.content)
-				.map((f) => `### ${f.path}${f.truncated ? " (first part)" : ""}\n${f.content}`)
-				.join("\n\n");
-			parts.push(`Folder "${snap.name}" (${snap.total_files} files):\n${listing}\n\n${bodies}`);
+			const snap = await readFolder(folder.path, SCAN_CHARS);
+			const chosen = relevantFiles(snap.files, question, share);
+			const names = snap.files.filter((f) => f.content !== null).map((f) => f.path);
+			const listing =
+				names.slice(0, LISTED_FILES).join(", ") +
+				(names.length > LISTED_FILES ? ` and ${names.length - LISTED_FILES} more` : "");
+			const bodies = chosen.map((f) => `--- File: ${f.path} ---\n${f.content}`).join("\n\n");
+			parts.push(`Local folder "${snap.name}". Text files: ${listing || "none readable"}.\n\n${bodies}`);
 		} catch {
 			// Folder moved or unreadable: answer without it.
 		}
@@ -208,10 +253,25 @@ export async function connectorContext(): Promise<string> {
 		}
 	}
 	if (parts.length === 0) return "";
+	return parts.join("\n\n");
+}
+
+/**
+ * The user's message with the connector context in front of it. Small
+ * models follow material placed right next to the question much better
+ * than material in the system prompt.
+ */
+export function withContext(context: string, question: string): string {
+	if (!context) return question;
 	return [
-		"The user connected these sources. They were read by this app on the user's device.",
-		"Use them to answer when relevant and say which source you used. Say so if the answer is not in them.",
+		"Use the following material from my connected sources to answer. It was read on this device.",
+		"Answer from it when it is relevant and say which file, email or repository you used.",
+		"If the answer is not in it, say so and then answer from general knowledge.",
 		"",
-		parts.join("\n\n"),
+		"<sources>",
+		context,
+		"</sources>",
+		"",
+		`My question: ${question}`,
 	].join("\n");
 }

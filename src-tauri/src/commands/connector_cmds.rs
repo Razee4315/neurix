@@ -358,3 +358,78 @@ pub async fn github_fetch(repo: String) -> Result<GithubSnapshot, String> {
         open_items,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::inference::engine::{load_model_from_disk, GenerationRequest, LoadOptions};
+    use crate::models::catalog::SamplingDefaults;
+    use crate::inference::engine::InferenceEvent;
+    use tokio_util::sync::CancellationToken;
+
+    /// The folder connector against a real model: the demo folder is read,
+    /// the relevant file goes in front of the question, and the answer must
+    /// come from it. Needs `NEURIX_TEST_MODEL` and `NEURIX_TEST_FOLDER`.
+    #[test]
+    #[ignore = "needs a model file and a folder"]
+    fn real_model_answers_from_folder() {
+        let model_path = std::env::var("NEURIX_TEST_MODEL").expect("NEURIX_TEST_MODEL");
+        let folder = std::env::var("NEURIX_TEST_FOLDER").expect("NEURIX_TEST_FOLDER");
+        let snap = tauri::async_runtime::block_on(read_folder(folder, 120_000)).expect("read_folder");
+        println!("folder {}: {} files, {} text", snap.name, snap.total_files, snap.text_files);
+        assert!(snap.text_files > 0, "no readable files");
+
+        // Same shape as connectorContext + withContext in the frontend.
+        let bodies: String = snap
+            .files
+            .iter()
+            .filter_map(|f| f.content.as_ref().map(|c| format!("--- File: {} ---\n{c}\n\n", f.path)))
+            .collect();
+        let sources = format!("Local folder \"{}\".\n\n{bodies}", snap.name);
+        let sampling = SamplingDefaults { top_k: 40, min_p: 0.05, repeat_penalty: 1.0 };
+        let mut model = load_model_from_disk(
+            "test",
+            Path::new(&model_path),
+            sampling,
+            LoadOptions { context_length: 4096, threads: 4 },
+        )
+        .expect("load");
+
+        for (question, expect) in [
+            ("How many staff must sign for a controlled drug?", "two"),
+            ("Who works the night shift on Wednesday?", "tom"),
+        ] {
+            let prompt = format!(
+                "Use the following material from my connected sources to answer. It was read on this device.\n\
+                 Answer from it when it is relevant and say which file, email or repository you used.\n\
+                 If the answer is not in it, say so and then answer from general knowledge.\n\n\
+                 <sources>\n{sources}</sources>\n\nMy question: {question}"
+            );
+            let request = GenerationRequest {
+                system_prompt: "You are a helpful assistant. Give clear, concise answers. Do not repeat yourself.".into(),
+                history: Vec::new(),
+                user_message: prompt,
+                assistant_prefix: None,
+                max_tokens: 160,
+                temperature: 0.0,
+                top_p: 1.0,
+                enable_thinking: false,
+            };
+            let mut answer = String::new();
+            model
+                .generate(
+                    &request,
+                    &mut |e: InferenceEvent| {
+                        if let InferenceEvent::TokenGenerated { token, .. } = e {
+                            answer.push_str(&token)
+                        }
+                    },
+                    &CancellationToken::new(),
+                )
+                .expect("generate");
+            println!("Q: {question}\nA: {answer}\n");
+            let a = answer.to_lowercase();
+            assert!(a.contains(expect) || (expect == "two" && a.contains('2')), "answer missed: {answer}");
+        }
+    }
+}

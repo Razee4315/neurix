@@ -27,6 +27,9 @@ import styled from "styled-components";
  * Connect buttons say so instead of pretending to connect.
  */
 
+/** Connectors that work in this build; the rest are listed as coming soon. */
+const LIVE = new Set(["files", "gmail", "github"]);
+
 interface Connector {
 	id: string;
 	name: string;
@@ -38,6 +41,14 @@ interface Connector {
 }
 
 const CONNECTORS: Connector[] = [
+	{
+		id: "files",
+		name: "Local folders",
+		icon: "folder_open",
+		tint: "#b0603f",
+		description: "Point the assistant at folders on this computer.",
+		access: "On this device",
+	},
 	{
 		id: "gmail",
 		name: "Gmail",
@@ -85,14 +96,6 @@ const CONNECTORS: Connector[] = [
 		tint: "#3a3a3a",
 		description: "Repositories, issues and pull requests.",
 		access: "Public repositories",
-	},
-	{
-		id: "files",
-		name: "Local folders",
-		icon: "folder_open",
-		tint: "#b0603f",
-		description: "Point the assistant at folders on this computer.",
-		access: "On this device",
 	},
 ];
 
@@ -204,7 +207,7 @@ const Badge = styled.span`
 `;
 
 const Heading = styled.h2`
-  margin: 1.75rem 0 0.625rem;
+  margin: 1.5rem 0 0.625rem;
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.medium};
   color: ${tokens.colors.onSurfaceVariant};
@@ -286,6 +289,18 @@ const IconBtn = styled.button`
   cursor: pointer;
 
   &:hover { background: ${tokens.colors.surfaceContainerHighest}; color: ${tokens.colors.onSurface}; }
+`;
+
+const SoonTag = styled.span`
+  height: 24px;
+  padding: 0 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  border-radius: ${tokens.borderRadius.circle};
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
+  color: ${tokens.colors.onSurfaceVariant};
+  font-size: ${tokens.typography.fontSize.xs};
+  flex-shrink: 0;
 `;
 
 const Form = styled.form`
@@ -403,6 +418,13 @@ export function ConnectorsPage() {
 			const path = await pickFolder();
 			if (!path) return;
 			const snapshot = await readFolder(path, 0);
+			if (snapshot.total_files === 0) {
+				showToast(
+					`Neurix couldn't see any files in ${snapshot.name}. If macOS asked for access, allow it, or check System Settings › Privacy & Security › Files and Folders.`,
+					"error",
+				);
+				return;
+			}
 			addFolder(snapshot);
 			showToast(`Connected ${snapshot.name}: ${snapshot.text_files} readable files`, "success");
 		} catch (err) {
@@ -420,8 +442,9 @@ export function ConnectorsPage() {
 					processed on this device, and the assistant only reads. It never sends, posts or deletes
 					without asking you first.
 				</Intro>
+				<Heading>Available</Heading>
 				<Grid>
-					{CONNECTORS.map((c) => (
+					{CONNECTORS.filter((c) => LIVE.has(c.id)).map((c) => (
 						<Card key={c.id}>
 							<CardTop>
 								<Tile $tint={c.tint}>
@@ -468,9 +491,112 @@ export function ConnectorsPage() {
 										</ConnectBtn>
 									</>
 								) : (
-									<ConnectBtn type="button" onClick={() => comingSoon(c.name)}>
-										Connect
-									</ConnectBtn>
+									<SoonTag>Soon</SoonTag>
+								)}
+							</CardTop>
+							<Description>{c.description}</Description>
+							{c.id === "gmail" && openForm === "gmail" && (
+								<Form onSubmit={submitGmail}>
+									<Field
+										type="email"
+										placeholder="you@gmail.com"
+										value={email}
+										onChange={(e) => setEmail(e.target.value)}
+										required
+										autoComplete="off"
+									/>
+									<Field
+										type="password"
+										placeholder="App password (16 letters)"
+										value={appPassword}
+										onChange={(e) => setAppPassword(e.target.value)}
+										required
+										autoComplete="off"
+									/>
+									<LinkBtn
+										type="button"
+										onClick={() => openUrl("https://myaccount.google.com/apppasswords").catch(() => {})}
+									>
+										Create an app password in your Google account (needs 2-Step Verification)
+									</LinkBtn>
+									<FormRow>
+										<PrimaryBtn type="submit" disabled={working}>
+											{working ? "Checking…" : "Connect Gmail"}
+										</PrimaryBtn>
+										<Description>Read only. The password stays in memory until you quit.</Description>
+									</FormRow>
+								</Form>
+							)}
+							{c.id === "github" && openForm === "github" && (
+								<Form onSubmit={submitRepo}>
+									<Field
+										placeholder="owner/repository, e.g. Razee4315/neurix"
+										value={repoInput}
+										onChange={(e) => setRepoInput(e.target.value)}
+										required
+										autoComplete="off"
+									/>
+									<FormRow>
+										<PrimaryBtn type="submit" disabled={working}>
+											{working ? "Reading…" : "Connect repository"}
+										</PrimaryBtn>
+										<Description>Public repositories.</Description>
+									</FormRow>
+								</Form>
+							)}
+						</Card>
+					))}
+				</Grid>
+				<Heading>Coming soon</Heading>
+				<Grid>
+					{CONNECTORS.filter((c) => !LIVE.has(c.id)).map((c) => (
+						<Card key={c.id}>
+							<CardTop>
+								<Tile $tint={c.tint}>
+									<Icon name={c.icon} size={18} />
+								</Tile>
+								<Name>
+									<strong>{c.name}</strong>
+									<span>{c.access}</span>
+								</Name>
+								{c.id === "files" ? (
+									<>
+										{folders.length > 0 && (
+											<Badge>
+												<Icon name="check" size={12} />
+												{folders.length}
+											</Badge>
+										)}
+										<ConnectBtn type="button" onClick={connectFolder} disabled={picking}>
+											{folders.length > 0 ? "Add" : "Connect"}
+										</ConnectBtn>
+									</>
+								) : c.id === "gmail" ? (
+									<>
+										{gmail?.signedIn && (
+											<Badge>
+												<Icon name="check" size={12} />
+												On
+											</Badge>
+										)}
+										<ConnectBtn type="button" onClick={() => setOpenForm(openForm === "gmail" ? null : "gmail")}>
+											{gmail?.signedIn ? "Change" : gmail ? "Sign in again" : "Connect"}
+										</ConnectBtn>
+									</>
+								) : c.id === "github" ? (
+									<>
+										{repos.length > 0 && (
+											<Badge>
+												<Icon name="check" size={12} />
+												{repos.length}
+											</Badge>
+										)}
+										<ConnectBtn type="button" onClick={() => setOpenForm(openForm === "github" ? null : "github")}>
+											{repos.length > 0 ? "Add" : "Connect"}
+										</ConnectBtn>
+									</>
+								) : (
+									<SoonTag>Soon</SoonTag>
 								)}
 							</CardTop>
 							<Description>{c.description}</Description>

@@ -12,7 +12,7 @@ import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { copyText, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
-import { connectorContext, setFolderEnabled, setGmailEnabled, setRepoEnabled, useConnectors } from "@/utils/connectors";
+import { connectorContext, setFolderEnabled, withContext, setGmailEnabled, setRepoEnabled, useConnectors } from "@/utils/connectors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
@@ -505,13 +505,12 @@ export function ChatPage() {
 		};
 
 		try {
-			const baseSystem = character?.system_prompt ?? settings?.system_prompt ?? "";
-			const folders = await connectorContext();
+			const sources = prefix ? "" : await connectorContext(prompt);
 			if (!isCurrent()) return;
 			await chatService.runInference(
 				{
-					prompt,
-					systemPrompt: folders ? `${baseSystem}\n\n${folders}`.trim() : baseSystem,
+					prompt: withContext(sources, prompt),
+					systemPrompt: character?.system_prompt ?? settings?.system_prompt ?? "",
 					history: buildHistory(context),
 					temperature: character?.temperature ?? settings?.temperature ?? 0.7,
 					topP: character?.top_p ?? settings?.top_p ?? 0.9,
