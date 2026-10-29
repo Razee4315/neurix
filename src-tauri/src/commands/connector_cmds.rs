@@ -152,6 +152,8 @@ pub async fn read_folder(path: String, max_chars: usize) -> Result<FolderSnapsho
 // Read over IMAP with an app password (Google offers one once 2-Step
 // Verification is on). The mailbox is opened read-only (EXAMINE) and
 // messages are fetched with BODY.PEEK, so nothing is marked as read.
+// Desktop uses the `imap` crate over the platform TLS; phones use the small
+// rustls client in `imap_lite`.
 
 #[derive(Serialize)]
 pub struct MailSummary {
@@ -162,10 +164,8 @@ pub struct MailSummary {
     pub snippet: String,
 }
 
-#[cfg(desktop)]
 const SNIPPET_CHARS: usize = 600;
 
-#[cfg(desktop)]
 fn plain_text(mail: &mailparse::ParsedMail) -> Option<String> {
     if mail.subparts.is_empty() {
         if mail.ctype.mimetype.starts_with("text/plain") {
@@ -174,8 +174,7 @@ fn plain_text(mail: &mailparse::ParsedMail) -> Option<String> {
         if mail.ctype.mimetype.starts_with("text/html") {
             // Crude tag strip: enough for a snippet.
             let html = mail.get_body().ok()?;
-            let re = regex_lite_strip(&html);
-            return Some(re);
+            return Some(strip_tags(&html));
         }
         return None;
     }
@@ -185,8 +184,7 @@ fn plain_text(mail: &mailparse::ParsedMail) -> Option<String> {
         .or_else(|| mail.subparts.iter().find_map(plain_text))
 }
 
-#[cfg(desktop)]
-fn regex_lite_strip(html: &str) -> String {
+fn strip_tags(html: &str) -> String {
     let mut out = String::with_capacity(html.len());
     let mut in_tag = false;
     for c in html.chars() {
@@ -203,9 +201,27 @@ fn regex_lite_strip(html: &str) -> String {
     out
 }
 
-#[cfg(desktop)]
 fn squash(text: &str, limit: usize) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(limit).collect()
+}
+
+/// Sender, subject, date and the start of the text of one raw message.
+fn summarize(raw: &[u8]) -> Option<MailSummary> {
+    let parsed = mailparse::parse_mail(raw).ok()?;
+    let header = |name: &str| {
+        parsed
+            .headers
+            .iter()
+            .find(|h| h.get_key_ref().eq_ignore_ascii_case(name))
+            .map(|h| h.get_value())
+            .unwrap_or_default()
+    };
+    Some(MailSummary {
+        from: header("From"),
+        subject: header("Subject"),
+        date: header("Date"),
+        snippet: squash(&plain_text(&parsed).unwrap_or_default(), SNIPPET_CHARS),
+    })
 }
 
 /// The newest `limit` emails in the inbox, newest first.
@@ -230,27 +246,7 @@ pub async fn gmail_fetch(email: String, app_password: String, limit: u32) -> Res
         let fetched = session
             .fetch(format!("{first}:{total}"), "BODY.PEEK[]")
             .map_err(|e| e.to_string())?;
-        let mut mails: Vec<MailSummary> = fetched
-            .iter()
-            .filter_map(|m| {
-                let raw = m.body()?;
-                let parsed = mailparse::parse_mail(raw).ok()?;
-                let header = |name: &str| {
-                    parsed
-                        .headers
-                        .iter()
-                        .find(|h| h.get_key_ref().eq_ignore_ascii_case(name))
-                        .map(|h| h.get_value())
-                        .unwrap_or_default()
-                };
-                Some(MailSummary {
-                    from: header("From"),
-                    subject: header("Subject"),
-                    date: header("Date"),
-                    snippet: squash(&plain_text(&parsed).unwrap_or_default(), SNIPPET_CHARS),
-                })
-            })
-            .collect();
+        let mut mails: Vec<MailSummary> = fetched.iter().filter_map(|m| summarize(m.body()?)).collect();
         mails.reverse();
         let _ = session.logout();
         Ok(mails)
@@ -259,10 +255,17 @@ pub async fn gmail_fetch(email: String, app_password: String, limit: u32) -> Res
     .map_err(|e| e.to_string())?
 }
 
+/// The newest `limit` emails in the inbox, newest first.
 #[cfg(mobile)]
 #[tauri::command]
-pub async fn gmail_fetch(_email: String, _app_password: String, _limit: u32) -> Result<Vec<MailSummary>, String> {
-    Err("Gmail is available in the desktop app.".into())
+pub async fn gmail_fetch(email: String, app_password: String, limit: u32) -> Result<Vec<MailSummary>, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<MailSummary>, String> {
+        let password: String = app_password.chars().filter(|c| !c.is_whitespace()).collect();
+        let raw = crate::imap_lite::fetch_gmail(email.trim(), &password, limit)?;
+        Ok(raw.iter().filter_map(|m| summarize(m)).collect())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 // ── GitHub ─────────────────────────────────────────────────────────────
@@ -362,6 +365,50 @@ pub async fn github_fetch(repo: String) -> Result<GithubSnapshot, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn summarize_reads_headers_and_plain_text() {
+        let raw = concat!(
+            "From: Ana <ana@example.com>\r\n",
+            "Subject: Rota\r\n",
+            "Date: Mon, 1 Jun 2026 09:00:00 +0000\r\n",
+            "Content-Type: multipart/alternative; boundary=\"b\"\r\n",
+            "\r\n",
+            "--b\r\n",
+            "Content-Type: text/html\r\n",
+            "\r\n",
+            "<p>Ignored</p>\r\n",
+            "--b\r\n",
+            "Content-Type: text/plain\r\n",
+            "\r\n",
+            "Nights:   Tom\r\n",
+            " and Ana.\r\n",
+            "--b--\r\n",
+        );
+        let mail = summarize(raw.as_bytes()).expect("parses");
+        assert_eq!(mail.from, "Ana <ana@example.com>");
+        assert_eq!(mail.subject, "Rota");
+        assert_eq!(mail.snippet, "Nights: Tom and Ana.");
+    }
+
+    #[test]
+    fn summarize_survives_a_message_cut_short() {
+        // Phones fetch only the start of each message.
+        let raw = concat!(
+            "From: Bo <bo@example.com>\r\n",
+            "Subject: Long\r\n",
+            "Content-Type: multipart/mixed; boundary=\"x\"\r\n",
+            "\r\n",
+            "--x\r\n",
+            "Content-Type: text/plain\r\n",
+            "\r\n",
+            "The start of it",
+        );
+        let mail = summarize(raw.as_bytes()).expect("parses");
+        assert_eq!(mail.from, "Bo <bo@example.com>");
+        assert_eq!(mail.subject, "Long");
+    }
+
     use crate::inference::engine::{load_model_from_disk, GenerationRequest, LoadOptions};
     use crate::models::catalog::SamplingDefaults;
     use crate::inference::engine::InferenceEvent;

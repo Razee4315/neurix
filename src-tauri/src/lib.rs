@@ -5,6 +5,7 @@ mod characters;
 mod chat;
 mod commands;
 mod device;
+mod imap_lite;
 mod inference;
 mod models;
 mod settings;

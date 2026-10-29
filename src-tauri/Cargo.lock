@@ -2565,7 +2565,7 @@ dependencies = [
 
 [[package]]
 name = "neurix-tauri"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "android_logger",
  "base64 0.22.1",
@@ -2580,6 +2580,7 @@ dependencies = [
  "minijinja-contrib",
  "native-tls",
  "reqwest 0.12.28",
+ "rustls",
  "serde",
  "serde_json",
  "sha2",
@@ -2593,6 +2594,7 @@ dependencies = [
  "tauri-plugin-store",
  "tokio",
  "tokio-util",
+ "webpki-roots",
 ]
 
 [[package]]
