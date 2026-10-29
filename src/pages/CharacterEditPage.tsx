@@ -8,7 +8,7 @@ import { chatService } from "@/services";
 import type { Character, InferenceEvent } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
-import { ACCENT_PALETTE, DEFAULT_ACCENT, isAccentHex } from "@/utils/characterAccent";
+import { ACCENT_PALETTE, DEFAULT_ACCENT, accentOf, isAccentHex } from "@/utils/characterAccent";
 import { LIMITS } from "@/utils/characterLimits";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { shortId } from "@/utils/format";
@@ -324,7 +324,7 @@ const PrimaryBtn = styled.button`
   padding: 0.875rem;
   border-radius: ${tokens.borderRadius.lg};
   background: ${tokens.colors.primary};
-  color: ${tokens.colors.onPrimary};
+  color: ${tokens.colors.onPrimaryFixed};
   border: none;
   font-size: ${tokens.typography.fontSize.base};
   font-weight: ${tokens.typography.fontWeight.bold};
@@ -716,6 +716,9 @@ export function CharacterEditPage() {
 	if (isEditing && loaded && !existing) return <Navigate to="/chat" replace />;
 
 	const { name, description, icon, accentColor, prompt, temperature, topP, maxTokens, greeting, starters } = draft;
+	// The stored value, resolved the way chat shows it: the default swatch
+	// follows the theme, and light themes get darker hues.
+	const shownAccent = accentOf({ accent_color: accentColor } as Character);
 
 	return (
 		<AppLayout title={isEditing ? "Edit character" : "New character"} back={leave}>
@@ -729,7 +732,7 @@ export function CharacterEditPage() {
 								type="button"
 								role="radio"
 								$active={icon === choice}
-								$accent={accentColor}
+								$accent={shownAccent}
 								onClick={() => set("icon", choice)}
 								aria-label={choice.replace(/_/g, " ")}
 								aria-checked={icon === choice}
@@ -747,7 +750,7 @@ export function CharacterEditPage() {
 							<ColorSwatch
 								key={c.value}
 								type="button"
-								$color={c.value}
+								$color={accentOf({ accent_color: c.value } as Character)}
 								$active={accentColor === c.value}
 								onClick={() => set("accentColor", c.value)}
 								role="radio"
@@ -858,8 +861,8 @@ export function CharacterEditPage() {
 								Stop
 							</TestStop>
 						) : (
-							<TestBtn type="button" onClick={handleTry} disabled={!prompt.trim()} $accent={accentColor}>
-								<Icon name="play_arrow" size={16} color={accentColor} />
+							<TestBtn type="button" onClick={handleTry} disabled={!prompt.trim()} $accent={shownAccent}>
+								<Icon name="play_arrow" size={16} color={shownAccent} />
 								Test sample reply
 							</TestBtn>
 						)}
@@ -868,7 +871,7 @@ export function CharacterEditPage() {
 						(testError ? (
 							<TestErrorBox role="alert">{testError}</TestErrorBox>
 						) : (
-							<TestPanel $accent={accentColor} aria-live="polite">
+							<TestPanel $accent={shownAccent} aria-live="polite">
 								{testOutput || <TestEmpty>Generating…</TestEmpty>}
 							</TestPanel>
 						))}

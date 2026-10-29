@@ -10,7 +10,7 @@ import { tokens } from "@/theme/tokens";
  * to remain visually distinct from each other at a glance in the picker.
  */
 export const ACCENT_PALETTE: ReadonlyArray<{ value: string; label: string }> = [
-	{ value: "#8ff5ff", label: "Electric blue" },
+	{ value: "#8ff5ff", label: "Theme accent" },
 	{ value: "#65afff", label: "Sky blue" },
 	{ value: "#c792ea", label: "Lavender" },
 	{ value: "#ff79c6", label: "Pink" },

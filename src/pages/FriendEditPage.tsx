@@ -238,7 +238,7 @@ const TemplateStrip = styled.div`
 
   @media (min-width: 600px) {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
     margin: 0;
     padding: 0;
   }
@@ -319,7 +319,7 @@ const RelGrid = styled.div`
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.4375rem;
 
-  @media (min-width: 600px) { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  @media (min-width: 600px) { grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); }
 `;
 
 const RelBtn = styled.button<{ $on: boolean; $accent: string }>`
@@ -337,7 +337,7 @@ const RelBtn = styled.button<{ $on: boolean; $accent: string }>`
   text-align: left;
   cursor: pointer;
 
-  span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  span { min-width: 0; line-height: 1.2; }
   &:hover { border-color: ${({ $accent }) => $accent}; }
 `;
 
@@ -919,7 +919,8 @@ export function FriendEditPage() {
 				await setActiveCharacter(character.id).catch(() => {});
 				showToast(`${character.name} is ready to chat`, "success");
 				setInitial(draft);
-				navigate("/chat", { replace: true });
+				// A new chat with the new friend, not the last conversation.
+				navigate("/chat", { replace: true, state: { freshChat: true } });
 			}
 		} catch {
 			showToast("Couldn't save your friend. Your changes are still here.", "error");

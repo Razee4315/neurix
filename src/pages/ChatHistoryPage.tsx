@@ -266,23 +266,26 @@ const RenameInput = styled.input`
   outline: none;
 `;
 
+/* Quiet icon buttons: the list is about the chats, so the actions stay out
+   of the way until pointed at or pressed. Delete only turns red then. */
 const ActionBtn = styled.button<{ $danger?: boolean }>`
-  width: 44px;
-  height: 44px;
-  background: ${({ $danger }) => $danger ? alpha(tokens.colors.error, "12") : tokens.colors.surfaceContainerHighest};
+  width: 40px;
+  height: 40px;
+  background: transparent;
   border: none;
   border-radius: ${tokens.borderRadius.lg};
+  color: ${tokens.colors.onSurfaceVariant};
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all ${tokens.transitions.fast};
+  transition: background ${tokens.transitions.fast}, color ${tokens.transitions.fast};
 
-  &:hover {
-    background: ${({ $danger }) => $danger ? alpha(tokens.colors.error, "22") : tokens.colors.surfaceBright};
+  &:hover, &:active {
+    background: ${({ $danger }) => ($danger ? alpha(tokens.colors.error, "1a") : tokens.colors.surfaceContainerHighest)};
+    color: ${({ $danger }) => ($danger ? tokens.colors.error : tokens.colors.onSurface)};
   }
-  &:active { transform: scale(0.9); }
 `;
 
 const ActionGroup = styled.div`
@@ -663,7 +666,7 @@ export function ChatHistoryPage() {
 														}}
 														aria-label={`Rename ${entry.title}`}
 													>
-														<Icon name="edit" size={18} color={tokens.colors.onSurfaceVariant} />
+														<Icon name="edit" size={17} />
 													</ActionBtn>
 													<ActionBtn
 														type="button"
@@ -671,7 +674,7 @@ export function ChatHistoryPage() {
 														onClick={() => handleDeleteOne(entry.id, entry.title)}
 														aria-label={`Delete ${entry.title}`}
 													>
-														<Icon name="delete" size={18} color={tokens.colors.error} />
+														<Icon name="delete" size={17} />
 													</ActionBtn>
 												</ActionGroup>
 											)}

@@ -76,12 +76,13 @@ const RowTitle = styled.div`
   color: ${tokens.colors.onSurface};
 `;
 
+/* The line under a setting explains it, so it wraps rather than being cut
+   off on a narrow phone. */
 const RowSub = styled.div`
   font-size: ${tokens.typography.fontSize.sm};
+  line-height: 1.4;
   color: ${tokens.colors.onSurfaceVariant};
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 `;
 
 /* ── Toggle Switch ── */
@@ -627,7 +628,7 @@ export function SettingsPage() {
 				<SectionHeading>Privacy</SectionHeading>
 				<Section>
 					{infoRow("cloud_off", "Runs on this device", "Models answer locally. Prompts and replies never leave it")}
-					{infoRow("wifi", "Network use", "Only to download models you choose")}
+					{infoRow("wifi", "Network use", "To download models, and for connectors you turn on")}
 					{infoRow("verified_user", "Telemetry", "None. No analytics, no tracking, no account")}
 				</Section>
 

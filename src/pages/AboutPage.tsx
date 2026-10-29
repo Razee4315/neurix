@@ -133,15 +133,15 @@ export function AboutPage() {
 				</LogoSection>
 
 				<Tagline>
-					Run powerful AI models directly on your device.
-					Fully offline. Completely private.
+					AI models that run on your own device.
+					They work offline, and your chats never leave it.
 				</Tagline>
 
 				<SectionTitle>Links</SectionTitle>
 				<Section>
 					<LinkRow type="button" onClick={() => openLink("https://github.com/Razee4315/neurix")}>
 						<LinkIcon>
-							<Icon name="deployed_code" size={18} color={tokens.colors.primary} />
+							<Icon name="github" size={18} color={tokens.colors.primary} />
 						</LinkIcon>
 						<LinkText>
 							<LinkTitle>Source Code</LinkTitle>

@@ -471,7 +471,7 @@ const PrimaryBtn = styled.button`
   padding: 0.625rem 1rem;
   border-radius: ${tokens.borderRadius.lg};
   background: ${tokens.colors.primary};
-  color: ${tokens.colors.onPrimary};
+  color: ${tokens.colors.onPrimaryFixed};
   border: none;
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};

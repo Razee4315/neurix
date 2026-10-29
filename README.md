@@ -73,6 +73,10 @@ The same app runs on the desktop and on Android. On a wide window you get a side
 <td align="center"><img src="Screenshots/desktop/settings.png" width="420" /><br /><b>Settings</b></td>
 </tr>
 <tr>
+<td align="center"><img src="Screenshots/desktop/friend-builder.png" width="420" /><br /><b>Create a friend</b></td>
+<td align="center"><img src="Screenshots/desktop/friend-chat.png" width="420" /><br /><b>Chat with a friend</b></td>
+</tr>
+<tr>
 <td align="center"><img src="Screenshots/desktop/chat-paper.png" width="420" /><br /><b>Paper theme</b></td>
 <td></td>
 </tr>
@@ -92,6 +96,11 @@ The same app runs on the desktop and on Android. On a wide window you get a side
 <td align="center"><img src="Screenshots/mobile/store.png" width="200" /><br /><b>Model Store</b></td>
 <td align="center"><img src="Screenshots/mobile/models.png" width="200" /><br /><b>My Models</b></td>
 <td align="center"><img src="Screenshots/mobile/settings.png" width="200" /><br /><b>Settings</b></td>
+</tr>
+<tr>
+<td align="center"><img src="Screenshots/mobile/friend-builder.png" width="200" /><br /><b>Create a friend</b></td>
+<td align="center"><img src="Screenshots/mobile/friend-chat.png" width="200" /><br /><b>Chat with a friend</b></td>
+<td></td>
 </tr>
 </table>
 </div>

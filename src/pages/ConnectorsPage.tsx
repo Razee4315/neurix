@@ -377,7 +377,7 @@ const LinkBtn = styled.button`
 const PrimaryBtn = styled(ConnectBtn)`
   background: ${tokens.colors.primary};
   border-color: ${tokens.colors.primary};
-  color: ${tokens.colors.onPrimary};
+  color: ${tokens.colors.onPrimaryFixed};
 
   &:hover { background: ${tokens.colors.primaryDim}; }
   &:disabled { opacity: 0.6; cursor: default; }

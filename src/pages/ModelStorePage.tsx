@@ -281,7 +281,7 @@ const RetryButton = styled.button`
   padding: 0.625rem 1.25rem;
   border-radius: ${tokens.borderRadius.lg};
   background: ${tokens.colors.primary};
-  color: ${tokens.colors.onPrimary};
+  color: ${tokens.colors.onPrimaryFixed};
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
   border: none;
@@ -352,12 +352,31 @@ const CardDesc = styled.p`
   overflow: hidden;
 `;
 
+/* Meters on the left, tags and status on the right. On a narrow phone the
+   right group moves under the meters as one piece rather than leaving a
+   lone tag on its own line. */
 const CardBottom = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
+  gap: 0.5rem 0.75rem;
   margin-top: 0.5rem;
+`;
+
+const CardMeters = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+`;
+
+const CardTags = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: auto;
+
+  &:empty { display: none; }
 `;
 
 const Badge = styled.span<{ $tone: "ok" | "busy" | "muted" }>`
@@ -637,12 +656,14 @@ export function ModelStorePage() {
 										</CardTop>
 										<CardDesc>{m.description}</CardDesc>
 										<CardBottom>
-											<MeterRow style={{ marginTop: 0 }}>
+											<CardMeters>
 												<ModelMeters quality={m.quality} speed={m.speed} />
+											</CardMeters>
+											<CardTags>
 												{m.reasoning === "always" && <Tag>Thinks first</Tag>}
 												{m.reasoning === "optional" && <Tag>Can think</Tag>}
-											</MeterRow>
-											{statusBadge(m)}
+												{statusBadge(m)}
+											</CardTags>
 										</CardBottom>
 										{warn && (
 											<FitNote $severe={fit === "too_big"}>

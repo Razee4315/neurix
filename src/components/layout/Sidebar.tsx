@@ -19,7 +19,7 @@ import styled from "styled-components";
 const SECTIONS = [
 	{ icon: "chat_bubble", label: "Chats", path: "/chat", owns: ["/character", "/friend"] },
 	{ icon: "deployed_code", label: "Models", path: "/models", owns: [] },
-	{ icon: "storefront", label: "Model library", path: "/store", owns: ["/downloading"] },
+	{ icon: "storefront", label: "Model Store", path: "/store", owns: ["/downloading"] },
 	{ icon: "plug", label: "Connectors", path: "/connectors", owns: [] },
 ] as const;
 
