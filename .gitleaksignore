@@ -1,0 +1,6 @@
+# Findings reviewed and confirmed as not secrets. gitleaks reads this file
+# from the repository root. One fingerprint per line.
+
+# `const KEY = "neurix.prefs.v1"`: the localStorage key for interface
+# preferences, read as a generic API key because of the variable name.
+7fe69efb4541612a5b0eb61a18a67ee5236154a7:src/utils/prefs.ts:generic-api-key:20
