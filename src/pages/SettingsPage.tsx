@@ -12,6 +12,7 @@ import { chatService, dataService, historyService, settingsService } from "@/ser
 import { alpha } from "@/theme/alpha";
 import { FONT_SCALES, type FontSize, isFontSize } from "@/theme/themes";
 import { isMobile, vibrate } from "@/utils/platform";
+import { type Prefs, setPref, usePrefs } from "@/utils/prefs";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -264,6 +265,7 @@ type ToggleKey = "wifi_only" | "save_history" | "show_speed";
 /* ── Component ── */
 
 export function SettingsPage() {
+	const prefs = usePrefs();
 	const navigate = useNavigate();
 	const {
 		settings,
@@ -466,6 +468,43 @@ export function SettingsPage() {
 		</ToggleRow>
 	);
 
+	type BoolPref = { [K in keyof Prefs]: Prefs[K] extends boolean ? K : never }[keyof Prefs];
+	const prefRow = (key: BoolPref, icon: string, title: string, sub: string) => (
+		<ToggleRow>
+			<RowLeft>
+				<RowIcon>
+					<Icon name={icon} size={18} color={tokens.colors.primary} />
+				</RowIcon>
+				<RowText>
+					<RowTitle>{title}</RowTitle>
+					<RowSub>{sub}</RowSub>
+				</RowText>
+			</RowLeft>
+			<Toggle
+				type="button"
+				$on={prefs[key]}
+				onClick={() => setPref(key, !prefs[key])}
+				role="switch"
+				aria-checked={prefs[key]}
+				aria-label={title}
+			/>
+		</ToggleRow>
+	);
+
+	const infoRow = (icon: string, title: string, sub: string) => (
+		<ToggleRow>
+			<RowLeft>
+				<RowIcon>
+					<Icon name={icon} size={18} color={tokens.colors.primary} />
+				</RowIcon>
+				<RowText>
+					<RowTitle>{title}</RowTitle>
+					<RowSub>{sub}</RowSub>
+				</RowText>
+			</RowLeft>
+		</ToggleRow>
+	);
+
 	const actionRow = (
 		icon: string,
 		title: string,
@@ -533,6 +572,57 @@ export function SettingsPage() {
 					</ActionRow>
 					{toggleRow("save_history", "history", "Save chat history", "Keep conversations on this device")}
 					{toggleRow("show_speed", "speed", "Show token speed", "Display generation speed under replies")}
+					{prefRow(
+						"enterSends",
+						"keyboard_return",
+						"Send with Enter",
+						prefs.enterSends ? "Shift+Enter adds a new line" : "Cmd/Ctrl+Enter sends, Enter adds a line",
+					)}
+					{prefRow("showStarters", "emoji_objects", "Suggested prompts", "Show prompt ideas on a new chat")}
+					{prefRow("autoCopy", "content_copy", "Copy replies automatically", "Put each finished reply on the clipboard")}
+					{prefRow(
+						"showPrivacyNote",
+						"enhanced_encryption",
+						"Privacy reminder",
+						"Show the on-device note under the message box",
+					)}
+					<ToggleRow>
+						<RowLeft>
+							<RowIcon>
+								<Icon name="format_size" size={18} color={tokens.colors.primary} />
+							</RowIcon>
+							<RowText>
+								<RowTitle>Chat width</RowTitle>
+								<RowSub>How wide the conversation reads on large windows</RowSub>
+							</RowText>
+						</RowLeft>
+						<Toggle
+							type="button"
+							$on={prefs.chatWidth === "wide"}
+							onClick={() => setPref("chatWidth", prefs.chatWidth === "wide" ? "comfortable" : "wide")}
+							role="switch"
+							aria-checked={prefs.chatWidth === "wide"}
+							aria-label="Wide chat"
+						/>
+					</ToggleRow>
+				</Section>
+
+				<SectionHeading>Connectors</SectionHeading>
+				<Section>
+					{actionRow(
+						"data_object",
+						"Connectors",
+						"Gmail, Google Drive, Outlook, Slack and local folders",
+						() => navigate("/connectors"),
+						{ chevron: true },
+					)}
+				</Section>
+
+				<SectionHeading>Privacy</SectionHeading>
+				<Section>
+					{infoRow("cloud_off", "Runs on this device", "Models answer locally. Prompts and replies never leave it")}
+					{infoRow("wifi", "Network use", "Only to download models you choose")}
+					{infoRow("verified_user", "Telemetry", "None. No analytics, no tracking, no account")}
 				</Section>
 
 				<SectionHeading>Performance</SectionHeading>

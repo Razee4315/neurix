@@ -75,7 +75,8 @@ export interface ThemeDefinition {
 }
 
 const SANS = "'Inter', system-ui, sans-serif";
-const GROTESK = "'Space Grotesk', 'Inter', sans-serif";
+// The platform's own interface face: SF Pro on macOS, Segoe UI on Windows.
+const UI = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif";
 const MONO = "'JetBrains Mono', ui-monospace, monospace";
 // Book faces that ship with the platform: Noto Serif on Android, Palatino or
 // Georgia on desktop. Nothing extra has to be bundled.
@@ -99,47 +100,46 @@ export const DEFAULT_THEME_ID = "obsidian";
 
 export const THEMES: readonly ThemeDefinition[] = [
 	{
-		// Black glass with a sharp cyan accent: the signature look. Geometric
-		// headlines over a faint dot grid.
+		// Warm graphite with a clay accent: a calm, professional desktop look.
+		// Plain sans for the interface, a book serif only for the greeting.
 		id: "obsidian",
-		name: "Obsidian",
-		tagline: "Black glass, sharp cyan",
+		name: "Graphite",
+		tagline: "Warm graphite, clay accent",
 		mode: "dark",
 		colors: {
-			background: "#0e0e0f",
-			surface: "#0e0e0f",
-			surfaceBright: "#2c2c2d",
-			surfaceContainerLowest: "#000000",
-			surfaceContainerLow: "#131314",
-			surfaceContainer: "#1a191b",
-			surfaceContainerHigh: "#201f21",
-			surfaceContainerHighest: "#262627",
-			onSurface: "#ffffff",
-			onSurfaceVariant: "#adaaab",
-			outline: "#767576",
-			outlineVariant: "#484849",
-			primary: "#8ff5ff",
-			primaryDim: "#00deec",
-			primaryContainer: "#00eefc",
-			onPrimary: "#005d63",
-			onPrimaryFixed: "#003f43",
-			onPrimaryContainer: "#005359",
-			secondary: "#ffc46b",
-			secondaryContainer: "#5c3d00",
-			tertiary: "#65afff",
-			error: "#ff716c",
-			errorContainer: "#9f0519",
+			background: "#262624",
+			surface: "#262624",
+			surfaceBright: "#3a3935",
+			surfaceContainerLowest: "#141413",
+			surfaceContainerLow: "#1f1e1d",
+			surfaceContainer: "#2a2927",
+			surfaceContainerHigh: "#30302e",
+			surfaceContainerHighest: "#3a3935",
+			onSurface: "#f5f4ef",
+			onSurfaceVariant: "#a6a49b",
+			outline: "#77756d",
+			outlineVariant: "#45443f",
+			primary: "#d97757",
+			primaryDim: "#c6613f",
+			primaryContainer: "#d97757",
+			onPrimary: "#ffffff",
+			onPrimaryFixed: "#ffffff",
+			onPrimaryContainer: "#ffffff",
+			secondary: "#8fb996",
+			secondaryContainer: "#26402b",
+			tertiary: "#8ab4f8",
+			error: "#ef7a6a",
+			errorContainer: "#5c201a",
 			onError: "#ffffff",
 		},
 		style: {
-			fonts: { headline: GROTESK, body: SANS, label: SANS },
-			radius: { sm: "0.125rem", md: "0.25rem", lg: "0.5rem", xl: "0.75rem", pill: "9999px" },
-			backdrop:
-				"radial-gradient(circle at 1px 1px, rgb(var(--c-on-surface) / 0.06) 1px, transparent 1.5px) 0 0 / 22px 22px",
+			fonts: { headline: UI, body: UI, label: UI },
+			radius: { sm: "0.25rem", md: "0.375rem", lg: "0.5rem", xl: "0.75rem", pill: "9999px" },
+			backdrop: "none",
 			overlay: "none",
 			overlayOpacity: 0,
 			headlineTracking: "-0.01em",
-			icons: { regular: "duotone", small: "bold" },
+			icons: { regular: "regular", small: "regular" },
 		},
 	},
 	{

@@ -28,11 +28,9 @@ const NavOuter = styled.div`
   display: flex;
   justify-content: center;
 
+  /* Wide windows use the sidebar instead. */
   @media (min-width: ${tokens.breakpoints.wide}) {
-    width: 88px;
-    border-top: none;
-    border-right: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
-    padding-bottom: 0;
+    display: none;
   }
 `;
 
