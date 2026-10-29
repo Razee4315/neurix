@@ -3,6 +3,29 @@
 All notable changes to Neurix. Finding IDs (F-, M-, D-, C-, O-) refer to
 [AUDIT_PROGRESS.md](AUDIT_PROGRESS.md).
 
+## v0.6.0
+
+A new look on every screen, and connectors: the assistant can read your own
+sources, on the device and read only.
+
+### Interface
+- Graphite, a warm graphite theme with a clay accent, is the new default (it replaces Obsidian; the old choice carries over)
+- New Neurix logo and app icon on Windows, macOS, iOS and Android, including a proper Android adaptive and themed icon
+- Desktop: a sidebar with recent chats, search and an account menu, the model picker next to Send, and Cmd/Ctrl+, for Settings
+- Phones: the greeting, chips and controls are sized for touch, the source chips under the message box scroll with a fade, and the status and navigation bars follow the theme (dark icons on Paper)
+- Settings that only mean something with a keyboard or a wide window (Send with Enter, Chat width) are hidden on phones
+
+### Connectors
+- GitHub: public repositories, their README and open issues and pull requests (desktop and Android)
+- Gmail: the newest emails, read only, with an app password that is kept in memory only (desktop and Android)
+- Local folders: text files in folders you pick (desktop)
+- Documents: text, Markdown, CSV and JSON files you pick on a phone, copied into the app (Android)
+- The material that best matches your question goes next to it, and each source can be switched off per chat from a chip under the message box
+
+### Fixes
+- The Android build no longer defines the launcher background color twice
+- Labels on clay buttons meet WCAG AA contrast
+
 ## v0.5.0
 
 The inference engine was replaced. Answers are better and arrive sooner,

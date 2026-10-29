@@ -50,7 +50,7 @@ Neurix runs large language models entirely on your computer or phone. No server,
 - The model runs locally on your machine's CPU
 - Chat with it like any AI assistant; it just happens to be running on your own hardware
 
-The same app runs on the desktop and on Android. On a wide window you get a side rail for navigation and a centered reading column; on a phone you get a bottom tab bar.
+The same app runs on the desktop and on Android. On a wide window you get a sidebar with your recent chats and a centered reading column; on a phone you get a bottom tab bar, bottom sheets and touch-sized controls.
 
 ---
 
@@ -69,8 +69,12 @@ The same app runs on the desktop and on Android. On a wide window you get a side
 <td align="center"><img src="Screenshots/desktop/history.png" width="420" /><br /><b>Chat History</b></td>
 </tr>
 <tr>
+<td align="center"><img src="Screenshots/desktop/connectors.png" width="420" /><br /><b>Connectors</b></td>
 <td align="center"><img src="Screenshots/desktop/settings.png" width="420" /><br /><b>Settings</b></td>
+</tr>
+<tr>
 <td align="center"><img src="Screenshots/desktop/chat-paper.png" width="420" /><br /><b>Paper theme</b></td>
+<td></td>
 </tr>
 </table>
 </div>
@@ -80,19 +84,17 @@ The same app runs on the desktop and on Android. On a wide window you get a side
 <div align="center">
 <table>
 <tr>
-<td align="center"><img src="Screenshots/Model_Store.jpeg" width="200" /><br /><b>Model Store</b></td>
-<td align="center"><img src="Screenshots/Download_page.jpeg" width="200" /><br /><b>Downloading</b></td>
-<td align="center"><img src="Screenshots/Chat.jpeg" width="200" /><br /><b>Chat</b></td>
+<td align="center"><img src="Screenshots/mobile/welcome.png" width="200" /><br /><b>New chat</b></td>
+<td align="center"><img src="Screenshots/mobile/chat.png" width="200" /><br /><b>Chat</b></td>
+<td align="center"><img src="Screenshots/mobile/connectors.png" width="200" /><br /><b>Connectors</b></td>
 </tr>
 <tr>
-<td align="center"><img src="Screenshots/Chat_History.jpeg" width="200" /><br /><b>Chat History</b></td>
-<td align="center"><img src="Screenshots/Setting_Page_1.jpeg" width="200" /><br /><b>Settings</b></td>
-<td align="center"><img src="Screenshots/Setting_page_2.jpeg" width="200" /><br /><b>Inference Settings</b></td>
+<td align="center"><img src="Screenshots/mobile/store.png" width="200" /><br /><b>Model Store</b></td>
+<td align="center"><img src="Screenshots/mobile/models.png" width="200" /><br /><b>My Models</b></td>
+<td align="center"><img src="Screenshots/mobile/settings.png" width="200" /><br /><b>Settings</b></td>
 </tr>
 </table>
 </div>
-
-> The Android screenshots predate the current interface and will be refreshed.
 
 ---
 
@@ -105,11 +107,12 @@ The same app runs on the desktop and on Android. On a wide window you get a side
 - **Reasoning models**: optional "Think" mode, with the model's reasoning shown separately from its answer
 - **Fast follow-ups**: the conversation stays in the model's memory, so a reply starts without re-reading the whole chat
 - **Offline after download**: use anywhere, anytime, no internet needed
-- **Private by design**: conversations never leave your device
+- **Private by design**: conversations never leave your device. Connectors only fetch what you connect, and only to read it
 - **Model manager**: download, switch, unload and delete models; warns when a model is too large for the device
 - **Chat history**: auto-saved locally, searchable by title and message text
 - **Characters**: built-in and custom personas, each with its own instructions, creativity, word variety and reply length
-- **Themes**: four, each with its own typeface, shapes, texture and icon style: Obsidian (black glass, sharp cyan), Paper (serif ink on warm stock), Phosphor (amber terminal) and Dusk (soft and rounded). Four text sizes
+- **Connectors**: let the assistant read from your own sources, on the device, read only. GitHub repositories and a Gmail inbox (with an app password) work on the desktop and on Android; the desktop app reads whole local folders, and on a phone you pick documents (text, Markdown, CSV, JSON) to share. Only the parts that match your question are handed to the model
+- **Themes**: four, each with its own typeface, shapes and texture: Graphite (warm graphite with a clay accent, the default), Paper (serif ink on warm stock), Phosphor (amber terminal) and Dusk (soft and rounded). Four text sizes
 - **Resume downloads**: pause and continue where you left off; every download is checked against a SHA-256 checksum. On Android a download keeps going while the app is in the background
 - **Speed test**: measure tokens per second for any model on your own machine
 - **Backup**: export chats and custom characters to a file and import them on another device, including from phone to desktop and back
@@ -201,7 +204,8 @@ npm run build:android       # Android APK/AAB
 ```
 
 Release builds for Windows and Android are made by GitHub Actions
-([`release.yml`](.github/workflows/release.yml)) when a version tag is pushed.
+([`release.yml`](.github/workflows/release.yml)) on every push to `main` that
+changes the app: the patch version is bumped, tagged and published.
 
 ### Commands
 
