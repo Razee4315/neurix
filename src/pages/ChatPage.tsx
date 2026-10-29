@@ -7,12 +7,13 @@ import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { chatService, historyService, modelService } from "@/services";
 import { CHAT_STARTED } from "@/services/historyService";
-import type { InferenceEvent } from "@/services/types";
+import type { Character, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { copyText, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
+import { relationshipOf } from "@/utils/persona";
 import {
 	connectorContext,
 	setAllDocsEnabled,
@@ -50,6 +51,11 @@ import {
 	Bubble,
 	BubbleBody,
 	ComposerBar,
+	FriendAvatar,
+	FriendGreeting,
+	FriendHero,
+	FriendMeta,
+	FriendName,
 	ComposerBox,
 	ComposerChips,
 	FolderChip,
@@ -167,6 +173,16 @@ interface RunOptions {
 	context: Message[];
 	/** Existing reply text to extend (the "Continue" action). */
 	prefix?: string;
+}
+
+/**
+ * A friend opens every chat with its greeting, which is shown but is not
+ * part of the history the model sees. Tell it what it said, so a reply to
+ * the greeting ("good, you?") makes sense.
+ */
+function withGreeting(character: Character | null | undefined, systemPrompt: string): string {
+	const greeting = character?.persona ? character.greeting?.trim() : "";
+	return greeting ? `${systemPrompt}\nYou started this chat by saying: "${greeting}"` : systemPrompt;
 }
 
 /* ── Component ── */
@@ -520,7 +536,7 @@ export function ChatPage() {
 			await chatService.runInference(
 				{
 					prompt: withContext(sources, prompt),
-					systemPrompt: character?.system_prompt ?? settings?.system_prompt ?? "",
+					systemPrompt: withGreeting(character, character?.system_prompt ?? settings?.system_prompt ?? ""),
 					history: buildHistory(context),
 					temperature: character?.temperature ?? settings?.temperature ?? 0.7,
 					topP: character?.top_p ?? settings?.top_p ?? 0.9,
@@ -844,7 +860,40 @@ export function ChatPage() {
 			>
 				<ChatContainer>
 					<MessagesArea ref={scrollRef} onScroll={handleScroll} $wide={prefs.chatWidth === "wide"}>
-						{messages.length === 0 && !showStream && (
+						{messages.length === 0 && !showStream && activeCharacter?.persona && (
+							<Welcome>
+								<FriendHero>
+									<FriendAvatar $accent={accent}>
+										<Icon name={activeCharacter.icon || "person"} size={30} />
+									</FriendAvatar>
+									<FriendName>{characterName}</FriendName>
+									<FriendMeta>
+										{relationshipOf(activeCharacter.persona).label}
+										{activeCharacter.description ? ` · ${activeCharacter.description}` : ""}
+									</FriendMeta>
+								</FriendHero>
+								{activeCharacter.greeting && (
+									<FriendGreeting $accent={accent}>{activeCharacter.greeting}</FriendGreeting>
+								)}
+								{starters.length > 0 && (
+									<StartersGrid>
+										{starters.map((starter) => (
+											<StarterChip
+												key={starter}
+												type="button"
+												$accent={accent}
+												onClick={() => fillInput(starter)}
+											>
+												<span>{starter}</span>
+												<Icon name="arrow_outward" size={14} />
+											</StarterChip>
+										))}
+									</StartersGrid>
+								)}
+							</Welcome>
+						)}
+
+						{messages.length === 0 && !showStream && !activeCharacter?.persona && (
 							<Welcome>
 								<WelcomeTitle>
 									<NeurixMark size={30} />

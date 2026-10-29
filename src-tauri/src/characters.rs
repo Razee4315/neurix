@@ -33,6 +33,40 @@ pub struct Character {
     /// Drives the "recently used" ordering in the picker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_used_at: Option<String>,
+    /// Set for friends made in the friend builder: the choices it compiles
+    /// into `system_prompt`, kept so the friend can be edited later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persona: Option<Persona>,
+}
+
+/// Who a friend is and how they talk (see `utils/persona.ts`). Only the
+/// frontend reads it; the backend stores and bounds it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Persona {
+    #[serde(default)]
+    pub relationship: String,
+    #[serde(default)]
+    pub traits: Vec<String>,
+    #[serde(default)]
+    pub backstory: String,
+    /// Facts about the user the friend always keeps in mind.
+    #[serde(default)]
+    pub memories: Vec<String>,
+    #[serde(default)]
+    pub style: String,
+    #[serde(default)]
+    pub user_name: String,
+    /// 0 very casual to 4 formal.
+    #[serde(default)]
+    pub formality: u8,
+    /// 0 serious to 4 silly.
+    #[serde(default)]
+    pub humor: u8,
+    /// 0 short, 1 medium, 2 long.
+    #[serde(default)]
+    pub length: u8,
+    #[serde(default)]
+    pub emoji: bool,
 }
 
 /// Returns the built-in character presets.
@@ -63,6 +97,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             is_preset: true,
             created_at: None,
             last_used_at: None,
+            persona: None,
         },
         Character {
             id: "preset:friendly".into(),
@@ -83,6 +118,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             is_preset: true,
             created_at: None,
             last_used_at: None,
+            persona: None,
         },
         Character {
             id: "preset:professional".into(),
@@ -104,6 +140,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             is_preset: true,
             created_at: None,
             last_used_at: None,
+            persona: None,
         },
         Character {
             id: "preset:concise".into(),
@@ -124,6 +161,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             is_preset: true,
             created_at: None,
             last_used_at: None,
+            persona: None,
         },
         Character {
             id: "preset:tutor".into(),
@@ -145,6 +183,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             is_preset: true,
             created_at: None,
             last_used_at: None,
+            persona: None,
         },
         Character {
             id: "preset:creative".into(),
@@ -166,6 +205,7 @@ pub fn get_preset_characters() -> Vec<Character> {
             is_preset: true,
             created_at: None,
             last_used_at: None,
+            persona: None,
         },
     ]
 }

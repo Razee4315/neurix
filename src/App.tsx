@@ -41,6 +41,9 @@ const AboutPage = lazy(() =>
 const ConnectorsPage = lazy(() =>
 	import("@/pages/ConnectorsPage").then((m) => ({ default: m.ConnectorsPage })),
 );
+const FriendEditPage = lazy(() =>
+	import("@/pages/FriendEditPage").then((m) => ({ default: m.FriendEditPage })),
+);
 const CharacterEditPage = lazy(() =>
 	import("@/pages/CharacterEditPage").then((m) => ({ default: m.CharacterEditPage })),
 );
@@ -81,6 +84,8 @@ function App() {
 								<Route path="/connectors" element={<ConnectorsPage />} />
 								<Route path="/character/new" element={<CharacterEditPage />} />
 								<Route path="/character/edit" element={<CharacterEditPage />} />
+								<Route path="/friend/new" element={<FriendEditPage />} />
+								<Route path="/friend/edit" element={<FriendEditPage />} />
 								<Route path="*" element={<Navigate to="/" replace />} />
 							</Routes>
 						</Suspense>

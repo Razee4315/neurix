@@ -100,6 +100,28 @@ export interface BenchmarkResult {
 	context_length: number;
 }
 
+/** Who a friend is and how they talk. Levels are small integers. */
+export interface Persona {
+	/** Id from `RELATIONSHIPS`: friend, mentor, coach and so on. */
+	relationship: string;
+	/** Trait ids from `TRAITS`, at most five. */
+	traits: string[];
+	backstory: string;
+	/** Facts about the user the friend always keeps in mind. */
+	memories: string[];
+	/** Speech habits and catchphrases, in the user's words. */
+	style: string;
+	/** What the friend calls the user. */
+	user_name: string;
+	/** 0 very casual … 4 formal. */
+	formality: number;
+	/** 0 serious … 4 silly. */
+	humor: number;
+	/** 0 short, 1 medium, 2 long. */
+	length: number;
+	emoji: boolean;
+}
+
 export interface Character {
 	/** "preset:<slug>" for built-ins, "custom:<uuid>" for user-created. */
 	id: string;
@@ -127,6 +149,12 @@ export interface Character {
 	 */
 	greeting?: string;
 	is_preset: boolean;
+	/**
+	 * Set for friends made in the friend builder: the choices the builder
+	 * compiles into `system_prompt`, kept so the friend can be edited the
+	 * same way later. See `utils/persona.ts`.
+	 */
+	persona?: Persona;
 	created_at?: string;
 	/**
 	 * ISO timestamp of the most recent time the user selected this character

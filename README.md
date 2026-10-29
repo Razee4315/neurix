@@ -111,6 +111,7 @@ The same app runs on the desktop and on Android. On a wide window you get a side
 - **Model manager**: download, switch, unload and delete models; warns when a model is too large for the device
 - **Chat history**: auto-saved locally, searchable by title and message text
 - **Characters**: built-in and custom personas, each with its own instructions, creativity, word variety and reply length
+- **Friends**: create your own characters to talk to, with a name, a relationship (friend, mentor, coach, study buddy and more), personality traits, tone, a backstory and things they remember about you. Start from a template and adjust anything; a live preview and a "Say hi" test show how they will sound
 - **Connectors**: let the assistant read from your own sources, on the device, read only. GitHub repositories and a Gmail inbox (with an app password) work on the desktop and on Android; the desktop app reads whole local folders, and on a phone you pick documents (text, Markdown, CSV, JSON) to share. Only the parts that match your question are handed to the model
 - **Themes**: four, each with its own typeface, shapes and texture: Graphite (warm graphite with a clay accent, the default), Paper (serif ink on warm stock), Phosphor (amber terminal) and Dusk (soft and rounded). Four text sizes
 - **Resume downloads**: pause and continue where you left off; every download is checked against a SHA-256 checksum. On Android a download keeps going while the app is in the background

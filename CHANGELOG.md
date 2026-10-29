@@ -15,6 +15,13 @@ sources, on the device and read only.
 - Phones: the greeting, chips and controls are sized for touch, the source chips under the message box scroll with a fade, and the status and navigation bars follow the theme (dark icons on Paper)
 - Settings that only mean something with a keyboard or a wide window (Send with Enter, Chat width) are hidden on phones
 
+### Friends
+- Create a friend in a few taps: start from one of eight people (best friend, mentor, coach, study buddy, roommate, storyteller, listener, language partner), then change anything
+- Choose who they are to you, up to five personality traits, how casual, funny and long-winded they are, and whether they use emojis
+- Optional backstory, speech habits, a first message, and things they remember about you, which stay on the device and are left out when a friend is shared
+- A live card shows the friend as you build it, and "Say hi" tries them on the loaded model before you save
+- A friend's chat opens with their face, name and greeting, and suggestions that fit the relationship
+
 ### Connectors
 - GitHub: public repositories, their README and open issues and pull requests (desktop and Android)
 - Gmail: the newest emails, read only, with an app password that is kept in memory only (desktop and Android)

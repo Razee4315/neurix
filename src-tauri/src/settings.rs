@@ -38,6 +38,15 @@ const MAX_CHAR_ID: usize = 128;
 const MAX_CHAR_ICON: usize = 32;
 const MAX_TIMESTAMP: usize = 40;
 const MAX_REF_ID: usize = 128;
+/// Storage ceilings for a friend's persona. The builder's own limits are
+/// tighter (see `utils/persona.ts`).
+const MAX_PERSONA_WORD: usize = 32;
+const MAX_PERSONA_TRAITS: usize = 8;
+const MAX_PERSONA_BACKSTORY: usize = 2000;
+const MAX_PERSONA_MEMORIES: usize = 16;
+const MAX_PERSONA_MEMORY: usize = 240;
+const MAX_PERSONA_STYLE: usize = 400;
+const MAX_PERSONA_USER_NAME: usize = 64;
 /// Longest reply a character may request. The engine additionally caps a
 /// reply at half the context window, so the prompt always has room.
 pub const MAX_REPLY_TOKENS: u32 = 2048;
@@ -170,6 +179,23 @@ impl Settings {
             for s in ch.conversation_starters.iter_mut() {
                 truncate_in_place(s, MAX_CHAR_STARTER_LEN);
             }
+            if let Some(p) = ch.persona.as_mut() {
+                truncate_in_place(&mut p.relationship, MAX_PERSONA_WORD);
+                p.traits.truncate(MAX_PERSONA_TRAITS);
+                for t in p.traits.iter_mut() {
+                    truncate_in_place(t, MAX_PERSONA_WORD);
+                }
+                truncate_in_place(&mut p.backstory, MAX_PERSONA_BACKSTORY);
+                p.memories.truncate(MAX_PERSONA_MEMORIES);
+                for m in p.memories.iter_mut() {
+                    truncate_in_place(m, MAX_PERSONA_MEMORY);
+                }
+                truncate_in_place(&mut p.style, MAX_PERSONA_STYLE);
+                truncate_in_place(&mut p.user_name, MAX_PERSONA_USER_NAME);
+                p.formality = p.formality.min(4);
+                p.humor = p.humor.min(4);
+                p.length = p.length.min(2);
+            }
         }
     }
 }
@@ -287,7 +313,47 @@ mod tests {
             is_preset: false,
             created_at: None,
             last_used_at: None,
+            persona: None,
         }
+    }
+
+    #[test]
+    fn sanitize_bounds_a_friends_persona() {
+        let mut friend = character("custom:f");
+        friend.persona = Some(crate::characters::Persona {
+            relationship: "r".repeat(1_000),
+            traits: vec!["t".repeat(100); 50],
+            backstory: "b".repeat(50_000),
+            memories: vec!["m".repeat(1_000); 100],
+            style: "s".repeat(5_000),
+            user_name: "u".repeat(500),
+            formality: 200,
+            humor: 9,
+            length: 7,
+            emoji: true,
+        });
+        let mut s = Settings { custom_characters: vec![friend], ..Settings::default() };
+        s.sanitize();
+        let p = s.custom_characters[0].persona.as_ref().expect("persona kept");
+        assert_eq!(p.relationship.len(), MAX_PERSONA_WORD);
+        assert_eq!(p.traits.len(), MAX_PERSONA_TRAITS);
+        assert!(p.traits.iter().all(|t| t.len() == MAX_PERSONA_WORD));
+        assert_eq!(p.backstory.len(), MAX_PERSONA_BACKSTORY);
+        assert_eq!(p.memories.len(), MAX_PERSONA_MEMORIES);
+        assert!(p.memories.iter().all(|m| m.len() == MAX_PERSONA_MEMORY));
+        assert_eq!(p.style.len(), MAX_PERSONA_STYLE);
+        assert_eq!(p.user_name.len(), MAX_PERSONA_USER_NAME);
+        assert_eq!((p.formality, p.humor, p.length), (4, 4, 2));
+        assert!(p.emoji);
+    }
+
+    #[test]
+    fn a_character_without_a_persona_still_loads() {
+        let json = r##"{"id":"custom:x","name":"X","description":"","icon":"bolt","system_prompt":"p","temperature":0.7,"top_p":0.9,"max_tokens":256,"is_preset":false}"##;
+        let ch: Character = serde_json::from_str(json).expect("old characters parse");
+        assert!(ch.persona.is_none());
+        let back = serde_json::to_string(&ch).unwrap();
+        assert!(!back.contains("persona"), "{back}");
     }
 
     #[test]

@@ -17,7 +17,7 @@ import styled from "styled-components";
  */
 
 const SECTIONS = [
-	{ icon: "chat_bubble", label: "Chats", path: "/chat", owns: ["/character"] },
+	{ icon: "chat_bubble", label: "Chats", path: "/chat", owns: ["/character", "/friend"] },
 	{ icon: "deployed_code", label: "Models", path: "/models", owns: [] },
 	{ icon: "storefront", label: "Model library", path: "/store", owns: ["/downloading"] },
 	{ icon: "plug", label: "Connectors", path: "/connectors", owns: [] },
@@ -406,6 +406,10 @@ export function Sidebar() {
 						<MenuItem type="button" role="menuitem" onClick={() => go("/models")}>
 							<Icon name="deployed_code" size={16} />
 							Manage models
+						</MenuItem>
+						<MenuItem type="button" role="menuitem" onClick={() => go("/friend/new")}>
+							<Icon name="diversity_3" size={16} />
+							New friend
 						</MenuItem>
 						<MenuItem type="button" role="menuitem" onClick={() => go("/character/new")}>
 							<Icon name="person" size={16} />

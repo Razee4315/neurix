@@ -12,7 +12,7 @@ import styled from "styled-components";
  * where the user is.
  */
 const NAV_TABS = [
-	{ icon: "chat_bubble", label: "Chat", path: "/chat", owns: ["/character"] },
+	{ icon: "chat_bubble", label: "Chat", path: "/chat", owns: ["/character", "/friend"] },
 	{ icon: "deployed_code", label: "Models", path: "/models", owns: [] },
 	{ icon: "storefront", label: "Store", path: "/store", owns: ["/downloading"] },
 	{ icon: "plug", label: "Connect", path: "/connectors", owns: [] },

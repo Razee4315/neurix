@@ -261,6 +261,58 @@ export const WelcomeTitle = styled.h2`
   svg { color: ${tokens.colors.primary}; }
 `;
 
+/* A friend's empty chat: their face and name, then their greeting as the
+   first message, so the chat opens the way talking to a person does. */
+export const FriendHero = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+`;
+
+export const FriendAvatar = styled.div<{ $accent: string }>`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 0.25rem;
+  border-radius: 50%;
+  background: ${({ $accent }) => alpha($accent, "26")};
+  border: 1px solid ${({ $accent }) => alpha($accent, "55")};
+  color: ${({ $accent }) => $accent};
+`;
+
+export const FriendName = styled.h2`
+  margin: 0;
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize["2xl"]};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  color: ${tokens.colors.onSurface};
+  letter-spacing: -0.01em;
+`;
+
+export const FriendMeta = styled.div`
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.onSurfaceVariant};
+  max-width: 26rem;
+`;
+
+export const FriendGreeting = styled.div<{ $accent: string }>`
+  align-self: center;
+  max-width: min(30rem, 92%);
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 16px 16px 16px 4px;
+  background: ${tokens.colors.surfaceContainerHigh};
+  border-left: 3px solid ${({ $accent }) => $accent};
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.base};
+  line-height: 1.55;
+  text-align: left;
+  white-space: pre-wrap;
+`;
+
 export const WelcomeText = styled.p`
   font-size: ${tokens.typography.fontSize.base};
   color: ${tokens.colors.onSurfaceVariant};
