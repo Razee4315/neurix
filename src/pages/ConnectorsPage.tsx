@@ -3,12 +3,16 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { pickFolder, readFolder } from "@/services/connectorService";
+import { addFolder, removeFolder, setFolderEnabled, useFolders } from "@/utils/connectors";
+import { useState } from "react";
 import styled from "styled-components";
 
 /**
- * Connectors: the tools the assistant can read from. This build shows the
- * catalog; signing in to each service comes in a later release, so every
- * Connect button says so instead of pretending to connect.
+ * Connectors: the tools the assistant can read from. Local folders work
+ * now: the folder is picked in a native dialog and read on this device.
+ * Signing in to online services comes in a later release, so those
+ * Connect buttons say so instead of pretending to connect.
  */
 
 interface Connector {
@@ -173,6 +177,105 @@ const ConnectBtn = styled.button`
   &:hover { background: ${tokens.colors.surfaceContainerHighest}; }
 `;
 
+const Badge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 24px;
+  padding: 0 0.5rem;
+  border-radius: ${tokens.borderRadius.circle};
+  background: ${alpha(tokens.colors.secondary, "1f")};
+  color: ${tokens.colors.secondary};
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  flex-shrink: 0;
+`;
+
+const Heading = styled.h2`
+  margin: 1.75rem 0 0.625rem;
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const FolderList = styled.div`
+  display: flex;
+  flex-direction: column;
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "99")};
+  border-radius: ${tokens.borderRadius.xl};
+  overflow: hidden;
+`;
+
+const FolderRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: ${tokens.colors.surfaceContainer};
+
+  & + & { border-top: 1px solid ${alpha(tokens.colors.outlineVariant, "80")}; }
+`;
+
+const FolderText = styled.div`
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+
+  strong {
+    font-size: ${tokens.typography.fontSize.sm};
+    font-weight: ${tokens.typography.fontWeight.medium};
+    color: ${tokens.colors.onSurface};
+  }
+
+  span {
+    font-size: ${tokens.typography.fontSize.xs};
+    color: ${tokens.colors.onSurfaceVariant};
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+`;
+
+const Switch = styled.button<{ $on: boolean }>`
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border: none;
+  border-radius: 10px;
+  background: ${({ $on }) => ($on ? tokens.colors.primary : tokens.colors.surfaceContainerHighest)};
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background ${tokens.transitions.fast};
+
+  &::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: ${({ $on }) => ($on ? "18px" : "2px")};
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    transition: left ${tokens.transitions.fast};
+  }
+`;
+
+const IconBtn = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: ${tokens.borderRadius.lg};
+  background: transparent;
+  color: ${tokens.colors.onSurfaceVariant};
+  cursor: pointer;
+
+  &:hover { background: ${tokens.colors.surfaceContainerHighest}; color: ${tokens.colors.onSurface}; }
+`;
+
 const Custom = styled.button`
   display: flex;
   align-items: center;
@@ -195,7 +298,24 @@ const Custom = styled.button`
 
 export function ConnectorsPage() {
 	const { showToast } = useToast();
+	const folders = useFolders();
+	const [picking, setPicking] = useState(false);
 	const comingSoon = (name: string) => showToast(`${name} connects in the next release`, "info");
+
+	const connectFolder = async () => {
+		setPicking(true);
+		try {
+			const path = await pickFolder();
+			if (!path) return;
+			const snapshot = await readFolder(path, 0);
+			addFolder(snapshot);
+			showToast(`Connected ${snapshot.name}: ${snapshot.text_files} readable files`, "success");
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : String(err), "error");
+		} finally {
+			setPicking(false);
+		}
+	};
 
 	return (
 		<AppLayout title="Connectors" back="/settings">
@@ -216,14 +336,63 @@ export function ConnectorsPage() {
 									<strong>{c.name}</strong>
 									<span>{c.access}</span>
 								</Name>
-								<ConnectBtn type="button" onClick={() => comingSoon(c.name)}>
-									Connect
-								</ConnectBtn>
+								{c.id === "files" ? (
+									<>
+										{folders.length > 0 && (
+											<Badge>
+												<Icon name="check" size={12} />
+												{folders.length}
+											</Badge>
+										)}
+										<ConnectBtn type="button" onClick={connectFolder} disabled={picking}>
+											{folders.length > 0 ? "Add" : "Connect"}
+										</ConnectBtn>
+									</>
+								) : (
+									<ConnectBtn type="button" onClick={() => comingSoon(c.name)}>
+										Connect
+									</ConnectBtn>
+								)}
 							</CardTop>
 							<Description>{c.description}</Description>
 						</Card>
 					))}
 				</Grid>
+				{folders.length > 0 && (
+					<>
+						<Heading>Connected folders</Heading>
+						<FolderList>
+							{folders.map((f) => (
+								<FolderRow key={f.path}>
+									<Icon name="folder_open" size={18} color={tokens.colors.primary} />
+									<FolderText>
+										<strong>{f.name}</strong>
+										<span title={f.path}>
+											{f.textFiles} readable of {f.files} files · {f.path}
+										</span>
+									</FolderText>
+									<Switch
+										type="button"
+										role="switch"
+										$on={f.enabled}
+										aria-checked={f.enabled}
+										aria-label={`Use ${f.name} in chats`}
+										title={f.enabled ? "Used in chats" : "Not used in chats"}
+										onClick={() => setFolderEnabled(f.path, !f.enabled)}
+									/>
+									<IconBtn
+										type="button"
+										aria-label={`Disconnect ${f.name}`}
+										title="Disconnect"
+										onClick={() => removeFolder(f.path)}
+									>
+										<Icon name="close" size={16} />
+									</IconBtn>
+								</FolderRow>
+							))}
+						</FolderList>
+					</>
+				)}
 				<Custom type="button" onClick={() => comingSoon("Custom MCP servers")}>
 					<Icon name="add" size={18} />
 					<span>

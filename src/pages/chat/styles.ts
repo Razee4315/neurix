@@ -353,6 +353,24 @@ export const ComposerBar = styled.div`
   min-height: 34px;
 `;
 
+/* A connected folder in the composer: lit when it is used for this chat. */
+export const FolderChip = styled.button<{ $on: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 12rem;
+  height: 32px;
+  padding: 0 0.625rem;
+  border-radius: ${tokens.borderRadius.lg};
+  border: 1px solid ${({ $on }) => ($on ? alpha(tokens.colors.primary, "80") : alpha(tokens.colors.outlineVariant, "cc"))};
+  background: ${({ $on }) => ($on ? alpha(tokens.colors.primary, "1f") : "transparent")};
+  color: ${({ $on }) => ($on ? tokens.colors.primary : tokens.colors.onSurfaceVariant)};
+  font-size: ${tokens.typography.fontSize.sm};
+  cursor: pointer;
+
+  > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+`;
+
 export const ComposerSpacer = styled.div`
   flex: 1;
 `;

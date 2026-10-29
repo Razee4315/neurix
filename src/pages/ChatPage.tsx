@@ -12,6 +12,7 @@ import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { copyText, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
+import { folderContext, setFolderEnabled, useFolders } from "@/utils/connectors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
@@ -42,6 +43,7 @@ import {
 	ComposerBar,
 	ComposerBox,
 	ComposerSpacer,
+	FolderChip,
 	ComposerNote,
 	BubbleLabel,
 	BubbleWrap,
@@ -168,6 +170,7 @@ export function ChatPage() {
 	const { activeCharacter, allCharacters, setActiveCharacter, loaded: charactersLoaded } = useCharacters();
 	const { showToast } = useToast();
 	const prefs = usePrefs();
+	const connectedFolders = useFolders();
 
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState(readDraft);
@@ -501,10 +504,13 @@ export function ChatPage() {
 		};
 
 		try {
+			const baseSystem = character?.system_prompt ?? settings?.system_prompt ?? "";
+			const folders = await folderContext();
+			if (!isCurrent()) return;
 			await chatService.runInference(
 				{
 					prompt,
-					systemPrompt: character?.system_prompt ?? settings?.system_prompt ?? "",
+					systemPrompt: folders ? `${baseSystem}\n\n${folders}`.trim() : baseSystem,
 					history: buildHistory(context),
 					temperature: character?.temperature ?? settings?.temperature ?? 0.7,
 					topP: character?.top_p ?? settings?.top_p ?? 0.9,
@@ -1020,6 +1026,23 @@ export function ChatPage() {
 										{thinkOn && <ToolHint>Reasons first: slower, more careful</ToolHint>}
 									</ComposerTools>
 								)}
+								{connectedFolders.map((folder) => (
+									<FolderChip
+										key={folder.path}
+										type="button"
+										$on={folder.enabled}
+										aria-pressed={folder.enabled}
+										title={
+											folder.enabled
+												? `Reading ${folder.path} for this chat. Click to stop.`
+												: `Click to use ${folder.path} in this chat`
+										}
+										onClick={() => setFolderEnabled(folder.path, !folder.enabled)}
+									>
+										<Icon name="folder_open" size={14} />
+										<span>{folder.name}</span>
+									</FolderChip>
+								))}
 								<ComposerSpacer />
 								<ModelSelect disabled={isGenerating || isLoadingModel} />
 								{isGenerating ? (

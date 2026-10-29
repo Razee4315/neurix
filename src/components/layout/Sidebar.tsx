@@ -5,7 +5,8 @@ import { historyService } from "@/services";
 import type { ConversationMeta } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
-import { useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -140,13 +141,77 @@ const Empty = styled.div`
   color: ${tokens.colors.onSurfaceVariant};
 `;
 
-const Foot = styled.div`
+const FootWrap = styled.div`
+  position: relative;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid ${alpha(tokens.colors.outlineVariant, "80")};
+`;
+
+const Foot = styled.button<{ $open: boolean }>`
   display: flex;
   align-items: center;
   gap: 0.625rem;
-  margin-top: 0.5rem;
-  padding: 0.625rem;
-  border-top: 1px solid ${alpha(tokens.colors.outlineVariant, "80")};
+  width: 100%;
+  padding: 0.5rem 0.625rem;
+  border: none;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${({ $open }) => ($open ? tokens.colors.surfaceContainerHigh : "transparent")};
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  > svg { margin-left: auto; color: ${tokens.colors.onSurfaceVariant}; }
+`;
+
+/* The account menu, opening upwards from the foot like Claude's. */
+const Menu = styled.div`
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  padding: 0.375rem;
+  background: ${tokens.colors.surfaceContainer};
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
+  border-radius: ${tokens.borderRadius.xl};
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+  z-index: ${tokens.zIndex.overlay};
+`;
+
+const MenuHeader = styled.div`
+  padding: 0.375rem 0.625rem 0.5rem;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const MenuItem = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  height: 34px;
+  padding: 0 0.625rem;
+  border: none;
+  border-radius: ${tokens.borderRadius.lg};
+  background: transparent;
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.sm};
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { background: ${tokens.colors.surfaceContainerHighest}; }
+  > kbd {
+    margin-left: auto;
+    font-family: inherit;
+    font-size: ${tokens.typography.fontSize.xs};
+    color: ${tokens.colors.onSurfaceVariant};
+  }
+`;
+
+const MenuDivider = styled.div`
+  height: 1px;
+  margin: 0.375rem 0.25rem;
+  background: ${alpha(tokens.colors.outlineVariant, "99")};
 `;
 
 const Avatar = styled.span`
@@ -187,6 +252,8 @@ export function Sidebar() {
 	const navigate = useNavigate();
 	const { activeModel } = useAppContext();
 	const [recents, setRecents] = useState<ConversationMeta[] | null>(null);
+	const [menuOpen, setMenuOpen] = useState(false);
+	const footRef = useRef<HTMLDivElement>(null);
 	const openId = (location.state as { conversationId?: string } | null)?.conversationId;
 
 	// Re-read on every navigation so a chat saved a moment ago shows up.
@@ -201,6 +268,37 @@ export function Sidebar() {
 			alive = false;
 		};
 	}, [location.key]);
+
+	useEffect(() => {
+		if (!menuOpen) return;
+		const onPointer = (e: PointerEvent) => {
+			if (!footRef.current?.contains(e.target as Node)) setMenuOpen(false);
+		};
+		const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
+		document.addEventListener("pointerdown", onPointer);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("pointerdown", onPointer);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [menuOpen]);
+
+	// Cmd/Ctrl+, opens Settings, as in most desktop apps.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+				e.preventDefault();
+				navigate("/settings");
+			}
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, [navigate]);
+
+	const go = (path: string) => {
+		setMenuOpen(false);
+		navigate(path);
+	};
 
 	const isActive = (path: string, owns: readonly string[]) =>
 		location.pathname === path ||
@@ -255,15 +353,57 @@ export function Sidebar() {
 				))}
 			</Recents>
 
-			<Foot>
-				<Avatar>
-					<Icon name="enhanced_encryption" size={15} />
-				</Avatar>
-				<FootText>
-					<strong>On this device</strong>
-					<span>{activeModel ? `${activeModel} · offline` : "No model loaded"}</span>
-				</FootText>
-			</Foot>
+			<FootWrap ref={footRef}>
+				{menuOpen && (
+					<Menu role="menu">
+						<MenuHeader>Private · runs on this device</MenuHeader>
+						<MenuItem type="button" role="menuitem" onClick={() => go("/settings")}>
+							<Icon name="settings" size={16} />
+							Settings
+							<kbd>⌘ ,</kbd>
+						</MenuItem>
+						<MenuItem type="button" role="menuitem" onClick={() => go("/connectors")}>
+							<Icon name="plug" size={16} />
+							Connectors
+						</MenuItem>
+						<MenuItem type="button" role="menuitem" onClick={() => go("/models")}>
+							<Icon name="deployed_code" size={16} />
+							Manage models
+						</MenuItem>
+						<MenuItem type="button" role="menuitem" onClick={() => go("/character/new")}>
+							<Icon name="person" size={16} />
+							New character
+						</MenuItem>
+						<MenuDivider />
+						<MenuItem
+							type="button"
+							role="menuitem"
+							onClick={() => {
+								setMenuOpen(false);
+								openUrl("https://github.com/Razee4315/neurix/issues").catch(() => {});
+							}}
+						>
+							<Icon name="info" size={16} />
+							Get help
+							<Icon name="open_in_new" size={14} />
+						</MenuItem>
+						<MenuItem type="button" role="menuitem" onClick={() => go("/about")}>
+							<Icon name="verified_user" size={16} />
+							About Neurix
+						</MenuItem>
+					</Menu>
+				)}
+				<Foot type="button" $open={menuOpen} onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen}>
+					<Avatar>
+						<Icon name="enhanced_encryption" size={15} />
+					</Avatar>
+					<FootText>
+						<strong>On this device</strong>
+						<span>{activeModel ? `${activeModel} · offline` : "No model loaded"}</span>
+					</FootText>
+					<Icon name="expand_more" size={14} />
+				</Foot>
+			</FootWrap>
 		</Aside>
 	);
 }
