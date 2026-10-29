@@ -17,6 +17,7 @@ import {
 	useConnectors,
 } from "@/utils/connectors";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { isMobile } from "@/utils/platform";
 import { useState } from "react";
 import styled from "styled-components";
 
@@ -29,6 +30,8 @@ import styled from "styled-components";
 
 /** Connectors that work in this build; the rest are listed as coming soon. */
 const LIVE = new Set(["files", "gmail", "github"]);
+/** Need the desktop app: IMAP and reading folders from disk. */
+const DESKTOP_ONLY = new Set(["files", "gmail"]);
 
 interface Connector {
 	id: string;
@@ -435,7 +438,7 @@ export function ConnectorsPage() {
 	};
 
 	return (
-		<AppLayout title="Connectors" back="/settings">
+		<AppLayout title="Connectors">
 			<Page>
 				<Intro>
 					Connectors let the assistant read from the tools you already use. Data is fetched and
@@ -454,7 +457,9 @@ export function ConnectorsPage() {
 									<strong>{c.name}</strong>
 									<span>{c.access}</span>
 								</Name>
-								{c.id === "files" ? (
+								{isMobile() && DESKTOP_ONLY.has(c.id) ? (
+									<SoonTag>Desktop app</SoonTag>
+								) : c.id === "files" ? (
 									<>
 										{folders.length > 0 && (
 											<Badge>
@@ -559,7 +564,9 @@ export function ConnectorsPage() {
 									<strong>{c.name}</strong>
 									<span>{c.access}</span>
 								</Name>
-								{c.id === "files" ? (
+								{isMobile() && DESKTOP_ONLY.has(c.id) ? (
+									<SoonTag>Desktop app</SoonTag>
+								) : c.id === "files" ? (
 									<>
 										{folders.length > 0 && (
 											<Badge>

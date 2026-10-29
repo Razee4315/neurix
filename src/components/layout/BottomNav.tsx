@@ -15,6 +15,7 @@ const NAV_TABS = [
 	{ icon: "chat_bubble", label: "Chat", path: "/chat", owns: ["/character"] },
 	{ icon: "deployed_code", label: "Models", path: "/models", owns: [] },
 	{ icon: "storefront", label: "Store", path: "/store", owns: ["/downloading"] },
+	{ icon: "plug", label: "Connect", path: "/connectors", owns: [] },
 	{ icon: "settings", label: "Settings", path: "/settings", owns: ["/about"] },
 ] as const;
 

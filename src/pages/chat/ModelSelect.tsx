@@ -25,6 +25,8 @@ const Trigger = styled.button<{ $open: boolean }>`
   gap: 0.3rem;
   max-width: 15rem;
   height: 32px;
+
+  @media (max-width: 600px) { max-width: 8.5rem; }
   padding: 0 0.5rem 0 0.625rem;
   border: none;
   border-radius: ${tokens.borderRadius.lg};
@@ -55,7 +57,7 @@ const Menu = styled.div`
   position: absolute;
   right: 0;
   bottom: calc(100% + 8px);
-  width: 288px;
+  width: min(288px, calc(100vw - 1.5rem));
   max-height: 360px;
   overflow-y: auto;
   padding: 0.375rem;

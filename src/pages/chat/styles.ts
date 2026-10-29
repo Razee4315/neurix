@@ -28,6 +28,9 @@ export const MessagesArea = styled.div<{ $wide?: boolean }>`
   flex: 1;
   overflow-y: auto;
   padding: 1.5rem 1.25rem 1rem;
+
+  @media (max-width: 600px) { padding: 1rem 0.875rem 0.75rem; }
+
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -246,6 +249,8 @@ export const WelcomeTitle = styled.h2`
   font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
   font-size: 2.125rem;
   font-weight: ${tokens.typography.fontWeight.regular};
+
+  @media (max-width: 600px) { font-size: 1.625rem; gap: 0.5rem; }
   letter-spacing: -0.02em;
   line-height: 1.15;
   color: ${tokens.colors.onSurface};
@@ -327,6 +332,8 @@ export const SecondaryCta = styled.button`
 export const InputBar = styled.div`
   flex-shrink: 0;
   padding: 0 1rem 0.625rem;
+
+  @media (max-width: 600px) { padding: 0 0.5rem 0.5rem; }
 `;
 
 /* The composer: one rounded card with the text on top and the tools,
@@ -340,6 +347,11 @@ export const ComposerBox = styled.div`
   border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
   border-radius: 1.25rem;
   box-shadow: 0 4px 20px rgb(0 0 0 / 0.18);
+
+  @media (max-width: 600px) {
+    padding: 0.625rem 0.5rem 0.375rem 0.875rem;
+    border-radius: 1.125rem;
+  }
   transition: border-color ${tokens.transitions.fast};
 
   &:focus-within { border-color: ${tokens.colors.outline}; }
@@ -348,6 +360,7 @@ export const ComposerBox = styled.div`
 export const ComposerBar = styled.div`
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 0.375rem;
   margin-top: 0.375rem;
   min-height: 34px;
@@ -373,6 +386,21 @@ export const FolderChip = styled.button<{ $on: boolean }>`
 
 export const ComposerSpacer = styled.div`
   flex: 1;
+`;
+
+/* Think and the source chips. On a narrow screen they scroll sideways
+   instead of pushing the model picker and Send out of the box. */
+export const ComposerChips = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+
+  > * { flex-shrink: 0; }
 `;
 
 export const ComposerNote = styled.div`

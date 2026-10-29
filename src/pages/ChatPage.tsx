@@ -43,7 +43,7 @@ import {
 	BubbleBody,
 	ComposerBar,
 	ComposerBox,
-	ComposerSpacer,
+	ComposerChips,
 	FolderChip,
 	ComposerNote,
 	BubbleLabel,
@@ -1021,6 +1021,7 @@ export function ChatPage() {
 								</CharCounter>
 							)}
 							<ComposerBar>
+								<ComposerChips>
 								{canThink && (
 									<ComposerTools>
 										<ThinkChip
@@ -1078,7 +1079,7 @@ export function ChatPage() {
 										<span>{r.repo.split("/")[1]}</span>
 									</FolderChip>
 								))}
-								<ComposerSpacer />
+								</ComposerChips>
 								<ModelSelect disabled={isGenerating || isLoadingModel} />
 								{isGenerating ? (
 									<RoundBtn type="button" $variant="stop" onClick={handleStop} aria-label="Stop generating">
