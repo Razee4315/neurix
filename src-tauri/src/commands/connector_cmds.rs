@@ -5,7 +5,9 @@
 use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(desktop)]
 use tauri::{AppHandle, Manager};
+#[cfg(desktop)]
 use tauri_plugin_dialog::DialogExt;
 
 /// Extensions read as plain text. Anything else is listed but not read.
@@ -41,15 +43,13 @@ pub struct FolderSnapshot {
 }
 
 /// Show the native folder picker. `None` when the user cancels.
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let mut dialog = app.dialog().file().set_title("Connect a folder");
-        #[cfg(desktop)]
-        {
-            if let Some(window) = app.get_webview_window("main") {
-                dialog = dialog.set_parent(&window);
-            }
+        if let Some(window) = app.get_webview_window("main") {
+            dialog = dialog.set_parent(&window);
         }
         match dialog.blocking_pick_folder() {
             Some(picked) => picked
@@ -61,6 +61,14 @@ pub async fn pick_folder(app: AppHandle) -> Result<Option<String>, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Phones can't hand an app a folder to read later (the picker returns a
+/// content URI, not a path), so phones share single documents instead.
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn pick_folder() -> Result<Option<String>, String> {
+    Err("Connecting a folder needs the desktop app. On a phone, add documents instead.".into())
 }
 
 fn is_text(path: &Path) -> bool {
