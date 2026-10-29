@@ -1,6 +1,6 @@
 [package]
 name = "neurix-tauri"
-version = "0.5.2"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.77"
 
@@ -37,6 +37,13 @@ chrono = { version = "0.4", features = ["serde"] }
 reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls"] }
 fs2 = "0.4"
 sha2 = "0.10"
+base64 = "0.22"
+# Reads the newest Gmail messages on every platform.
+mailparse = "0.15"
+# Gmail on phones: IMAP over the same rustls (ring) stack reqwest already
+# uses, so no OpenSSL has to be cross-compiled for Android.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
@@ -63,3 +70,8 @@ codegen-units = 1
 panic = "abort"
 
 [workspace]
+
+# Gmail on the desktop: IMAP over the platform TLS. Phones use imap_lite.rs.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+imap = "2.4.1"
+native-tls = "0.2"

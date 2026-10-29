@@ -1,6 +1,7 @@
 import { isKnownIcon } from "@/components/ui/Icon";
 import type { Character } from "@/services/types";
 import { LIMITS } from "./characterLimits";
+import { compilePersona, normalizePersona } from "./persona";
 
 /**
  * Versioned wire format for shared characters.
@@ -25,6 +26,13 @@ export const SHARE_VERSION = 1;
  */
 export function toSharePayload(c: Character): SharedCharacterEnvelope {
 	const { id: _id, is_preset: _isPreset, created_at: _createdAt, ...rest } = c;
+	// A friend's memories and the name it calls you are about you, not the
+	// friend: leave them out of what is shared, and out of the prompt.
+	if (rest.persona) {
+		const persona = { ...rest.persona, memories: [], user_name: "" };
+		rest.persona = persona;
+		rest.system_prompt = compilePersona(rest.name, rest.description, persona);
+	}
 	return {
 		kind: SHARE_KIND,
 		version: SHARE_VERSION,
@@ -125,6 +133,7 @@ export function parseShared(input: string): ParseResult {
 			isString(c.greeting) && c.greeting.trim().length > 0
 				? c.greeting.trim().slice(0, LIMITS.greeting)
 				: undefined,
+		...(c.persona ? { persona: normalizePersona(c.persona) } : {}),
 		// Imported characters are always custom on the recipient's side,
 		// even if the source happened to be a preset. We strip is_preset on
 		// export, but defend in depth here.

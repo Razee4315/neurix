@@ -1,31 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The Neurix mark for the adaptive icon: two pillars and a clay ribbon
+     laid across them, about 46dp wide so every launcher mask keeps it whole
+     (the safe zone is the middle 66dp). The background is the tile color,
+     @color/ic_launcher_background. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
 
-  <!-- Left bracket [ — wider spread, inside safe zone (21-87dp) -->
-  <path
-      android:pathData="M43,30 L33,30 L33,78 L43,78"
-      android:strokeWidth="4.8"
-      android:strokeColor="#00F0FF"
-      android:strokeLineJoin="round"
-      android:strokeLineCap="round"
-      android:fillColor="#00000000"/>
+  <group
+      android:translateX="19.8"
+      android:translateY="19.8"
+      android:scaleX="2.85"
+      android:scaleY="2.85">
 
-  <!-- Right bracket ] -->
-  <path
-      android:pathData="M65,30 L75,30 L75,78 L65,78"
-      android:strokeWidth="4.8"
-      android:strokeColor="#00F0FF"
-      android:strokeLineJoin="round"
-      android:strokeLineCap="round"
-      android:fillColor="#00000000"/>
+    <!-- Pillars -->
+    <path
+        android:pathData="M6.1,6.1 L6.1,17.9"
+        android:strokeWidth="4.2"
+        android:strokeColor="#F3EFE6"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M17.9,6.1 L17.9,17.9"
+        android:strokeWidth="4.2"
+        android:strokeColor="#F3EFE6"
+        android:strokeLineCap="round" />
 
-  <!-- Center green dot -->
-  <path
-      android:pathData="M54,48a6,6 0,1 1,0 12a6,6 0,1 1,0 -12z"
-      android:fillColor="#FFC46B"/>
+    <!-- Gap around the ribbon, in the tile color -->
+    <path
+        android:pathData="M6.1,6.1 L17.9,17.9"
+        android:strokeWidth="6.4"
+        android:strokeColor="#22211F"
+        android:strokeLineCap="round" />
 
+    <!-- Ribbon -->
+    <path
+        android:pathData="M6.1,6.1 L17.9,17.9"
+        android:strokeWidth="4.2"
+        android:strokeLineCap="round">
+      <aapt:attr name="android:strokeColor">
+        <gradient
+            android:type="linear"
+            android:startX="4"
+            android:startY="4"
+            android:endX="20"
+            android:endY="20">
+          <item android:offset="0" android:color="#E88A68" />
+          <item android:offset="1" android:color="#C8603E" />
+        </gradient>
+      </aapt:attr>
+    </path>
+  </group>
 </vector>

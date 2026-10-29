@@ -14,14 +14,24 @@ export async function loadConversation(id: string): Promise<Conversation | null>
 	return invoke("load_conversation", { id });
 }
 
+/** Fired on `window` whenever the saved list changes (the sidebar listens). */
+export const HISTORY_CHANGED = "neurix:history-changed";
+/** Fired when a new chat gets its first message, before it is saved. */
+export const CHAT_STARTED = "neurix:chat-started";
+
+const changed = () => window.dispatchEvent(new Event(HISTORY_CHANGED));
+
 export async function saveConversation(conversation: Conversation): Promise<void> {
-	return invoke("save_conversation", { conversation });
+	await invoke("save_conversation", { conversation });
+	changed();
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-	return invoke("delete_conversation", { id });
+	await invoke("delete_conversation", { id });
+	changed();
 }
 
 export async function clearAllConversations(): Promise<void> {
-	return invoke("clear_all_conversations");
+	await invoke("clear_all_conversations");
+	changed();
 }

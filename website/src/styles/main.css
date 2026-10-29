@@ -285,7 +285,8 @@ a {
 }
 .brand b {
   font-weight: inherit;
-  color: var(--cyan);
+  /* The clay of the app icon. */
+  color: #e0825f;
   transition: color 0.8s var(--glide);
 }
 
@@ -299,7 +300,7 @@ body[data-nav='light'] .nav {
   color: #10202b;
 }
 body[data-nav='light'] .brand b {
-  color: #0b6fa4;
+  color: #b5502f;
 }
 body[data-nav='light'] .btn-quiet {
   color: #10202b;

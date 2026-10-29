@@ -10,6 +10,7 @@ import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { parseShared, shareCharacter } from "@/utils/characterShare";
+import { FRIEND_TEMPLATES, relationshipOf } from "@/utils/persona";
 import { shortId } from "@/utils/format";
 import { vibrate } from "@/utils/platform";
 import { useFocusTrap } from "@/utils/useFocusTrap";
@@ -64,6 +65,18 @@ const Sheet = styled.div<{ $dragY: number; $dragging: boolean }>`
   transition: ${({ $dragging }) =>
 		$dragging ? "none" : `transform ${tokens.transitions.fast}`};
   touch-action: pan-y;
+
+  /* Desktop: a centered dialog rather than a phone sheet. */
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    top: 0;
+    height: fit-content;
+    max-height: 82dvh;
+    margin: auto;
+    border-radius: 1rem;
+    padding: 0.5rem 1.25rem 1.25rem;
+    border: 1px solid ${alpha(tokens.colors.outlineVariant, "99")};
+    box-shadow: 0 24px 60px rgb(0 0 0 / 0.35);
+  }
 `;
 
 /* The grabber zone is the entire top strip — bigger touch target than the
@@ -74,6 +87,13 @@ const GrabberZone = styled.div`
   -webkit-tap-highlight-color: transparent;
 
   &:active { cursor: grabbing; }
+
+  /* Nothing to drag on desktop. */
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    visibility: hidden;
+    padding: 0;
+    height: 0.5rem;
+  }
 `;
 
 const Grabber = styled.div`
@@ -306,6 +326,62 @@ const CreateCard = styled.button`
   &:active { transform: scale(0.97); background: ${alpha(tokens.colors.primary, "10")}; }
 `;
 
+/* The way in to the friend builder: a full-width row with a few of the
+   starting faces, so it reads as "people" rather than a settings form. */
+const FriendCreate = styled.button`
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.875rem;
+  border-radius: ${tokens.borderRadius.lg};
+  border: 1px solid ${alpha(tokens.colors.primary, "66")};
+  background: ${alpha(tokens.colors.primary, "14")};
+  color: ${tokens.colors.onSurface};
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background ${tokens.transitions.fast};
+
+  &:hover { background: ${alpha(tokens.colors.primary, "24")}; }
+
+  > span {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+  strong {
+    font-size: ${tokens.typography.fontSize.sm};
+    font-weight: ${tokens.typography.fontWeight.semibold};
+  }
+  small {
+    font-size: ${tokens.typography.fontSize.xs};
+    color: ${tokens.colors.onSurfaceVariant};
+  }
+  > svg { color: ${tokens.colors.primary}; flex-shrink: 0; }
+`;
+
+const FriendFaces = styled.div`
+  display: flex;
+  flex-shrink: 0;
+`;
+
+const FriendFace = styled.span<{ $accent: string }>`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: ${tokens.colors.surfaceContainerHigh};
+  color: ${({ $accent }) => $accent};
+  border: 2px solid ${tokens.colors.surfaceContainer};
+
+  & + & { margin-left: -8px; }
+`;
+
 const ImportCard = styled(CreateCard)`
   color: ${tokens.colors.tertiary};
 `;
@@ -395,7 +471,7 @@ const PrimaryBtn = styled.button`
   padding: 0.625rem 1rem;
   border-radius: ${tokens.borderRadius.lg};
   background: ${tokens.colors.primary};
-  color: ${tokens.colors.onPrimary};
+  color: ${tokens.colors.onPrimaryFixed};
   border: none;
   font-size: ${tokens.typography.fontSize.sm};
   font-weight: ${tokens.typography.fontWeight.bold};
@@ -587,6 +663,9 @@ export function CharacterPicker({ open, onClose, showModels = false }: Props) {
 		return active ? [active, ...sorted] : sorted;
 	}, [customs, activeCharacter]);
 
+	const friends = sortedCustoms.filter((c) => c.persona);
+	const others = sortedCustoms.filter((c) => !c.persona);
+
 	if (!open) return null;
 
 	const handleSelect = (c: Character) => {
@@ -603,14 +682,23 @@ export function CharacterPicker({ open, onClose, showModels = false }: Props) {
 		navigate("/character/new");
 	};
 
+	const handleCreateFriend = () => {
+		onClose();
+		navigate("/friend/new");
+	};
+
+	// Friends open in the friend builder, other characters in the
+	// instructions editor.
+	const editorFor = (c: Character) => (c.persona ? "/friend" : "/character");
+
 	const handleEditCustom = (c: Character) => {
 		onClose();
-		navigate(`/character/edit?id=${encodeURIComponent(c.id)}`);
+		navigate(`${editorFor(c)}/edit?id=${encodeURIComponent(c.id)}`);
 	};
 
 	const handleDuplicate = (c: Character) => {
 		onClose();
-		navigate(`/character/new?from=${encodeURIComponent(c.id)}`);
+		navigate(`${editorFor(c)}/new?from=${encodeURIComponent(c.id)}`);
 	};
 
 	const handleShare = async (c: Character) => {
@@ -704,7 +792,10 @@ export function CharacterPicker({ open, onClose, showModels = false }: Props) {
 					</IconBubble>
 					<div>
 						<CardName>{c.name}</CardName>
-						<CardDesc>{c.description || (c.is_preset ? "" : "Custom")}</CardDesc>
+						<CardDesc>
+							{c.description ||
+								(c.persona ? relationshipOf(c.persona).label : c.is_preset ? "" : "Custom")}
+						</CardDesc>
 					</div>
 					{isActive && <ActiveBadge $accent={accent}>Active</ActiveBadge>}
 				</CardBase>
@@ -791,21 +882,43 @@ export function CharacterPicker({ open, onClose, showModels = false }: Props) {
 							</TextLink>
 						</>
 					)}
+					<SectionLabel>Friends</SectionLabel>
+					<Grid>
+						{friends.map(renderCard)}
+						<FriendCreate type="button" onClick={handleCreateFriend}>
+							<FriendFaces aria-hidden="true">
+								{FRIEND_TEMPLATES.slice(0, 4).map((t) => {
+									const a = accentOf({ accent_color: t.accent } as Character);
+									return (
+										<FriendFace key={t.id} $accent={a}>
+											<Icon name={t.icon} size={14} />
+										</FriendFace>
+									);
+								})}
+							</FriendFaces>
+							<span>
+								<strong>Create a friend</strong>
+								<small>Name them, give them a personality and a story</small>
+							</span>
+							<Icon name="add" size={18} />
+						</FriendCreate>
+					</Grid>
+
 					<SectionLabel>Presets</SectionLabel>
 					<Grid>{sortedPresets.map(renderCard)}</Grid>
 
 					<SectionLabel>My characters</SectionLabel>
 					<Grid>
-						{customs.length === 0 && (
+						{others.length === 0 && (
 							<EmptyHint>
 								Create characters with your own tone, instructions, or
 								expertise. They'll show up here.
 							</EmptyHint>
 						)}
-						{sortedCustoms.map(renderCard)}
-						<CreateCard onClick={handleCreate} aria-label="Create custom character">
+						{others.map(renderCard)}
+						<CreateCard onClick={handleCreate} aria-label="Create a character from instructions">
 							<Icon name="add" size={20} />
-							Create custom
+							From instructions
 						</CreateCard>
 						<ImportCard
 							onClick={() => {

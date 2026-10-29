@@ -6,14 +6,28 @@ import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { chatService, historyService, modelService } from "@/services";
-import type { InferenceEvent } from "@/services/types";
+import { CHAT_STARTED } from "@/services/historyService";
+import type { Character, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { copyText, isTouchPrimary, vibrate } from "@/utils/platform";
+import { getPrefs, usePrefs } from "@/utils/prefs";
+import { relationshipOf } from "@/utils/persona";
+import {
+	connectorContext,
+	setAllDocsEnabled,
+	setFolderEnabled,
+	setGmailEnabled,
+	setRepoEnabled,
+	useConnectors,
+	withContext,
+} from "@/utils/connectors";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { NeurixMark } from "@/components/ui/NeurixLogo";
 import { Markdown } from "./chat/Markdown";
+import { ModelSelect } from "./chat/ModelSelect";
 import {
 	ComposerTools,
 	ReadingFill,
@@ -36,6 +50,16 @@ import {
 import {
 	Bubble,
 	BubbleBody,
+	ComposerBar,
+	FriendAvatar,
+	FriendGreeting,
+	FriendHero,
+	FriendMeta,
+	FriendName,
+	ComposerBox,
+	ComposerChips,
+	FolderChip,
+	ComposerNote,
 	BubbleLabel,
 	BubbleWrap,
 	CharCounter,
@@ -47,15 +71,12 @@ import {
 	CutShort,
 	HeaderAvatar,
 	HeaderCharName,
-	HeaderModelLine,
 	HeaderPill,
 	HeaderTextStack,
 	InputBar,
-	InputRow,
 	JumpBtn,
 	MessageActions,
 	MessagesArea,
-	ModelDot,
 	MsgActionBtn,
 	PrimaryCta,
 	RoundBtn,
@@ -100,9 +121,14 @@ function CopyAction({ text }: { text: string }) {
 	};
 
 	return (
-		<MsgActionBtn type="button" onClick={handleCopy} $active={copied}>
-			<Icon name={copied ? "check" : "content_copy"} size={14} />
-			{copied ? "Copied" : "Copy"}
+		<MsgActionBtn
+			type="button"
+			onClick={handleCopy}
+			$active={copied}
+			title={copied ? "Copied" : "Copy"}
+			aria-label={copied ? "Copied" : "Copy"}
+		>
+			<Icon name={copied ? "check" : "content_copy"} size={15} />
 		</MsgActionBtn>
 	);
 }
@@ -149,6 +175,16 @@ interface RunOptions {
 	prefix?: string;
 }
 
+/**
+ * A friend opens every chat with its greeting, which is shown but is not
+ * part of the history the model sees. Tell it what it said, so a reply to
+ * the greeting ("good, you?") makes sense.
+ */
+function withGreeting(character: Character | null | undefined, systemPrompt: string): string {
+	const greeting = character?.persona ? character.greeting?.trim() : "";
+	return greeting ? `${systemPrompt}\nYou started this chat by saying: "${greeting}"` : systemPrompt;
+}
+
 /* ── Component ── */
 
 export function ChatPage() {
@@ -158,6 +194,10 @@ export function ChatPage() {
 		useAppContext();
 	const { activeCharacter, allCharacters, setActiveCharacter, loaded: charactersLoaded } = useCharacters();
 	const { showToast } = useToast();
+	const prefs = usePrefs();
+	const connectors = useConnectors();
+	const connectedFolders = connectors.folders;
+	const docsOn = connectors.docs.some((d) => d.enabled);
 
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState(readDraft);
@@ -454,6 +494,7 @@ export function ChatPage() {
 							setReplyStats({ messageId: reply.id, tokensPerSecond: speed, tokens: total_tokens });
 						}
 						finish([reply]);
+						if (getPrefs().autoCopy && stop_reason !== "cancelled") void copyText(cleaned);
 					} else if (reasoning && stop_reason !== "cancelled") {
 						// The whole reply budget went on thinking.
 						finish([
@@ -490,10 +531,12 @@ export function ChatPage() {
 		};
 
 		try {
+			const sources = prefix ? "" : await connectorContext(prompt);
+			if (!isCurrent()) return;
 			await chatService.runInference(
 				{
-					prompt,
-					systemPrompt: character?.system_prompt ?? settings?.system_prompt ?? "",
+					prompt: withContext(sources, prompt),
+					systemPrompt: withGreeting(character, character?.system_prompt ?? settings?.system_prompt ?? ""),
 					history: buildHistory(context),
 					temperature: character?.temperature ?? settings?.temperature ?? 0.7,
 					topP: character?.top_p ?? settings?.top_p ?? 0.9,
@@ -556,6 +599,15 @@ export function ChatPage() {
 
 			const context = live.current.messages;
 			show([...context, createMessage("user", text)]);
+			// List a new chat in the sidebar right away, before the reply.
+			if (live.current.saveHistory && !live.current.conversationId) {
+				live.current.conversationId = crypto.randomUUID();
+				window.dispatchEvent(
+					new CustomEvent(CHAT_STARTED, {
+						detail: { id: live.current.conversationId, title: text.slice(0, 80) },
+					}),
+				);
+			}
 			setInput("");
 			writeDraft("");
 			setOpenActionsId(null);
@@ -675,7 +727,8 @@ export function ChatPage() {
 		// With a hardware keyboard, Enter sends and Shift+Enter breaks the
 		// line. On touch keyboards Enter is the only way to add a line, so it
 		// inserts one and the send button sends.
-		if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !isTouchPrimary()) {
+		if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || isTouchPrimary()) return;
+		if (prefs.enterSends || e.metaKey || e.ctrlKey) {
 			e.preventDefault();
 			handleSend();
 		}
@@ -720,7 +773,7 @@ export function ChatPage() {
 	const lastId = messages[messages.length - 1]?.id;
 	const hasText = input.trim().length > 0;
 	const showStream = isGenerating || streamedText.length > 0 || streamedReasoning.length > 0;
-	const starters = activeCharacter?.conversation_starters?.slice(0, 4) ?? [];
+	const starters = prefs.showStarters ? (activeCharacter?.conversation_starters?.slice(0, 4) ?? []) : [];
 
 	return (
 		<>
@@ -779,17 +832,13 @@ export function ChatPage() {
 						aria-label={`Character: ${characterName}. Model: ${activeModel ?? "none loaded"}. Change character or model.`}
 					>
 						<HeaderAvatar $accent={accent}>
-							<Icon name={activeCharacter?.icon || "smart_toy"} size={20} />
+							<Icon name={activeCharacter?.icon || "smart_toy"} size={15} />
 						</HeaderAvatar>
 						<HeaderTextStack>
 							<HeaderCharName>
 								<span>{characterName}</span>
 								<Icon name="expand_more" size={14} color={tokens.colors.onSurfaceVariant} />
 							</HeaderCharName>
-							<HeaderModelLine>
-								<ModelDot $on={!!activeModel && !isLoadingModel} />
-								{isLoadingModel ? "Loading model…" : (activeModel ?? "No model loaded")}
-							</HeaderModelLine>
 						</HeaderTextStack>
 					</HeaderPill>
 				}
@@ -810,10 +859,46 @@ export function ChatPage() {
 				}
 			>
 				<ChatContainer>
-					<MessagesArea ref={scrollRef} onScroll={handleScroll}>
-						{messages.length === 0 && !showStream && (
+					<MessagesArea ref={scrollRef} onScroll={handleScroll} $wide={prefs.chatWidth === "wide"}>
+						{messages.length === 0 && !showStream && activeCharacter?.persona && (
 							<Welcome>
-								<WelcomeTitle>{activeCharacter?.greeting || `Chat with ${characterName}`}</WelcomeTitle>
+								<FriendHero>
+									<FriendAvatar $accent={accent}>
+										<Icon name={activeCharacter.icon || "person"} size={30} />
+									</FriendAvatar>
+									<FriendName>{characterName}</FriendName>
+									<FriendMeta>
+										{relationshipOf(activeCharacter.persona).label}
+										{activeCharacter.description ? ` · ${activeCharacter.description}` : ""}
+									</FriendMeta>
+								</FriendHero>
+								{activeCharacter.greeting && (
+									<FriendGreeting $accent={accent}>{activeCharacter.greeting}</FriendGreeting>
+								)}
+								{starters.length > 0 && (
+									<StartersGrid>
+										{starters.map((starter) => (
+											<StarterChip
+												key={starter}
+												type="button"
+												$accent={accent}
+												onClick={() => fillInput(starter)}
+											>
+												<span>{starter}</span>
+												<Icon name="arrow_outward" size={14} />
+											</StarterChip>
+										))}
+									</StartersGrid>
+								)}
+							</Welcome>
+						)}
+
+						{messages.length === 0 && !showStream && !activeCharacter?.persona && (
+							<Welcome>
+								<WelcomeTitle>
+									<NeurixMark size={30} />
+									<span>{activeCharacter?.greeting || `Chat with ${characterName}`}</span>
+								</WelcomeTitle>
 								<WelcomeText>
 									{activeCharacter?.description
 										? `${activeCharacter.description}. Everything stays on this device.`
@@ -863,10 +948,12 @@ export function ChatPage() {
 										onTouchMove={handleLongPressEnd}
 										onTouchCancel={handleLongPressEnd}
 									>
-										<BubbleLabel $color={labelColor}>
-											{msg.role === "error" && <Icon name="error_outline" size={12} />}
-											{label}
-										</BubbleLabel>
+										{msg.role === "error" && (
+											<BubbleLabel $color={labelColor}>
+												<Icon name="error_outline" size={12} />
+												{label}
+											</BubbleLabel>
+										)}
 										<BubbleBody>
 											{msg.role === "ai" && msg.reasoning && <Reasoning text={msg.reasoning} />}
 											{msg.role === "ai" ? <Markdown text={msg.text} /> : <UserText>{msg.text}</UserText>}
@@ -892,20 +979,32 @@ export function ChatPage() {
 										<MessageActions $open={openActionsId === msg.id}>
 											{msg.role !== "error" && <CopyAction text={msg.text} />}
 											{msg.role === "user" && (
-												<MsgActionBtn type="button" onClick={() => handleEditMessage(msg.id)}>
-													<Icon name="edit" size={14} />
-													Edit
+												<MsgActionBtn
+													type="button"
+													onClick={() => handleEditMessage(msg.id)}
+													title="Edit"
+													aria-label="Edit"
+												>
+													<Icon name="edit" size={15} />
 												</MsgActionBtn>
 											)}
 											{msg.role === "ai" && isLast && (
-												<MsgActionBtn type="button" onClick={() => redoLast(false)}>
-													<Icon name="refresh" size={14} />
-													Retry
+												<MsgActionBtn
+													type="button"
+													onClick={() => redoLast(false)}
+													title="Retry"
+													aria-label="Retry"
+												>
+													<Icon name="restart_alt" size={15} />
 												</MsgActionBtn>
 											)}
-											<MsgActionBtn type="button" onClick={() => handleDeleteMessage(msg.id)}>
-												<Icon name="delete" size={14} />
-												{msg.role === "error" ? "Dismiss" : "Delete"}
+											<MsgActionBtn
+												type="button"
+												onClick={() => handleDeleteMessage(msg.id)}
+												title={msg.role === "error" ? "Dismiss" : "Delete"}
+												aria-label={msg.role === "error" ? "Dismiss" : "Delete"}
+											>
+												<Icon name="delete" size={15} />
 											</MsgActionBtn>
 										</MessageActions>
 									)}
@@ -916,7 +1015,6 @@ export function ChatPage() {
 						{showStream && (
 							<BubbleWrap $role="ai">
 								<Bubble $role="ai">
-									<BubbleLabel $color={accent}>{characterName}</BubbleLabel>
 									<BubbleBody>
 										{streamedReasoning && <Reasoning text={streamedReasoning} live={!streamedText} />}
 										{streamedText ? (
@@ -959,22 +1057,7 @@ export function ChatPage() {
 					)}
 
 					<InputBar>
-						{canThink && (
-							<ComposerTools>
-								<ThinkChip
-									type="button"
-									$on={thinkOn}
-									aria-pressed={thinkOn}
-									onClick={toggleThink}
-									title="Let the model reason step by step before it answers. Slower, more careful."
-								>
-									<Icon name="psychology" size={14} />
-									Think
-								</ThinkChip>
-								{thinkOn && <ToolHint>Reasons first: slower, more careful</ToolHint>}
-							</ComposerTools>
-						)}
-						<InputRow>
+						<ComposerBox>
 							<TextInput
 								ref={textareaRef}
 								value={input}
@@ -995,22 +1078,104 @@ export function ChatPage() {
 									{input.length.toLocaleString()} / {MAX_PROMPT_LENGTH.toLocaleString()}
 								</CharCounter>
 							)}
-							{isGenerating ? (
-								<RoundBtn type="button" $variant="stop" onClick={handleStop} aria-label="Stop generating">
-									<Icon name="stop_circle" size={22} fill />
-								</RoundBtn>
-							) : (
-								<RoundBtn
-									type="button"
-									$variant={hasText ? "send" : "idle"}
-									onClick={handleSend}
-									disabled={!hasText || isLoadingModel}
-									aria-label="Send message"
-								>
-									<Icon name="arrow_upward" size={20} />
-								</RoundBtn>
-							)}
-						</InputRow>
+							<ComposerBar>
+								<ComposerChips>
+								{canThink && (
+									<ComposerTools>
+										<ThinkChip
+											type="button"
+											$on={thinkOn}
+											aria-pressed={thinkOn}
+											onClick={toggleThink}
+											title="Let the model reason step by step before it answers. Slower, more careful."
+										>
+											<Icon name="psychology" size={15} />
+											Think
+										</ThinkChip>
+										{thinkOn && <ToolHint>Reasons first: slower, more careful</ToolHint>}
+									</ComposerTools>
+								)}
+								{connectedFolders.map((folder) => (
+									<FolderChip
+										key={folder.path}
+										type="button"
+										$on={folder.enabled}
+										aria-pressed={folder.enabled}
+										title={
+											folder.enabled
+												? `Reading ${folder.path} for this chat. Click to stop.`
+												: `Click to use ${folder.path} in this chat`
+										}
+										onClick={() => setFolderEnabled(folder.path, !folder.enabled)}
+									>
+										<Icon name="folder_open" size={14} />
+										<span>{folder.name}</span>
+									</FolderChip>
+								))}
+								{connectors.docs.length > 0 && (
+									<FolderChip
+										type="button"
+										$on={docsOn}
+										aria-pressed={docsOn}
+										title={docsOn ? "Reading your documents for this chat. Tap to stop." : "Tap to use your documents"}
+										onClick={() => setAllDocsEnabled(!docsOn)}
+									>
+										<Icon name="description" size={14} />
+										<span>
+											{connectors.docs.length === 1 ? connectors.docs[0].name : `${connectors.docs.length} documents`}
+										</span>
+									</FolderChip>
+								)}
+								{connectors.gmail?.signedIn && (
+									<FolderChip
+										type="button"
+										$on={connectors.gmail.enabled}
+										aria-pressed={connectors.gmail.enabled}
+										title={connectors.gmail.enabled ? "Reading your newest emails. Click to stop." : "Click to use your inbox"}
+										onClick={() => setGmailEnabled(!connectors.gmail?.enabled)}
+									>
+										<Icon name="mail" size={14} />
+										<span>Gmail</span>
+									</FolderChip>
+								)}
+								{connectors.repos.map((r) => (
+									<FolderChip
+										key={r.repo}
+										type="button"
+										$on={r.enabled}
+										aria-pressed={r.enabled}
+										title={r.enabled ? `Reading ${r.repo}. Click to stop.` : `Click to use ${r.repo}`}
+										onClick={() => setRepoEnabled(r.repo, !r.enabled)}
+									>
+										<Icon name="github" size={14} />
+										<span>{r.repo.split("/")[1]}</span>
+									</FolderChip>
+								))}
+								</ComposerChips>
+								<ModelSelect disabled={isGenerating || isLoadingModel} />
+								{isGenerating ? (
+									<RoundBtn type="button" $variant="stop" onClick={handleStop} aria-label="Stop generating">
+										<Icon name="stop_circle" size={13} fill />
+									</RoundBtn>
+								) : (
+									<RoundBtn
+										type="button"
+										$variant={hasText ? "send" : "idle"}
+										onClick={handleSend}
+										disabled={!hasText || isLoadingModel}
+										aria-label="Send message"
+									>
+										<Icon name="arrow_upward" size={17} fill />
+									</RoundBtn>
+								)}
+							</ComposerBar>
+						</ComposerBox>
+						{prefs.showPrivacyNote && (
+							<ComposerNote>
+								<Icon name="enhanced_encryption" size={12} />
+								Runs entirely on this device. Nothing you type leaves it.
+							</ComposerNote>
+						)}
 					</InputBar>
 				</ChatContainer>
 			</AppLayout>
@@ -1020,7 +1185,7 @@ export function ChatPage() {
 			{showCoach && !pickerOpen && (
 				<Coachmark role="status">
 					<Icon name="touch_app" size={14} color={tokens.colors.primary} />
-					<span>Tap the name above to switch character or model</span>
+					<span>Tap the name above to switch character. Pick the model next to Send.</span>
 					<CoachClose type="button" onClick={dismissCoach} aria-label="Dismiss tip">
 						<Icon name="close" size={14} />
 					</CoachClose>

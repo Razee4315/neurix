@@ -88,23 +88,21 @@ export const ComposerTools = styled.div`
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  max-width: 52rem;
-  margin: 0 auto;
-  padding: 0.5rem 0.75rem 0;
+  min-width: 0;
 `;
 
 export const ThinkChip = styled.button<{ $on: boolean }>`
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  min-height: 32px;
-  padding: 0.25rem 0.75rem;
-  border-radius: ${tokens.borderRadius.circle};
-  border: 1px solid ${({ $on }) => ($on ? alpha(tokens.colors.primary, "99") : alpha(tokens.colors.outlineVariant, "80"))};
+  height: 32px;
+  padding: 0 0.625rem;
+  border-radius: ${tokens.borderRadius.lg};
+  border: 1px solid ${({ $on }) => ($on ? alpha(tokens.colors.primary, "80") : alpha(tokens.colors.outlineVariant, "cc"))};
   background: ${({ $on }) => ($on ? alpha(tokens.colors.primary, "1f") : "transparent")};
   color: ${({ $on }) => ($on ? tokens.colors.primary : tokens.colors.onSurfaceVariant)};
-  font-size: ${tokens.typography.fontSize.xs};
-  font-weight: ${tokens.typography.fontWeight.semibold};
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: ${tokens.typography.fontWeight.medium};
   cursor: pointer;
   transition: background ${tokens.transitions.fast}, color ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
 

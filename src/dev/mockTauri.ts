@@ -660,6 +660,29 @@ const handlers: Record<string, (args: Args) => unknown> = {
 		persist();
 		return { conversations: backup.conversations?.length ?? 0, characters: incoming.length };
 	},
+	pick_folder: () => "/Users/demo/Documents/Care policies",
+	read_folder: ({ path }) => ({
+		name: String(path).split("/").pop(),
+		path,
+		total_files: 3,
+		text_files: 2,
+		files: [
+			{ path: "medication-policy.md", size_bytes: 1200, content: "# Medication policy\nTwo staff sign every controlled drug.", truncated: false },
+			{ path: "rota.csv", size_bytes: 300, content: "day,staff\nMon,Ana\nTue,Ben", truncated: false },
+			{ path: "logo.png", size_bytes: 9000, content: null, truncated: false },
+		],
+	}),
+	gmail_fetch: () => [
+		{ from: "Ana Lewis <ana@example.com>", subject: "Rota swap Thursday", date: "Wed, 29 Oct 2026 09:12", snippet: "Can I swap my Thursday morning with Ben?" },
+	],
+	github_fetch: ({ repo }) => ({
+		repo,
+		description: "Your AI. Your phone. No cloud.",
+		stars: 12,
+		language: "TypeScript",
+		readme: "# Neurix\nOffline LLMs on your device.",
+		open_items: [{ number: 11, title: "Assistant icon", kind: "pull request" }],
+	}),
 	"plugin:notification|is_permission_granted": () => true,
 	"plugin:notification|request_permission": () => "granted",
 };

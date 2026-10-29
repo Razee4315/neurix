@@ -24,15 +24,18 @@ export const ChatContainer = styled.div`
   position: relative;
 `;
 
-export const MessagesArea = styled.div`
+export const MessagesArea = styled.div<{ $wide?: boolean }>`
   flex: 1;
   overflow-y: auto;
-  padding: 1rem 1rem 0.5rem;
+  padding: 1.5rem 1.25rem 1rem;
+
+  @media (max-width: 600px) { padding: 1rem 0.875rem 0.75rem; }
+
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 1.25rem;
   width: 100%;
-  max-width: 52rem;
+  max-width: ${({ $wide }) => ($wide ? "64rem" : "48rem")};
   margin: 0 auto;
 
   &::-webkit-scrollbar { width: 0; }
@@ -47,32 +50,29 @@ export const BubbleWrap = styled.div<{ $role: Message["role"] }>`
 `;
 
 export const Bubble = styled.div<{ $role: Message["role"] }>`
-  max-width: min(85%, 44rem);
-  padding: 0.75rem 1rem;
-  border-radius: 18px;
-  font-size: ${tokens.typography.fontSize.base};
-  line-height: ${tokens.typography.lineHeight.relaxed};
-
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: ${tokens.colors.onSurface};
   ${({ $role }) =>
 		$role === "user"
 			? `
-    background: ${alpha(tokens.colors.primary, "1f")};
-    border: 1px solid ${alpha(tokens.colors.primary, "33")};
-    color: ${tokens.colors.onSurface};
-    border-bottom-right-radius: 4px;
+    max-width: min(80%, 40rem);
+    padding: 0.625rem 1rem;
+    border-radius: 1rem;
+    background: ${tokens.colors.surfaceContainerLowest};
+    border: 1px solid ${alpha(tokens.colors.outlineVariant, "66")};
   `
 			: $role === "error"
 				? `
+    max-width: 100%;
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
     background: ${alpha(tokens.colors.error, "14")};
     border: 1px solid ${alpha(tokens.colors.error, "40")};
-    color: ${tokens.colors.onSurface};
-    border-bottom-left-radius: 4px;
   `
 				: `
-    background: ${tokens.colors.surfaceContainerHigh};
-    border: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
-    color: ${tokens.colors.onSurfaceVariant};
-    border-bottom-left-radius: 4px;
+    width: 100%;
+    padding: 0.125rem 0;
   `}
 `;
 
@@ -104,15 +104,15 @@ export const UserText = styled.div`
 
 export const MessageActions = styled.div<{ $open: boolean }>`
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  margin-top: 0.25rem;
+  gap: 0.125rem;
+  margin-top: 0.375rem;
   transition: opacity ${tokens.transitions.fast};
 
   @media (hover: hover) {
     opacity: ${({ $open }) => ($open ? 1 : 0)};
     ${BubbleWrap}:hover &,
-    ${BubbleWrap}:focus-within & { opacity: 1; }
+    ${BubbleWrap}:focus-within &,
+    ${BubbleWrap}:last-child & { opacity: 1; }
   }
 
   @media (hover: none) {
@@ -123,23 +123,19 @@ export const MessageActions = styled.div<{ $open: boolean }>`
 export const MsgActionBtn = styled.button<{ $active?: boolean }>`
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  min-height: 32px;
-  padding: 0.375rem 0.625rem;
-  background: ${({ $active }) =>
-		$active ? alpha(tokens.colors.secondary, "1f") : tokens.colors.surfaceContainerHigh};
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: transparent;
   border: none;
   border-radius: ${tokens.borderRadius.lg};
   cursor: pointer;
-  font-size: ${tokens.typography.fontSize.xs};
-  font-weight: ${tokens.typography.fontWeight.medium};
   color: ${({ $active }) => ($active ? tokens.colors.secondary : tokens.colors.onSurfaceVariant)};
-  transition: background ${tokens.transitions.fast}, transform ${tokens.transitions.fast};
+  transition: background ${tokens.transitions.fast}, color ${tokens.transitions.fast};
 
-  &:hover { background: ${tokens.colors.surfaceContainerHighest}; color: ${tokens.colors.onSurface}; }
-  &:active { transform: scale(0.94); }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; color: ${tokens.colors.onSurface}; }
 
-  @media (hover: none) { min-height: 40px; padding: 0.5rem 0.75rem; }
+  @media (hover: none) { width: 38px; height: 38px; }
 `;
 
 export const CutShort = styled.div`
@@ -172,12 +168,12 @@ export const ContinueBtn = styled.button`
 
 export const TypingDots = styled.div`
   display: flex;
-  gap: 4px;
-  padding: 0.375rem 0;
+  gap: 5px;
+  padding: 0.5rem 0;
 
   span {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: ${tokens.borderRadius.circle};
     background: ${tokens.colors.primary};
     animation: ${dotPulse} 1.2s ease-in-out infinite;
@@ -214,7 +210,7 @@ export const ContextNotice = styled.div`
 export const JumpBtn = styled.button`
   position: absolute;
   left: 50%;
-  bottom: 4.75rem;
+  bottom: 9rem;
   transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
@@ -246,10 +242,75 @@ export const Welcome = styled.div`
 `;
 
 export const WelcomeTitle = styled.h2`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.xl};
-  font-weight: ${tokens.typography.fontWeight.bold};
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  font-size: 2.125rem;
+  font-weight: ${tokens.typography.fontWeight.regular};
+
+  /* On a phone the greeting wraps, so the mark goes above it instead of
+     floating beside a two-line heading. */
+  @media (max-width: 600px) { flex-direction: column; font-size: 1.625rem; gap: 0.625rem; }
+  letter-spacing: -0.02em;
+  line-height: 1.15;
   color: ${tokens.colors.onSurface};
+  margin: 0;
+
+  svg { color: ${tokens.colors.primary}; }
+`;
+
+/* A friend's empty chat: their face and name, then their greeting as the
+   first message, so the chat opens the way talking to a person does. */
+export const FriendHero = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+`;
+
+export const FriendAvatar = styled.div<{ $accent: string }>`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 0.25rem;
+  border-radius: 50%;
+  background: ${({ $accent }) => alpha($accent, "26")};
+  border: 1px solid ${({ $accent }) => alpha($accent, "55")};
+  color: ${({ $accent }) => $accent};
+`;
+
+export const FriendName = styled.h2`
+  margin: 0;
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize["2xl"]};
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  color: ${tokens.colors.onSurface};
+  letter-spacing: -0.01em;
+`;
+
+export const FriendMeta = styled.div`
+  font-size: ${tokens.typography.fontSize.sm};
+  color: ${tokens.colors.onSurfaceVariant};
+  max-width: 26rem;
+`;
+
+export const FriendGreeting = styled.div<{ $accent: string }>`
+  align-self: center;
+  max-width: min(30rem, 92%);
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 16px 16px 16px 4px;
+  background: ${tokens.colors.surfaceContainerHigh};
+  border-left: 3px solid ${({ $accent }) => $accent};
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.base};
+  line-height: 1.55;
+  text-align: left;
+  white-space: pre-wrap;
 `;
 
 export const WelcomeText = styled.p`
@@ -274,21 +335,20 @@ export const StarterChip = styled.button<{ $accent: string }>`
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.75rem 0.875rem;
-  background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${alpha(tokens.colors.outlineVariant, "66")};
+  padding: 0.625rem 0.875rem;
+  background: transparent;
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
   border-radius: ${tokens.borderRadius.xl};
-  color: ${tokens.colors.onSurface};
+  color: ${tokens.colors.onSurfaceVariant};
   font-size: ${tokens.typography.fontSize.sm};
   font-family: ${tokens.typography.fontFamily.body};
   text-align: left;
   cursor: pointer;
-  transition: transform ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
+  transition: background ${tokens.transitions.fast}, color ${tokens.transitions.fast};
 
-  &:hover { border-color: ${({ $accent }) => alpha($accent, "99")}; transform: translateY(-1px); }
-  &:active { transform: scale(0.98); }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; color: ${tokens.colors.onSurface}; }
 
-  svg { margin-left: auto; color: ${({ $accent }) => $accent}; }
+  svg { margin-left: auto; color: ${tokens.colors.onSurfaceVariant}; }
 `;
 
 export const PrimaryCta = styled.button`
@@ -325,23 +385,101 @@ export const SecondaryCta = styled.button`
 
 export const InputBar = styled.div`
   flex-shrink: 0;
-  background: ${tokens.colors.surfaceContainer};
-  border-top: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
+  padding: 0 1rem 0.625rem;
+
+  @media (max-width: 600px) { padding: 0 0.5rem 0.5rem; }
 `;
 
-export const InputRow = styled.div`
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem 0.625rem;
-  max-width: 52rem;
-  margin: 0 auto;
+/* The composer: one rounded card with the text on top and the tools,
+   model picker and send button on a row underneath. */
+export const ComposerBox = styled.div`
   position: relative;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 0.75rem 0.75rem 0.5rem 1rem;
+  background: ${tokens.colors.surfaceContainerHigh};
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
+  border-radius: 1.25rem;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.18);
+
+  @media (max-width: 600px) {
+    padding: 0.625rem 0.5rem 0.375rem 0.875rem;
+    border-radius: 1.125rem;
+  }
+  transition: border-color ${tokens.transitions.fast};
+
+  &:focus-within { border-color: ${tokens.colors.outline}; }
 `;
+
+export const ComposerBar = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+  min-height: 34px;
+`;
+
+/* A connected folder in the composer: lit when it is used for this chat. */
+export const FolderChip = styled.button<{ $on: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 12rem;
+  height: 32px;
+  padding: 0 0.625rem;
+  border-radius: ${tokens.borderRadius.lg};
+  border: 1px solid ${({ $on }) => ($on ? alpha(tokens.colors.primary, "80") : alpha(tokens.colors.outlineVariant, "cc"))};
+  background: ${({ $on }) => ($on ? alpha(tokens.colors.primary, "1f") : "transparent")};
+  color: ${({ $on }) => ($on ? tokens.colors.primary : tokens.colors.onSurfaceVariant)};
+  font-size: ${tokens.typography.fontSize.sm};
+  cursor: pointer;
+
+  @media (max-width: 600px) { max-width: 9rem; }
+
+  > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+`;
+
+export const ComposerSpacer = styled.div`
+  flex: 1;
+`;
+
+/* Think and the source chips. On a narrow screen they scroll sideways
+   instead of pushing the model picker and Send out of the box. */
+export const ComposerChips = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+
+  /* A phone fits only a chip or two: fade the edge so the rest read as
+     scrollable instead of cut off. */
+  @media (max-width: 600px) {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
+  }
+
+  > * { flex-shrink: 0; }
+`;
+
+export const ComposerNote = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding-top: 0.5rem;
+  font-size: 11.5px;
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
 
 export const CharCounter = styled.span<{ $over: boolean }>`
   position: absolute;
-  top: -1.25rem;
+  top: -1.5rem;
   right: 0.75rem;
   font-size: 11px;
   font-family: ${tokens.typography.fontFamily.mono};
@@ -353,59 +491,56 @@ export const CharCounter = styled.span<{ $over: boolean }>`
 `;
 
 export const TextInput = styled.textarea`
-  flex: 1;
-  min-height: 42px;
-  max-height: 140px;
-  padding: 0.625rem 0.875rem;
-  background: ${tokens.colors.surfaceContainerHigh};
-  border: 1px solid ${alpha(tokens.colors.outlineVariant, "66")};
-  border-radius: 21px;
-  font-size: ${tokens.typography.fontSize.base};
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  max-height: 220px;
+  padding: 0.25rem 0;
+  background: transparent;
+  border: none;
+  font-size: 0.9375rem;
   font-family: ${tokens.typography.fontFamily.body};
   color: ${tokens.colors.onSurface};
   resize: none;
   outline: none;
-  line-height: 1.4;
+  line-height: 1.5;
+
   /* Android WebView reserves a scrollbar gutter on textarea even when
      content fits. Hide the visual; the textarea stays scrollable. */
   &::-webkit-scrollbar { width: 0; height: 0; }
   scrollbar-width: none;
 
   &::placeholder { color: ${tokens.colors.outline}; }
-  &:focus { border-color: ${tokens.colors.primary}; }
 `;
 
 export const RoundBtn = styled.button<{ $variant: "send" | "idle" | "stop" }>`
-  width: 42px;
-  height: 42px;
-  border-radius: 21px;
+  width: 32px;
+  height: 32px;
+  border-radius: ${tokens.borderRadius.lg};
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: transform ${tokens.transitions.fast}, opacity ${tokens.transitions.fast};
-
+  border: none;
+  transition: background ${tokens.transitions.fast}, opacity ${tokens.transitions.fast};
   ${({ $variant }) =>
 		$variant === "send"
-			? `border: none; color: ${tokens.colors.onPrimaryFixed};
-         background: ${tokens.colors.primary};`
+			? `color: ${tokens.colors.onPrimary}; background: ${tokens.colors.primary};`
 			: $variant === "stop"
-				? `border: 1.5px solid ${alpha(tokens.colors.error, "99")}; color: ${tokens.colors.error};
-           background: ${alpha(tokens.colors.error, "1f")};`
-				: `border: 1px solid ${alpha(tokens.colors.outlineVariant, "66")};
-           color: ${tokens.colors.onSurfaceVariant}; background: ${tokens.colors.surfaceContainerHigh};`}
+				? `color: ${tokens.colors.onSurface}; background: ${tokens.colors.surfaceContainerHighest};`
+				: `color: ${tokens.colors.onPrimary}; background: ${alpha(tokens.colors.primary, "66")};`}
 
-  &:disabled { cursor: default; opacity: 0.6; }
-  &:not(:disabled):active { transform: scale(0.9); }
+  &:not(:disabled):hover { filter: brightness(1.08); }
+  &:disabled { cursor: default; }
 `;
 
 /* ── Top bar ── */
 
 export const TopBarBtn = styled.button`
-  width: 40px;
-  height: 40px;
-  border-radius: ${tokens.borderRadius.xl};
+  width: 34px;
+  height: 34px;
+  border-radius: ${tokens.borderRadius.lg};
   border: none;
   background: transparent;
   color: ${tokens.colors.onSurfaceVariant};
@@ -425,11 +560,11 @@ export const TopBarBtn = styled.button`
 export const HeaderPill = styled.button`
   display: inline-flex;
   align-items: center;
-  gap: 0.625rem;
-  padding: 0.375rem 0.5rem 0.375rem 0.375rem;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.5rem;
   background: transparent;
   border: none;
-  border-radius: ${tokens.borderRadius.xl};
+  border-radius: ${tokens.borderRadius.lg};
   color: ${tokens.colors.onSurface};
   cursor: pointer;
   transition: background ${tokens.transitions.fast};
@@ -443,12 +578,11 @@ export const HeaderPill = styled.button`
 
 /* The character's face in the header: a flat disc in its accent color. */
 export const HeaderAvatar = styled.span<{ $accent: string }>`
-  width: 36px;
-  height: 36px;
-  border-radius: ${tokens.borderRadius.circle};
-  background: ${({ $accent }) => alpha($accent, "24")};
-  border: 1.5px solid ${({ $accent }) => $accent};
-  color: ${({ $accent }) => $accent};
+  width: 26px;
+  height: 26px;
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.surfaceContainerHighest};
+  color: ${tokens.colors.primary};
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -468,7 +602,7 @@ export const HeaderCharName = styled.span`
   gap: 0.25rem;
   font-family: ${tokens.typography.fontFamily.headline};
   font-size: ${tokens.typography.fontSize.base};
-  font-weight: ${tokens.typography.fontWeight.bold};
+  font-weight: ${tokens.typography.fontWeight.medium};
   line-height: 1.1;
   min-width: 0;
 
@@ -480,28 +614,7 @@ export const HeaderCharName = styled.span`
   }
 `;
 
-export const HeaderModelLine = styled.span`
-  font-size: 11px;
-  font-weight: ${tokens.typography.fontWeight.medium};
-  color: ${tokens.colors.onSurfaceVariant};
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 14rem;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-`;
 
-export const ModelDot = styled.span<{ $on: boolean }>`
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: ${({ $on }) => ($on ? tokens.colors.secondary : tokens.colors.outline)};
-  box-shadow: ${({ $on }) => ($on ? `0 0 6px ${alpha(tokens.colors.secondary, "80")}` : "none")};
-`;
 
 /* First-run coachmark so the switcher doesn't go undiscovered. */
 

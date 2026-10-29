@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import { BottomNav } from "./BottomNav";
+import { Sidebar } from "./Sidebar";
 
 interface AppLayoutProps {
 	children: ReactNode;
@@ -32,8 +33,8 @@ interface AppLayoutProps {
 }
 
 /**
- * Phones get the tab bar under the content. Wide windows (desktop) get it as
- * a rail down the left edge instead, see `BottomNav`.
+ * Phones get the tab bar under the content. Wide windows (desktop) get a
+ * full sidebar down the left edge instead, see `Sidebar`.
  */
 const Shell = styled.div`
   display: grid;
@@ -60,11 +61,23 @@ const TopBar = styled.header<{ $hasSubtitle: boolean }>`
   align-items: center;
   justify-content: space-between;
   padding: ${({ $hasSubtitle }) => ($hasSubtitle ? "0.375rem 0.875rem" : "0 0.75rem")};
-  min-height: 56px;
+  min-height: 52px;
   flex-shrink: 0;
-  background: ${tokens.colors.surfaceContainerLow};
+  background: ${tokens.colors.background};
   border-bottom: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
   gap: 0.5rem;
+
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    min-height: 48px;
+    padding: ${({ $hasSubtitle }) => ($hasSubtitle ? "0.25rem 1rem" : "0 1rem")};
+    border-bottom-color: transparent;
+  }
+`;
+
+/* The sidebar carries the brand on desktop. */
+const TopLogo = styled.span`
+  display: inline-flex;
+  @media (min-width: ${tokens.breakpoints.wide}) { display: none; }
 `;
 
 const TitleGroup = styled.div`
@@ -103,8 +116,8 @@ const TitleStack = styled.div`
 
 const PageTitle = styled.h1`
   font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.lg};
-  font-weight: ${tokens.typography.fontWeight.bold};
+  font-size: ${tokens.typography.fontSize.md};
+  font-weight: ${tokens.typography.fontWeight.semibold};
   color: ${tokens.colors.onSurface};
   line-height: 1.1;
   overflow: hidden;
@@ -143,9 +156,12 @@ const PrimarySlot = styled.div`
   flex: 1;
 `;
 
+/* Opacity only: a transform here would become the containing block of
+   every position: fixed popup opened from a page (the character picker in
+   Settings), trapping it inside the content area. */
 const contentIn = keyframes`
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 `;
 
 const Content = styled.main`
@@ -181,7 +197,11 @@ export function AppLayout({ children, title, subtitle, rightActions, hideLogo, b
 							<Icon name="arrow_back" size={20} />
 						</BackBtn>
 					) : (
-						!hideLogo && <NeurixLogo size={24} />
+						!hideLogo && (
+							<TopLogo>
+								<NeurixLogo size={24} />
+							</TopLogo>
+						)
 					)}
 					{title ? (
 						<TitleStack>
@@ -195,6 +215,7 @@ export function AppLayout({ children, title, subtitle, rightActions, hideLogo, b
 				{rightActions && <Actions>{rightActions}</Actions>}
 			</TopBar>
 			<Content>{children}</Content>
+			<Sidebar />
 			<BottomNav />
 		</Shell>
 	);

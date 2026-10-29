@@ -12,9 +12,10 @@ import styled from "styled-components";
  * where the user is.
  */
 const NAV_TABS = [
-	{ icon: "chat_bubble", label: "Chat", path: "/chat", owns: ["/character"] },
+	{ icon: "chat_bubble", label: "Chat", path: "/chat", owns: ["/character", "/friend"] },
 	{ icon: "deployed_code", label: "Models", path: "/models", owns: [] },
 	{ icon: "storefront", label: "Store", path: "/store", owns: ["/downloading"] },
+	{ icon: "plug", label: "Connect", path: "/connectors", owns: [] },
 	{ icon: "settings", label: "Settings", path: "/settings", owns: ["/about"] },
 ] as const;
 
@@ -28,11 +29,9 @@ const NavOuter = styled.div`
   display: flex;
   justify-content: center;
 
+  /* Wide windows use the sidebar instead. */
   @media (min-width: ${tokens.breakpoints.wide}) {
-    width: 88px;
-    border-top: none;
-    border-right: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
-    padding-bottom: 0;
+    display: none;
   }
 `;
 
