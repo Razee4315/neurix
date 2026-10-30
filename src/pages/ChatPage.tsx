@@ -13,7 +13,7 @@ import type { Character, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
-import { CREATE_INSTRUCTIONS, CREATE_MAX_TOKENS } from "@/utils/fileBlocks";
+import { CREATE_INSTRUCTIONS, CREATE_MAX_TOKENS, fenceBareFiles } from "@/utils/fileBlocks";
 import { copyText, isMobile, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
 import { relationshipOf } from "@/utils/persona";
@@ -521,10 +521,11 @@ export function ChatPage() {
 					const speed = duration_ms > 0 ? total_tokens / (duration_ms / 1000) : 0;
 
 					if (cleaned) {
-						const reply = createMessage("ai", cleaned, {
+						const createIn = live.current.createIn ?? undefined;
+						const reply = createMessage("ai", createIn ? fenceBareFiles(cleaned) : cleaned, {
 							stopReason: stop_reason,
 							reasoning: reasoning || undefined,
-							createIn: live.current.createIn ?? undefined,
+							createIn,
 						});
 						if (speed > 0) {
 							setReplyStats({ messageId: reply.id, tokensPerSecond: speed, tokens: total_tokens });

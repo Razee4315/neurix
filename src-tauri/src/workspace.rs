@@ -59,7 +59,8 @@ pub fn safe_relative(name: &str) -> Result<PathBuf, String> {
     if !WRITABLE.contains(&extension(&path).as_str()) {
         return Err(format!("Neurix doesn't create {} files.", path.extension().map_or("those".into(), |e| e.to_string_lossy())));
     }
-    Ok(path)
+    // Rebuilt so a name written with / uses the system's own separator.
+    Ok(path.components().collect())
 }
 
 /// Whether a file may be handed to the system to open.

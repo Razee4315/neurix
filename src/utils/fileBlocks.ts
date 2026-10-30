@@ -14,10 +14,16 @@ export interface ProposedFile {
 
 /** Added to the system prompt while Create mode is on. */
 export const CREATE_INSTRUCTIONS = [
-	"You can create files for the user.",
-	"For each file, write a line like File: index.html and then the complete file in one code block.",
-	"Use short, simple file names. Keep CSS and JavaScript inside the HTML file unless asked otherwise.",
-	"Write the whole file with real content, never placeholders. After the code, add one short sentence.",
+	"You can create files for the user. Write each file in exactly this format:",
+	"",
+	"File: index.html",
+	"```html",
+	"the complete file goes here",
+	"```",
+	"",
+	"Always put the code fences around the file. Use short, simple file names.",
+	"Keep CSS and JavaScript inside the HTML file unless asked otherwise.",
+	"Write the whole file with real content, never placeholders. After the closing fence, add one short sentence.",
 ].join("\n");
 
 /** Room for a whole page: the default reply length is too short for one. */
@@ -45,6 +51,51 @@ const DEFAULT_NAMES: Record<string, string> = {
 	csv: "data.csv",
 	svg: "image.svg",
 };
+
+/** A fence language for a file, from its extension. */
+function languageOf(name: string): string {
+	const extension = name.split(".").pop()?.toLowerCase() ?? "";
+	return extension === "txt" ? "text" : extension;
+}
+
+/**
+ * Small models often write "File: index.html" and then the file with no code
+ * fence. Add the fences so the reply renders as code and can be approved. A
+ * page cut off before </html> keeps an open fence, which marks it unfinished.
+ */
+export function fenceBareFiles(text: string): string {
+	const lines = text.split("\n");
+	const out: string[] = [];
+	let inFence = false;
+
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		if (line.trim().startsWith("```")) inFence = !inFence;
+		const name = inFence ? undefined : line.match(NAMED_LINE)?.[1];
+		let next = i + 1;
+		while (next < lines.length && lines[next].trim() === "") next++;
+		if (!name || next === lines.length || lines[next].trim().startsWith("```")) {
+			out.push(line);
+			continue;
+		}
+
+		const html = /\.html?$/i.test(name);
+		const body: string[] = [];
+		let closed = !html;
+		for (; next < lines.length && !NAMED_LINE.test(lines[next]); next++) {
+			body.push(lines[next]);
+			if (html && /<\/html>/i.test(lines[next])) {
+				closed = true;
+				next++;
+				break;
+			}
+		}
+		while (body.length > 0 && body[body.length - 1].trim() === "") body.pop();
+		out.push(line, `\`\`\`${languageOf(name)}`, ...body, ...(closed ? ["```"] : []));
+		i = next - 1;
+	}
+	return out.join("\n");
+}
 
 /** A sensible name for saving a code block as a file. */
 export function suggestedName(language: string): string {

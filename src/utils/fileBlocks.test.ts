@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractFiles, isHtml, suggestedName } from "./fileBlocks";
+import { extractFiles, fenceBareFiles, isHtml, suggestedName } from "./fileBlocks";
 
 const block = (code: string, lang = "html") => `\`\`\`${lang}\n${code}\n\`\`\``;
 
@@ -50,6 +50,46 @@ describe("extractFiles", () => {
 		const files = extractFiles(`File: a.txt\n${block("one", "text")}\nFile: A.TXT\n${block("two", "text")}`);
 		expect(files).toHaveLength(1);
 		expect(files[0].code).toBe("one");
+	});
+});
+
+describe("fenceBareFiles", () => {
+	const page = "<!DOCTYPE html>\n<html>\n<body>Hi</body>\n</html>";
+
+	it("wraps a page written with no fence, and keeps what follows it", () => {
+		const fixed = fenceBareFiles(`File: index.html\n\n${page}\n\nOpen it in a browser.`);
+		const [file] = extractFiles(fixed);
+		expect(file).toMatchObject({ name: "index.html", language: "html", code: page, complete: true });
+		expect(fixed.endsWith("Open it in a browser.")).toBe(true);
+	});
+
+	it("wraps a text file", () => {
+		const [file] = extractFiles(fenceBareFiles("File: tips.txt\n\nDrink water.\nCarry a bottle."));
+		expect(file).toMatchObject({ name: "tips.txt", code: "Drink water.\nCarry a bottle.", complete: true });
+	});
+
+	it("wraps several files", () => {
+		const fixed = fenceBareFiles(`File: a.html\n${page}\nFile: b.css\nbody { margin: 0; }`);
+		expect(extractFiles(fixed).map((f) => f.name)).toEqual(["a.html", "b.css"]);
+	});
+
+	it("marks a page cut off before it ended", () => {
+		const [file] = extractFiles(fenceBareFiles("File: index.html\n<html>\n<body>Hi"));
+		expect(file.complete).toBe(false);
+	});
+
+	it("leaves a fenced file alone", () => {
+		const text = "File: index.html\n```html\n<p>x</p>\n```\nDone.";
+		expect(fenceBareFiles(text)).toBe(text);
+	});
+
+	it("leaves a file line inside a code block alone", () => {
+		const text = "```text\nFile: notes.txt\nsome words\n```";
+		expect(fenceBareFiles(text)).toBe(text);
+	});
+
+	it("leaves a name with nothing after it alone", () => {
+		expect(fenceBareFiles("File: index.html")).toBe("File: index.html");
 	});
 });
 
