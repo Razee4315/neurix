@@ -131,6 +131,8 @@ const Recents = styled.div`
 
 const RecentRow = styled(Row)`
   height: 32px;
+  /* Keep full height when the list outgrows the sidebar, so it scrolls. */
+  flex-shrink: 0;
   font-size: ${tokens.typography.fontSize.sm};
   color: ${({ $active }) => ($active ? tokens.colors.onSurface : alpha(tokens.colors.onSurface, "bf"))};
 `;
