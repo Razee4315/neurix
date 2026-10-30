@@ -495,6 +495,17 @@ async function downloadModel(args: { modelId: string; onEvent: Emitter<DownloadE
 
 type Args = Record<string, unknown>;
 
+function mockFolder(path: unknown) {
+	return {
+		name: String(path).split("/").pop(),
+		path,
+		total_files: 3,
+		text_files: ["medication-policy.md", "rota.csv"],
+		unreadable: ["logo.png"],
+		partial: false,
+	};
+}
+
 const handlers: Record<string, (args: Args) => unknown> = {
 	get_model_catalog: () => CATALOG,
 	get_preset_characters: () => PRESETS,
@@ -661,16 +672,13 @@ const handlers: Record<string, (args: Args) => unknown> = {
 		return { conversations: backup.conversations?.length ?? 0, characters: incoming.length };
 	},
 	pick_folder: () => "/Users/demo/Documents/Care policies",
-	read_folder: ({ path }) => ({
-		name: String(path).split("/").pop(),
-		path,
-		total_files: 3,
-		text_files: 2,
-		files: [
-			{ path: "medication-policy.md", size_bytes: 1200, content: "# Medication policy\nTwo staff sign every controlled drug.", truncated: false },
-			{ path: "rota.csv", size_bytes: 300, content: "day,staff\nMon,Ana\nTue,Ben", truncated: false },
-			{ path: "logo.png", size_bytes: 9000, content: null, truncated: false },
-		],
+	read_folder: ({ path }) => mockFolder(path),
+	search_folder: ({ path, question }) => ({
+		folder: mockFolder(path),
+		excerpts: /drug|medication|sign/i.test(String(question))
+			? [{ path: "medication-policy.md", text: "# Medication policy\nTwo staff sign every controlled drug." }]
+			: [],
+		unreadable_matches: /logo/i.test(String(question)) ? ["logo.png"] : [],
 	}),
 	gmail_fetch: () => [
 		{ from: "Ana Lewis <ana@example.com>", subject: "Rota swap Thursday", date: "Wed, 29 Oct 2026 09:12", snippet: "Can I swap my Thursday morning with Ben?" },

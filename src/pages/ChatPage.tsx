@@ -531,11 +531,12 @@ export function ChatPage() {
 		};
 
 		try {
-			const sources = prefix ? "" : await connectorContext(prompt);
+			const sources = prefix ? null : await connectorContext(prompt);
 			if (!isCurrent()) return;
+			for (const warning of sources?.warnings ?? []) showToast(warning, "error");
 			await chatService.runInference(
 				{
-					prompt: withContext(sources, prompt),
+					prompt: withContext(sources?.text ?? "", prompt),
 					systemPrompt: withGreeting(character, character?.system_prompt ?? settings?.system_prompt ?? ""),
 					history: buildHistory(context),
 					temperature: character?.temperature ?? settings?.temperature ?? 0.7,
@@ -559,7 +560,7 @@ export function ChatPage() {
 			// header and the next send reflect that.
 			refreshActiveModel();
 		}
-	}, [commit, flushStream, resetStream, setGenerating, refreshActiveModel, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
+	}, [commit, flushStream, resetStream, setGenerating, refreshActiveModel, showToast, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
 
 	/** Make sure a model is loaded, loading the last-used one if needed. */
 	const ensureModel = useCallback(async (): Promise<boolean> => {

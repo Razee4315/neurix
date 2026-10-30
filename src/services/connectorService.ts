@@ -1,18 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export interface FolderFile {
-	path: string;
-	size_bytes: number;
-	content: string | null;
-	truncated: boolean;
-}
-
 export interface FolderSnapshot {
 	name: string;
 	path: string;
 	total_files: number;
-	text_files: number;
-	files: FolderFile[];
+	/** Files that were actually read as text. */
+	text_files: string[];
+	/** Other formats, or files that turned out not to be text. */
+	unreadable: string[];
+	/** True when the folder was too big to read all of it. */
+	partial: boolean;
+}
+
+export interface FolderSearch {
+	folder: FolderSnapshot;
+	/** The passages that match the question, best first. */
+	excerpts: { path: string; text: string }[];
+	/** Unreadable files the question seems to be about. */
+	unreadable_matches: string[];
 }
 
 /** Native folder picker. Resolves to null when the user cancels. */
@@ -20,9 +25,14 @@ export async function pickFolder(): Promise<string | null> {
 	return invoke("pick_folder");
 }
 
-/** List a folder and read its text files, up to `maxChars` in total. */
-export async function readFolder(path: string, maxChars: number): Promise<FolderSnapshot> {
-	return invoke("read_folder", { path, maxChars });
+/** What a folder holds and which of its files can be read. */
+export async function readFolder(path: string): Promise<FolderSnapshot> {
+	return invoke("read_folder", { path });
+}
+
+/** Search a folder's text files, keeping up to `maxChars` of the best passages. */
+export async function searchFolder(path: string, question: string, maxChars: number): Promise<FolderSearch> {
+	return invoke("search_folder", { path, question, maxChars });
 }
 
 export interface MailSummary {

@@ -477,7 +477,7 @@ export function ConnectorsPage() {
 		try {
 			const path = await pickFolder();
 			if (!path) return;
-			const snapshot = await readFolder(path, 0);
+			const snapshot = await readFolder(path);
 			if (snapshot.total_files === 0) {
 				showToast(
 					`Neurix couldn't see any files in ${snapshot.name}. If macOS asked for access, allow it, or check System Settings › Privacy & Security › Files and Folders.`,
@@ -486,8 +486,11 @@ export function ConnectorsPage() {
 				return;
 			}
 			addFolder(snapshot);
+			const skipped = snapshot.unreadable.length;
 			showToast(
-				`Connected ${snapshot.name}: ${snapshot.text_files} readable files`,
+				`Connected ${snapshot.name}: ${snapshot.text_files.length} readable files${
+					skipped > 0 ? `, ${skipped} skipped (PDF, Word, images and other formats)` : ""
+				}${snapshot.partial ? ". The folder is very large, so only part of it can be searched" : ""}`,
 				"success",
 			);
 		} catch (err) {

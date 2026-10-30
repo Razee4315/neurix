@@ -133,11 +133,56 @@ jobs:
           NEURIX_TEST_MODEL: ../test-models/Qwen3.5-0.8B-Q4_K_M.gguf
         run: cargo test real_model_end_to_end -- --ignored --nocapture
 
+      - name: Folder connector end to end (Qwen 3.5 0.8B)
+        working-directory: src-tauri
+        env:
+          NEURIX_TEST_MODEL: ../test-models/Qwen3.5-0.8B-Q4_K_M.gguf
+        run: cargo test real_model_answers_from_folder -- --ignored --nocapture
+
       - name: Engine end to end (LFM 2.5 1.2B)
         working-directory: src-tauri
         env:
           NEURIX_TEST_MODEL: ../test-models/LFM2.5-1.2B-Instruct-Q4_K_M.gguf
         run: cargo test real_model_end_to_end -- --ignored --nocapture
+
+  # Started by hand: the app without an installer, to try a branch on a real
+  # computer before it is released.
+  windows-app:
+    name: Windows app (test build)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    env:
+      LIBCLANG_PATH: C:\Program Files\LLVM\bin
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build the app
+        run: npx tauri build --no-bundle
+
+      - name: Attach the app to the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: neurix-windows-test
+          path: src-tauri/target/release/neurix-tauri.exe
+          retention-days: 7
 
   android:
     name: Android
