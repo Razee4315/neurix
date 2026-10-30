@@ -22,18 +22,31 @@ export interface InferenceRequest {
 	enableThinking?: boolean;
 }
 
+const BUSY_RETRY_MS = 500;
+/** Long enough for the slowest chunk on a busy laptop. */
+const BUSY_RETRIES = 60;
+
 export async function runInference(
 	request: InferenceRequest,
 	onEvent: (event: InferenceEvent) => void,
 ): Promise<void> {
 	const channel = new Channel<InferenceEvent>();
 	channel.onmessage = onEvent;
-	return invoke("run_inference", {
-		...request,
-		assistantPrefix: request.assistantPrefix ?? null,
-		enableThinking: request.enableThinking ?? false,
-		onEvent: channel,
-	});
+	// A stopped reply finishes its current chunk first. Sending right after
+	// one, such as by leaving a chat mid-reply, only needs a short wait.
+	for (let attempt = 0; ; attempt++) {
+		try {
+			return await invoke("run_inference", {
+				...request,
+				assistantPrefix: request.assistantPrefix ?? null,
+				enableThinking: request.enableThinking ?? false,
+				onEvent: channel,
+			});
+		} catch (err) {
+			if (attempt >= BUSY_RETRIES || !String(err).includes("still busy")) throw err;
+			await new Promise((resolve) => setTimeout(resolve, BUSY_RETRY_MS));
+		}
+	}
 }
 
 export async function stopInference(): Promise<void> {

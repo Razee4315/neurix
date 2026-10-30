@@ -135,6 +135,15 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 		}));
 
 		(async () => {
+			if (!navigator.onLine) {
+				startingRef.current.delete(model.id);
+				updateDownload(model.id, {
+					status: "failed",
+					error: "You're offline. Connect to the internet, then try again.",
+				});
+				return;
+			}
+
 			// Enforce WiFi-only. Fail-closed: proceed only on CONFIRMED WiFi.
 			try {
 				const current = await settingsService.getSettings();
