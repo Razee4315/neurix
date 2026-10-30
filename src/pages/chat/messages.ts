@@ -118,6 +118,18 @@ export function toStored(messages: Message[]): ChatMessage[] {
 /** Added to a message while earlier replies came from another character. */
 export const NEW_STYLE_NOTE = "(Answer in your own style, not the style of the earlier replies in this chat.)";
 
+/**
+ * What the model sees of earlier replies once the character has changed. It
+ * copies what it sees, so another character's emojis would carry over.
+ */
+export function plainEarlierReplies(messages: Message[], characterId: string | undefined): Message[] {
+	return messages.map((m) =>
+		m.role === "ai" && m.characterId && m.characterId !== characterId
+			? { ...m, text: m.text.replace(/\p{Extended_Pictographic}\uFE0F?/gu, "").replace(/ {2,}/g, " ").trim() }
+			: m,
+	);
+}
+
 /** Whether any reply so far was written by a different character. */
 export function spokenByAnother(messages: Message[], characterId: string | undefined): boolean {
 	return messages.some((m) => m.role === "ai" && !!m.characterId && m.characterId !== characterId);

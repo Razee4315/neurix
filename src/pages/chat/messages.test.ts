@@ -3,6 +3,7 @@ import {
 	buildHistory,
 	createMessage,
 	fromStored,
+	plainEarlierReplies,
 	spokenByAnother,
 	generateTitle,
 	persistable,
@@ -117,6 +118,22 @@ describe("saved reply details", () => {
 		const stored = toStored([createMessage("user", "q"), createMessage("ai", "text")]);
 		expect(stored[1]).not.toHaveProperty("sources");
 		expect(stored[1]).not.toHaveProperty("stop_reason");
+	});
+});
+
+describe("plainEarlierReplies", () => {
+	it("takes emojis out of another character's replies only", () => {
+		const theirs = createMessage("ai", "oh wow 😂 tea is great 🍵", { characterId: "a" });
+		const mine = createMessage("ai", "nice 😊", { characterId: "b" });
+		const [first, second] = plainEarlierReplies([theirs, mine], "b");
+		expect(first.text).toBe("oh wow tea is great");
+		expect(second.text).toBe("nice 😊");
+	});
+
+	it("leaves what was shown alone", () => {
+		const theirs = createMessage("ai", "tea 🍵", { characterId: "a" });
+		plainEarlierReplies([theirs], "b");
+		expect(theirs.text).toBe("tea 🍵");
 	});
 });
 
