@@ -59,11 +59,13 @@ function languageOf(name: string): string {
 }
 
 /**
- * Small models often write "File: index.html" and then the file with no code
- * fence. Add the fences so the reply renders as code and can be approved. A
- * page cut off before </html> keeps an open fence, which marks it unfinished.
+ * Small models often drop a code fence: "File: index.html" then the file with
+ * none at all, or an opening fence that is never closed. Add what is missing
+ * so the reply renders as code and can be approved. `finished` says the model
+ * ended the reply itself; a page cut off before </html> by the length limit
+ * keeps an open fence, which marks it unfinished.
  */
-export function fenceBareFiles(text: string): string {
+export function fenceBareFiles(text: string, finished = false): string {
 	const lines = text.split("\n");
 	const out: string[] = [];
 	let inFence = false;
@@ -74,8 +76,13 @@ export function fenceBareFiles(text: string): string {
 		const name = inFence ? undefined : line.match(NAMED_LINE)?.[1];
 		let next = i + 1;
 		while (next < lines.length && lines[next].trim() === "") next++;
-		if (!name || next === lines.length || lines[next].trim().startsWith("```")) {
+		const fenceNext = next < lines.length && lines[next].trim().startsWith("```");
+		if (!name || next === lines.length || fenceNext) {
 			out.push(line);
+			if (inFence && /<\/html>/i.test(line) && !fenceNext) {
+				out.push("```");
+				inFence = false;
+			}
 			continue;
 		}
 
@@ -93,7 +100,9 @@ export function fenceBareFiles(text: string): string {
 		while (body.length > 0 && body[body.length - 1].trim() === "") body.pop();
 		out.push(line, `\`\`\`${languageOf(name)}`, ...body, ...(closed ? ["```"] : []));
 		i = next - 1;
+		inFence = !closed;
 	}
+	if (inFence && finished) out.push("```");
 	return out.join("\n");
 }
 

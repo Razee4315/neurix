@@ -522,7 +522,7 @@ export function ChatPage() {
 
 					if (cleaned) {
 						const createIn = live.current.createIn ?? undefined;
-						const reply = createMessage("ai", createIn ? fenceBareFiles(cleaned) : cleaned, {
+						const reply = createMessage("ai", createIn ? fenceBareFiles(cleaned, stop_reason === "eos") : cleaned, {
 							stopReason: stop_reason,
 							reasoning: reasoning || undefined,
 							createIn,

@@ -78,6 +78,19 @@ describe("fenceBareFiles", () => {
 		expect(file.complete).toBe(false);
 	});
 
+	it("closes a page the model forgot to close, keeping what follows", () => {
+		const fixed = fenceBareFiles(`File: index.html\n\`\`\`html\n${page}\nA clean design.`);
+		const [file] = extractFiles(fixed);
+		expect(file).toMatchObject({ code: page, complete: true });
+		expect(fixed.endsWith("```\nA clean design.")).toBe(true);
+	});
+
+	it("closes any file when the model ended the reply itself", () => {
+		const text = "File: a.css\n```css\nbody { margin: 0; }";
+		expect(extractFiles(fenceBareFiles(text, true))[0].complete).toBe(true);
+		expect(extractFiles(fenceBareFiles(text))[0].complete).toBe(false);
+	});
+
 	it("leaves a fenced file alone", () => {
 		const text = "File: index.html\n```html\n<p>x</p>\n```\nDone.";
 		expect(fenceBareFiles(text)).toBe(text);
