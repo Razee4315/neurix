@@ -20,7 +20,7 @@ import {
 	useConnectors,
 } from "@/utils/connectors";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { isMobile } from "@/utils/platform";
+import { isMac, isMobile } from "@/utils/platform";
 import { useRef, useState } from "react";
 import styled from "styled-components";
 
@@ -480,7 +480,9 @@ export function ConnectorsPage() {
 			const snapshot = await readFolder(path);
 			if (snapshot.total_files === 0) {
 				showToast(
-					`Neurix couldn't see any files in ${snapshot.name}. If macOS asked for access, allow it, or check System Settings › Privacy & Security › Files and Folders.`,
+					isMac()
+						? `Neurix couldn't see any files in ${snapshot.name}. If macOS asked for access, allow it, or check System Settings › Privacy & Security › Files and Folders.`
+						: `Neurix couldn't see any files in ${snapshot.name}.`,
 					"error",
 				);
 				return;

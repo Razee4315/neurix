@@ -1,6 +1,7 @@
-const KB = 1024;
-const MB = KB * 1024;
-const GB = MB * 1024;
+// Decimal units, the same as the sizes in the model catalog.
+const KB = 1000;
+const MB = KB * 1000;
+const GB = MB * 1000;
 
 export function formatBytes(bytes: number): string {
 	if (bytes < KB) return `${bytes} B`;

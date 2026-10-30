@@ -6,6 +6,7 @@ import { CHAT_STARTED, HISTORY_CHANGED } from "@/services/historyService";
 import type { ConversationMeta } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { isMac } from "@/utils/platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -399,7 +400,7 @@ export function Sidebar() {
 						<MenuItem type="button" role="menuitem" onClick={() => go("/settings")}>
 							<Icon name="settings" size={16} />
 							Settings
-							<kbd>⌘ ,</kbd>
+							<kbd>{isMac() ? "⌘ ," : "Ctrl ,"}</kbd>
 						</MenuItem>
 						<MenuItem type="button" role="menuitem" onClick={() => go("/connectors")}>
 							<Icon name="plug" size={16} />

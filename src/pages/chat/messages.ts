@@ -126,10 +126,11 @@ export function toConversation(messages: Message[], ctx: ConversationContext): C
 
 /** Whether a reply ended early in a way the user can act on. */
 export function wasCutShort(reason: StopReason | undefined): boolean {
-	return reason === "length" || reason === "repetition";
+	return reason === "length" || reason === "repetition" || reason === "cancelled";
 }
 
 export function cutShortLabel(reason: StopReason | undefined): string {
 	if (reason === "repetition") return "Stopped: the model started repeating itself.";
+	if (reason === "cancelled") return "You stopped this reply.";
 	return "Reply reached the length limit.";
 }

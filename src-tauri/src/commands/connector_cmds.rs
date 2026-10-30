@@ -344,12 +344,11 @@ const README_CHARS: usize = 3_000;
 /// Public data of a GitHub repository: description, README and open issues.
 #[tauri::command]
 pub async fn github_fetch(repo: String) -> Result<GithubSnapshot, String> {
-    let repo = repo
-        .trim()
-        .trim_start_matches("https://github.com/")
-        .trim_end_matches('/')
-        .trim_end_matches(".git")
-        .to_string();
+    let repo = repo.trim();
+    let repo = repo.strip_prefix("https://").or_else(|| repo.strip_prefix("http://")).unwrap_or(repo);
+    let repo = repo.strip_prefix("www.").unwrap_or(repo);
+    let repo = repo.strip_prefix("github.com/").unwrap_or(repo);
+    let repo = repo.trim_end_matches('/').trim_end_matches(".git").to_string();
     if repo.split('/').count() != 2 {
         return Err("Use the form owner/repository, for example Razee4315/neurix.".into());
     }

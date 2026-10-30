@@ -258,7 +258,14 @@ export function ChatPage() {
 	const persist = useCallback((msgs: Message[]) => {
 		const s = live.current;
 		const toSave = persistable(msgs);
-		if (!s.saveHistory || toSave.length < 2 || !s.activeModelId || !s.activeModel) return;
+		// Every message deleted: the chat itself goes.
+		if (toSave.length === 0) {
+			const id = s.conversationId;
+			s.conversationId = null;
+			if (id) historyService.deleteConversation(id).catch(() => showToast("Couldn't delete this conversation", "error"));
+			return;
+		}
+		if (!s.saveHistory || !s.activeModelId || !s.activeModel) return;
 		if (!s.conversationId) s.conversationId = crypto.randomUUID();
 		historyService
 			.saveConversation(
@@ -599,7 +606,8 @@ export function ChatPage() {
 			if (!(await ensureModel())) return;
 
 			const context = live.current.messages;
-			show([...context, createMessage("user", text)]);
+			const sent = [...context, createMessage("user", text)];
+			show(sent);
 			// List a new chat in the sidebar right away, before the reply.
 			if (live.current.saveHistory && !live.current.conversationId) {
 				live.current.conversationId = crypto.randomUUID();
@@ -609,6 +617,8 @@ export function ChatPage() {
 					}),
 				);
 			}
+			// Saved now, so a stopped or failed reply can't lose the message.
+			persist(sent);
 			setInput("");
 			writeDraft("");
 			setOpenActionsId(null);
@@ -672,7 +682,10 @@ export function ChatPage() {
 		const idx = msgs.findIndex((m) => m.id === id);
 		if (idx < 0 || msgs[idx].role !== "user") return;
 		setOpenActionsId(null);
-		commit(msgs.slice(0, idx));
+		// Editing the first message empties the view but keeps the saved chat
+		// until the new text is sent, so changing your mind loses nothing.
+		if (idx === 0) show([]);
+		else commit(msgs.slice(0, idx));
 		fillInput(msgs[idx].text);
 	};
 
@@ -695,19 +708,8 @@ export function ChatPage() {
 		else showToast("Couldn't copy the conversation", "error");
 	};
 
-	const handleNewChat = () => {
-		// Invalidate the running generation first so its completion event
-		// cannot land in the new, empty conversation.
-		runIdRef.current += 1;
-		if (isGenerating) chatService.stopInference().catch(() => {});
-		resetStream();
-		setGenerating(false);
-		live.current.conversationId = null;
-		show([]);
-		setOpenActionsId(null);
-		setContextNotice(null);
-		textareaRef.current?.focus();
-	};
+	// The same route the sidebar takes, which also clears the Recents highlight.
+	const handleNewChat = () => navigate("/chat", { state: { freshChat: true } });
 
 	// Leaving mid-generation: stop the model and keep what it wrote so far
 	// in the same conversation (if history is on).
@@ -1104,8 +1106,8 @@ export function ChatPage() {
 										aria-pressed={folder.enabled}
 										title={
 											folder.enabled
-												? `Reading ${folder.path} for this chat. Click to stop.`
-												: `Click to use ${folder.path} in this chat`
+												? `Reading ${folder.path}. Click to stop.`
+												: `Click to use ${folder.path}`
 										}
 										onClick={() => setFolderEnabled(folder.path, !folder.enabled)}
 									>
@@ -1186,7 +1188,7 @@ export function ChatPage() {
 			{showCoach && !pickerOpen && (
 				<Coachmark role="status">
 					<Icon name="touch_app" size={14} color={tokens.colors.primary} />
-					<span>Tap the name above to switch character. Pick the model next to Send.</span>
+					<span>{isTouchPrimary() ? "Tap" : "Click"} the name above to switch character. Pick the model next to Send.</span>
 					<CoachClose type="button" onClick={dismissCoach} aria-label="Dismiss tip">
 						<Icon name="close" size={14} />
 					</CoachClose>

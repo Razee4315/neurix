@@ -107,8 +107,8 @@ const CATALOG: ModelInfo[] = [
 		sizeMb: 640,
 		tag: "Tiny",
 		description:
-			"The smallest model that still holds a real conversation. Starts instantly and runs on almost any phone.",
-		best_for: ["Quick answers", "Older phones", "Many languages"],
+			"The smallest model that still holds a real conversation. Starts instantly and runs on almost any device.",
+		best_for: ["Quick answers", "Older devices", "Many languages"],
 		min_ram_gb: 3,
 		quality: 2,
 		speed: 5,
@@ -121,7 +121,7 @@ const CATALOG: ModelInfo[] = [
 		parameters: "1.2B",
 		sizeMb: 840,
 		tag: "Fast",
-		description: "A model built specifically for phones. Very fast for its quality.",
+		description: "A model built for small devices. Very fast for its quality.",
 		best_for: ["Fast replies", "Summaries", "Following instructions"],
 		min_ram_gb: 3,
 		quality: 2,
@@ -137,7 +137,7 @@ const CATALOG: ModelInfo[] = [
 		sizeMb: 1300,
 		tag: "Balanced",
 		description:
-			"The best all-rounder for most phones. Clear writing, solid general knowledge, and it can think a problem through when asked.",
+			"The best all-rounder for most devices. Clear writing, solid general knowledge, and it can think a problem through when asked.",
 		best_for: ["Everyday chat", "Writing help", "Many languages"],
 		min_ram_gb: 4,
 		quality: 3,
@@ -167,7 +167,7 @@ const CATALOG: ModelInfo[] = [
 		sizeMb: 2700,
 		tag: "Smart",
 		description:
-			"The most capable model that fits a modern phone. Noticeably better at code, analysis and long answers.",
+			"The most capable of the everyday models. Noticeably better at code, analysis and long answers.",
 		best_for: ["Code", "Analysis", "Long, detailed answers"],
 		min_ram_gb: 8,
 		quality: 5,

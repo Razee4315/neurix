@@ -637,7 +637,7 @@ export function ChatHistoryPage() {
 												) : (
 													<ChatTitle>{entry.title}</ChatTitle>
 												)}
-												{entry.snippet && !isRenaming && <Snippet>{entry.snippet}</Snippet>}
+												{entry.snippet && !isRenaming && <Snippet>{entry.snippet.replace(/\*\*|`|#{1,6}\s/g, "")}</Snippet>}
 												<ChatMeta>
 													{entry.model_name} · {formatTime(entry.updated_at)}
 												</ChatMeta>

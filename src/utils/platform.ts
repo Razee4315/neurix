@@ -3,6 +3,10 @@ export function isMobile(): boolean {
 	return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
+export function isMac(): boolean {
+	return /Macintosh/i.test(navigator.userAgent);
+}
+
 /** True when the primary input is touch (no hover, coarse pointer). */
 export function isTouchPrimary(): boolean {
 	return window.matchMedia("(hover: none) and (pointer: coarse)").matches;

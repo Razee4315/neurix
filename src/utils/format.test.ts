@@ -7,8 +7,8 @@ describe("formatBytes", () => {
 	it("picks a sensible unit", () => {
 		expect(formatBytes(512)).toBe("512 B");
 		expect(formatBytes(1536)).toBe("1.5 KB");
-		expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
-		expect(formatBytes(2 * 1024 ** 3)).toBe("2.00 GB");
+		expect(formatBytes(5_000_000)).toBe("5.0 MB");
+		expect(formatBytes(2_000_000_000)).toBe("2.00 GB");
 	});
 });
 
@@ -19,7 +19,7 @@ describe("formatSpeed / formatEta", () => {
 	});
 
 	it("formats speed and remaining time", () => {
-		expect(formatSpeed(2 * 1024 * 1024)).toBe("2.0 MB/s");
+		expect(formatSpeed(2_000_000)).toBe("2.0 MB/s");
 		expect(formatEta(30, 1)).toBe("30s");
 		expect(formatEta(600, 1)).toBe("10 min");
 		expect(formatEta(7200, 1)).toBe("2.0 hr");
