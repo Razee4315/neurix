@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { learnedFacts, mergeMemories, undoLearning, withMemories } from "./friendMemory";
+import { learnedFacts, mergeMemories, undoLearning, withFriendFacts, withMemories } from "./friendMemory";
 import { PERSONA_LIMITS, emptyPersona } from "./persona";
 import type { Character } from "@/services/types";
 
@@ -133,6 +133,31 @@ describe("undoLearning", () => {
 		const changed = mergeMemories(["I live in Lahore"], learnedFacts("I live in Karachi"));
 		expect(changed.replaced).toEqual(["I live in Lahore"]);
 		expect(undoLearning(changed.memories, changed.added, changed.replaced)).toEqual(["I live in Lahore"]);
+	});
+});
+
+describe("withFriendFacts", () => {
+	const friend = { persona: { ...emptyPersona(), memories: ["My dog is called Moti"] } } as unknown as Character;
+
+	it("puts the facts beside a question about the user", () => {
+		const prompt = withFriendFacts(friend, "What is my job?");
+		expect(prompt).toContain("- My dog is called Moti");
+		expect(prompt).toContain("say you don't know");
+		expect(prompt.endsWith("My question: What is my job?")).toBe(true);
+	});
+
+	it.each([
+		["Why is the sky blue?"],
+		["my dog is great"],
+		["hello"],
+	])("leaves other messages alone: %s", (message) => {
+		expect(withFriendFacts(friend, message)).toBe(message);
+	});
+
+	it("leaves a friend with no memories, and other characters, alone", () => {
+		const blank = { persona: emptyPersona() } as unknown as Character;
+		expect(withFriendFacts(blank, "What is my job?")).toBe("What is my job?");
+		expect(withFriendFacts(null, "What is my job?")).toBe("What is my job?");
 	});
 });
 

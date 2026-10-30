@@ -14,7 +14,7 @@ import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { CREATE_INSTRUCTIONS, CREATE_MAX_TOKENS, fenceBareFiles } from "@/utils/fileBlocks";
-import { learnedFacts, mergeMemories, undoLearning, withMemories } from "@/utils/friendMemory";
+import { learnedFacts, mergeMemories, undoLearning, withFriendFacts, withMemories } from "@/utils/friendMemory";
 import { copyText, isMobile, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
 import { relationshipOf } from "@/utils/persona";
@@ -574,7 +574,7 @@ export function ChatPage() {
 			for (const warning of sources?.warnings ?? []) showToast(warning, "error");
 			await chatService.runInference(
 				{
-					prompt: withContext(sources?.text ?? "", prompt, sources?.noMatch),
+					prompt: withContext(sources?.text ?? "", withFriendFacts(character, prompt), sources?.noMatch),
 					systemPrompt: [
 						withGreeting(character, character?.system_prompt ?? settings?.system_prompt ?? ""),
 						...(live.current.createIn ? [CREATE_INSTRUCTIONS] : []),

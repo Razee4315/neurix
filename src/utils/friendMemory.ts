@@ -133,6 +133,28 @@ export function undoLearning(memories: string[], added: string[], replaced: stri
 	return [...replaced.filter((m) => !kept.includes(m)), ...kept].slice(-PERSONA_LIMITS.memories);
 }
 
+/** A question about the user themself, as opposed to one about the world. */
+const ABOUT_THE_USER = /\b(?:my|do i|did i|am i|where i|what i|who i|about me)\b/i;
+
+/**
+ * Put what a friend knows right beside a question about the user. Small
+ * models answer from material next to the question far better than from the
+ * system prompt, and without this they make up an answer. Only the prompt
+ * changes: the chat shows and saves what was typed.
+ */
+export function withFriendFacts(character: Character | null | undefined, message: string): string {
+	const memories = character?.persona?.memories ?? [];
+	if (memories.length === 0 || !message.trim().endsWith("?") || !ABOUT_THE_USER.test(message)) return message;
+	return [
+		"What I have told you about me:",
+		...memories.map((m) => `- ${m}`),
+		"",
+		"If I am asking what you know about me, use only this list, and if it isn't there say you don't know.",
+		"",
+		`My question: ${message}`,
+	].join("\n");
+}
+
 /** The same friend with a new memory list and a prompt that includes it. */
 export function withMemories(character: Character, memories: string[]): Character {
 	if (!character.persona) return character;
