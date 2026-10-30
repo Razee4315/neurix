@@ -73,14 +73,23 @@ function classify(sentence: string): { slot?: string } | null {
 	return null;
 }
 
-const tidy = (text: string) => text.trim().replace(/\s+/g, " ").replace(/[.!,;:]+$/, "");
+const tidy = (text: string) =>
+	text
+		.trim()
+		.replace(/\s+/g, " ")
+		.replace(/[.!,;:]+$/, "")
+		.replace(/,? (?:actually|by the way|though)$/i, "");
 const capitalise = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** "My dog is Moti, and I live in Lahore" holds two facts. */
+const NEXT_CLAUSE = /(?:,\s*(?:and\s+|but\s+)?|\s+(?:and|but)\s+)(?=(?:my|i|i'm)\s)/i;
 
 /** The lasting facts stated in a message, in the user's own words. */
 export function learnedFacts(message: string): Fact[] {
 	const facts: Fact[] = [];
-	for (const raw of message.match(/[^.!?\n]+[.!?]?/g) ?? []) {
-		if (raw.trim().endsWith("?") || SECRET.test(raw)) continue;
+	const sentences = (message.match(/[^.!?\n]+[.!?]?/g) ?? []).filter((s) => !s.trim().endsWith("?"));
+	for (const raw of sentences.flatMap((s) => s.split(NEXT_CLAUSE))) {
+		if (SECRET.test(raw)) continue;
 		const sentence = tidy(raw.trim().replace(LEAD_IN, ""));
 		const asked = sentence.match(REMEMBER)?.[1];
 		const text = tidy(asked ?? sentence);
@@ -97,17 +106,31 @@ export function learnedFacts(message: string): Fact[] {
 }
 
 /** Add facts to what a friend remembers. When full, the oldest goes first. */
-export function mergeMemories(memories: string[], facts: Fact[]): { memories: string[]; added: string[] } {
+export function mergeMemories(
+	memories: string[],
+	facts: Fact[],
+): { memories: string[]; added: string[]; replaced: string[] } {
 	let next = [...memories];
 	const added: string[] = [];
+	const replaced: string[] = [];
 	for (const { text, slot } of facts) {
 		const lower = text.toLowerCase();
 		if (next.some((m) => m.toLowerCase() === lower)) continue;
-		if (slot) next = next.filter((m) => classify(tidy(m))?.slot !== slot);
+		if (slot) {
+			const sameSlot = (m: string) => classify(tidy(m))?.slot === slot;
+			replaced.push(...next.filter(sameSlot));
+			next = next.filter((m) => !sameSlot(m));
+		}
 		next.push(text);
 		added.push(text);
 	}
-	return { memories: next.slice(-PERSONA_LIMITS.memories), added };
+	return { memories: next.slice(-PERSONA_LIMITS.memories), added, replaced };
+}
+
+/** Take back one learning, leaving anything learned since it alone. */
+export function undoLearning(memories: string[], added: string[], replaced: string[]): string[] {
+	const kept = memories.filter((m) => !added.includes(m));
+	return [...replaced.filter((m) => !kept.includes(m)), ...kept].slice(-PERSONA_LIMITS.memories);
 }
 
 /** The same friend with a new memory list and a prompt that includes it. */

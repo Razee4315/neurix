@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { learnedFacts, mergeMemories, withMemories } from "./friendMemory";
+import { learnedFacts, mergeMemories, undoLearning, withMemories } from "./friendMemory";
 import { PERSONA_LIMITS, emptyPersona } from "./persona";
 import type { Character } from "@/services/types";
 
@@ -56,6 +56,19 @@ describe("learnedFacts", () => {
 		]);
 	});
 
+	it.each([
+		["My dog is called Sheru actually, and I live in Lahore"],
+		["My dog is called Sheru and I live in Lahore"],
+		["my dog is called Sheru, I live in Lahore"],
+		["my dog is called Sheru but I live in Lahore"],
+	])("splits two facts in one sentence: %s", (message) => {
+		expect(texts(message)).toEqual(["My dog is called Sheru", "I live in Lahore"]);
+	});
+
+	it("doesn't split a fact on its own and", () => {
+		expect(texts("I love cricket and football")).toEqual(["I love cricket and football"]);
+	});
+
 	it("keeps anything it is told to remember", () => {
 		expect(texts("Please remember that the wedding is on 3 May")).toEqual(["The wedding is on 3 May"]);
 		expect(texts("remember: Hina hates surprises")).toEqual(["Hina hates surprises"]);
@@ -106,6 +119,20 @@ describe("mergeMemories", () => {
 		expect(memories).toHaveLength(PERSONA_LIMITS.memories);
 		expect(memories[0]).toBe("Note 1");
 		expect(memories.at(-1)).toBe("I love cricket");
+	});
+});
+
+describe("undoLearning", () => {
+	it("takes back only that fact, and keeps newer ones", () => {
+		const first = mergeMemories([], learnedFacts("my dog is called Moti"));
+		const second = mergeMemories(first.memories, learnedFacts("I live in Lahore"));
+		expect(undoLearning(second.memories, first.added, first.replaced)).toEqual(["I live in Lahore"]);
+	});
+
+	it("brings back what the fact replaced", () => {
+		const changed = mergeMemories(["I live in Lahore"], learnedFacts("I live in Karachi"));
+		expect(changed.replaced).toEqual(["I live in Lahore"]);
+		expect(undoLearning(changed.memories, changed.added, changed.replaced)).toEqual(["I live in Lahore"]);
 	});
 });
 

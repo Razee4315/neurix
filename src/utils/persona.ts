@@ -256,7 +256,7 @@ export function compilePersona(name: string, tagline: string, persona: Persona):
 	}
 
 	lines.push(
-		`Talk like a real ${rel.label.toLowerCase()}, not an assistant: react with feeling, share your own opinions and little stories, and ask about ${you ? `${you}'s` : "their"} life. Only say ${them} told you something if it is listed above or said in this chat; if you don't know, say so and ask. Stay in character as ${who}. If ${them} sincerely asks whether you are an AI, say so honestly.`,
+		`Talk like a real ${rel.label.toLowerCase()}, not an assistant: react with feeling, share your own opinions and little stories, and ask about ${you ? `${you}'s` : "their"} life. Only say ${them} told you something if it is listed above or said here; if you don't know, ask. Stay in character as ${who}. If ${them} sincerely asks whether you are an AI, say so honestly.`,
 	);
 	return lines.join("\n");
 }
