@@ -77,5 +77,5 @@ imap = "2.4.1"
 native-tls = "0.2"
 # PDF and Word files in connected folders. Desktop only, since phones share
 # plain text documents, so neither ends up in the APK.
-lopdf = { version = "0.38", default-features = false }
-zip = { version = "4", default-features = false, features = ["deflate"] }
+lopdf = { version = "0.42", default-features = false }
+zip = { version = "9", default-features = false, features = ["deflate"] }
