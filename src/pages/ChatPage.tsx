@@ -14,6 +14,7 @@ import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
 import { CREATE_INSTRUCTIONS, CREATE_MAX_TOKENS, fenceBareFiles } from "@/utils/fileBlocks";
+import { learnedFacts, mergeMemories, withMemories } from "@/utils/friendMemory";
 import { copyText, isMobile, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
 import { relationshipOf } from "@/utils/persona";
@@ -216,7 +217,7 @@ export function ChatPage() {
 	const location = useLocation();
 	const { activeModel, activeModelId, activeModelInfo, settings, loadModel, refreshActiveModel } =
 		useAppContext();
-	const { activeCharacter, allCharacters, setActiveCharacter, loaded: charactersLoaded } = useCharacters();
+	const { activeCharacter, allCharacters, setActiveCharacter, saveCustom, loaded: charactersLoaded } = useCharacters();
 	const { showToast } = useToast();
 	const prefs = usePrefs();
 	const connectors = useConnectors();
@@ -629,6 +630,26 @@ export function ChatPage() {
 		}
 	}, [loadModel, settings?.last_model_id]);
 
+	/** Keep what a message says about the user, if a friend is listening. */
+	const learnFrom = (text: string) => {
+		const friend = live.current.character;
+		if (!friend?.persona || friend.is_preset || !getPrefs().friendsLearn) return;
+		const { memories, added } = mergeMemories(friend.persona.memories, learnedFacts(text));
+		if (added.length === 0) return;
+		saveCustom(withMemories(friend, memories))
+			.then(() =>
+				showToast(`${friend.name} will remember: ${added.join("; ")}`, "info", {
+					label: "Undo",
+					onAction: () => {
+						saveCustom(friend).catch(() => showToast("Couldn't undo that", "error"));
+					},
+				}),
+			)
+			.catch(() => {
+				// Not saved: the chat goes on, and the fact stays in this conversation.
+			});
+	};
+
 	const sendingRef = useRef(false);
 
 	const handleSend = async () => {
@@ -655,6 +676,7 @@ export function ChatPage() {
 			}
 			// Saved now, so a stopped or failed reply can't lose the message.
 			persist(sent);
+			learnFrom(text);
 			setInput("");
 			writeDraft("");
 			setOpenActionsId(null);
