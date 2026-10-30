@@ -645,6 +645,7 @@ export function ModelStorePage() {
 										key={m.id}
 										type="button"
 										onClick={() => openModel(m)}
+										aria-label={`${m.name}, ${m.size_label}`}
 										style={{ animationDelay: `${i * 40}ms` }}
 									>
 										<CardTop>

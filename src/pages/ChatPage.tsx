@@ -45,11 +45,13 @@ import {
 } from "./chat/Reasoning";
 import {
 	type Message,
+	NEW_STYLE_NOTE,
 	buildHistory,
 	createMessage,
 	cutShortLabel,
 	fromStored,
 	persistable,
+	spokenByAnother,
 	toConversation,
 	wasCutShort,
 } from "./chat/messages";
@@ -87,6 +89,7 @@ import {
 	PrimaryCta,
 	RoundBtn,
 	SecondaryCta,
+	SourcesLine,
 	SpeedBadge,
 	StarterChip,
 	StartersGrid,
@@ -109,6 +112,9 @@ const CREATE_KEY = "neurix.chat.create";
 const CREATE_FOLDER_KEY = "neurix.chat.createFolder";
 /** Share of the context window at which the chat is called "nearly full". */
 const CONTEXT_WARN_RATIO = 0.85;
+/** The usual reply limit, and what a computer can comfortably write instead. */
+const USUAL_REPLY_TOKENS = 512;
+const DESKTOP_REPLY_TOKENS = 1024;
 /** How close to the bottom (px) still counts as "following" the stream. */
 const FOLLOW_THRESHOLD = 96;
 
@@ -198,6 +204,8 @@ interface RunOptions {
 	context: Message[];
 	/** Existing reply text to extend (the "Continue" action). */
 	prefix?: string;
+	/** What the reply being extended looked at. */
+	used?: string[];
 }
 
 /**
@@ -475,8 +483,9 @@ export function ChatPage() {
 		setReading(null);
 	}, []);
 
-	const run = useCallback(async ({ prompt, context, prefix = "" }: RunOptions) => {
+	const run = useCallback(async ({ prompt, context, prefix = "", used = [] }: RunOptions) => {
 		const character = live.current.character;
+		let lookedAt = used;
 		const runId = ++runIdRef.current;
 		const isCurrent = () => runIdRef.current === runId;
 
@@ -527,6 +536,8 @@ export function ChatPage() {
 							stopReason: stop_reason,
 							reasoning: reasoning || undefined,
 							createIn,
+							sources: lookedAt,
+							characterId: character?.id,
 						});
 						if (speed > 0) {
 							setReplyStats({ messageId: reply.id, tokensPerSecond: speed, tokens: total_tokens });
@@ -572,9 +583,14 @@ export function ChatPage() {
 			const sources = prefix ? null : await connectorContext(prompt);
 			if (!isCurrent()) return;
 			for (const warning of sources?.warnings ?? []) showToast(warning, "error");
+			if (sources) lookedAt = sources.used;
+			const asked = withFriendFacts(character, prompt);
+			const styled = spokenByAnother(context, character?.id) ? `${asked}\n\n${NEW_STYLE_NOTE}` : asked;
+			const usual = character?.max_tokens ?? settings?.max_tokens ?? USUAL_REPLY_TOKENS;
+			const replyLimit = !isMobile() && !character?.persona && usual === USUAL_REPLY_TOKENS ? DESKTOP_REPLY_TOKENS : usual;
 			await chatService.runInference(
 				{
-					prompt: withContext(sources?.text ?? "", withFriendFacts(character, prompt), sources?.noMatch),
+					prompt: withContext(sources?.text ?? "", styled, sources?.noMatch),
 					systemPrompt: [
 						withGreeting(character, character?.system_prompt ?? settings?.system_prompt ?? ""),
 						...(live.current.createIn ? [CREATE_INSTRUCTIONS] : []),
@@ -582,10 +598,7 @@ export function ChatPage() {
 					history: buildHistory(context),
 					temperature: character?.temperature ?? settings?.temperature ?? 0.7,
 					topP: character?.top_p ?? settings?.top_p ?? 0.9,
-					maxTokens: Math.max(
-						character?.max_tokens ?? settings?.max_tokens ?? 512,
-						live.current.createIn ? CREATE_MAX_TOKENS : 0,
-					),
+					maxTokens: Math.max(replyLimit, live.current.createIn ? CREATE_MAX_TOKENS : 0),
 					assistantPrefix: prefix || undefined,
 					enableThinking: live.current.thinkOn && live.current.modelInfo?.reasoning === "optional",
 				},
@@ -719,6 +732,7 @@ export function ChatPage() {
 			prompt: msgs[userIdx].text,
 			context: msgs.slice(0, userIdx),
 			prefix: extend ? msgs[aiIdx].text : undefined,
+			used: extend ? msgs[aiIdx].sources : undefined,
 		});
 	};
 
@@ -1052,6 +1066,12 @@ export function ChatPage() {
 											{msg.role === "ai" && msg.reasoning && <Reasoning text={msg.reasoning} />}
 											{msg.role === "ai" ? <Markdown text={msg.text} /> : <UserText>{msg.text}</UserText>}
 											{msg.role === "ai" && msg.createIn && <FileCards text={msg.text} folder={msg.createIn} />}
+											{msg.role === "ai" && msg.sources && (
+												<SourcesLine>
+													<Icon name="description" size={13} />
+													<span>Looked at {msg.sources.join(", ")}</span>
+												</SourcesLine>
+											)}
 										</BubbleBody>
 										{settings?.show_speed && replyStats?.messageId === msg.id && (
 											<SpeedBadge>
@@ -1192,12 +1212,12 @@ export function ChatPage() {
 											$on={thinkOn}
 											aria-pressed={thinkOn}
 											onClick={toggleThink}
-											title="Let the model reason step by step before it answers. Slower, more careful."
+											title="Let the model reason step by step before it answers. More careful, but a reply can take a minute or two."
 										>
 											<Icon name="psychology" size={15} />
 											Think
 										</ThinkChip>
-										{thinkOn && <ToolHint>Reasons first: slower, more careful</ToolHint>}
+										{thinkOn && <ToolHint>Reasons first: can take a minute or two</ToolHint>}
 									</ComposerTools>
 								)}
 								{!isMobile() && (

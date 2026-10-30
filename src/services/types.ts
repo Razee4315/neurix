@@ -243,6 +243,10 @@ export interface ChatMessage {
 	timestamp: string;
 	/** The model's reasoning for this reply, if it produced any. */
 	reasoning?: string;
+	/** What connectors this reply looked at. */
+	sources?: string[];
+	/** How generation ended. */
+	stop_reason?: StopReason;
 }
 
 export interface ConversationMeta {

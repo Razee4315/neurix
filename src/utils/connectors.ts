@@ -327,6 +327,8 @@ export interface ConnectorContext {
 	warnings: string[];
 	/** Folders were searched and nothing in them bears on the question. */
 	noMatch: boolean;
+	/** What was put in front of the model, by name, for the reader. */
+	used: string[];
 }
 
 /**
@@ -339,15 +341,18 @@ export async function connectorContext(question = ""): Promise<ConnectorContext>
 	const repos = state.repos.filter((r) => r.enabled);
 	const sources =
 		folders.length + repos.length + (docs.length > 0 ? 1 : 0) + (state.gmail?.enabled && gmailPassword ? 1 : 0);
-	if (sources === 0) return { text: "", warnings: [], noMatch: false };
+	if (sources === 0) return { text: "", warnings: [], noMatch: false, used: [] };
 	const share = Math.floor(CONTEXT_CHARS / sources);
 	const parts: string[] = [];
 	const warnings: string[] = [];
+	const used = new Set<string>();
 	let searched = false;
 	for (const folder of folders) {
 		try {
-			const block = folderBlock(await searchFolder(folder.path, question, share), question);
+			const found = await searchFolder(folder.path, question, share);
+			const block = folderBlock(found, question);
 			if (block) parts.push(block);
+			for (const excerpt of found.excerpts) used.add(excerpt.path);
 			searched = true;
 		} catch {
 			// Say so to both: the model must not act as if it had read the folder.
@@ -360,10 +365,14 @@ export async function connectorContext(question = ""): Promise<ConnectorContext>
 		const chosen = relevantFiles(files, question, share);
 		const bodies = chosen.map((f) => `--- File: ${f.path} ---\n${f.content}`).join("\n\n");
 		parts.push(`Documents shared from this device: ${docs.map((d) => d.name).join(", ")}.\n\n${bodies}`);
+		for (const file of chosen) used.add(file.path);
 	}
 	try {
 		const mail = await gmailBlock();
-		if (mail) parts.push(mail.slice(0, share));
+		if (mail) {
+			parts.push(mail.slice(0, share));
+			used.add("Gmail inbox");
+		}
 	} catch {
 		parts.push("The Gmail inbox could not be read just now.");
 		warnings.push("Couldn't read Gmail. Check your connection.");
@@ -371,12 +380,13 @@ export async function connectorContext(question = ""): Promise<ConnectorContext>
 	for (const repo of repos) {
 		try {
 			parts.push((await repoBlock(repo, share)).slice(0, share));
+			used.add(repo.repo);
 		} catch {
 			parts.push(`The GitHub repository ${repo.repo} could not be read just now.`);
 			warnings.push(`Couldn't read ${repo.repo}. Check your connection.`);
 		}
 	}
-	return { text: parts.join("\n\n"), warnings, noMatch: searched && parts.length === 0 };
+	return { text: parts.join("\n\n"), warnings, noMatch: searched && parts.length === 0, used: [...used] };
 }
 
 /**

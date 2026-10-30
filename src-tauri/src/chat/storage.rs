@@ -31,6 +31,13 @@ pub struct ChatMessage {
     /// collapsed in the chat; never sent back to the model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
+    /// What connectors this reply looked at, shown under it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sources: Option<Vec<String>>,
+    /// How generation ended, so a cut-off reply can still be continued after
+    /// the chat is reopened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,6 +237,10 @@ const MAX_REF: usize = 128;
 const MAX_MESSAGES: usize = 10_000;
 const MAX_MESSAGE_BYTES: usize = 128 * 1024;
 
+/// Sources kept per reply, and the length of each name.
+const MAX_SOURCES: usize = 12;
+const MAX_SOURCE_BYTES: usize = 300;
+
 /// Clamp a conversation to the ceilings above, keeping the newest messages,
 /// and pull timestamps from the future back to now (a future `updated_at`
 /// would pin a conversation to the top of the list forever).
@@ -252,6 +263,15 @@ fn bound(conv: &mut Conversation) {
         truncate_in_place(&mut msg.content, MAX_MESSAGE_BYTES);
         if let Some(r) = msg.reasoning.as_mut() {
             truncate_in_place(r, MAX_MESSAGE_BYTES);
+        }
+        if let Some(sources) = msg.sources.as_mut() {
+            sources.truncate(MAX_SOURCES);
+            for source in sources.iter_mut() {
+                truncate_in_place(source, MAX_SOURCE_BYTES);
+            }
+        }
+        if let Some(reason) = msg.stop_reason.as_mut() {
+            truncate_in_place(reason, MAX_SOURCE_BYTES);
         }
         msg.timestamp = msg.timestamp.min(now);
     }
@@ -318,6 +338,8 @@ mod tests {
             content,
             timestamp: future,
             reasoning: None,
+            sources: None,
+            stop_reason: None,
         };
         let mut messages: Vec<ChatMessage> = (0..MAX_MESSAGES).map(|i| msg(i.to_string())).collect();
         messages.push(msg("[".repeat(1_000_000)));
