@@ -37,6 +37,7 @@ interface MockKnobs {
 	stopReason: StopReason | null;
 	/** Reported device RAM in GB (null = unknown). */
 	ramGb: number | null;
+	existingFiles: string[];
 	/** Milliseconds between streamed tokens. */
 	tokenDelayMs: number;
 	/** Simulated time spent reading the conversation before the first token. */
@@ -107,8 +108,8 @@ const CATALOG: ModelInfo[] = [
 		sizeMb: 640,
 		tag: "Tiny",
 		description:
-			"The smallest model that still holds a real conversation. Starts instantly and runs on almost any phone.",
-		best_for: ["Quick answers", "Older phones", "Many languages"],
+			"The smallest model that still holds a real conversation. Starts instantly and runs on almost any device.",
+		best_for: ["Quick answers", "Older devices", "Many languages"],
 		min_ram_gb: 3,
 		quality: 2,
 		speed: 5,
@@ -121,7 +122,7 @@ const CATALOG: ModelInfo[] = [
 		parameters: "1.2B",
 		sizeMb: 840,
 		tag: "Fast",
-		description: "A model built specifically for phones. Very fast for its quality.",
+		description: "A model built for small devices. Very fast for its quality.",
 		best_for: ["Fast replies", "Summaries", "Following instructions"],
 		min_ram_gb: 3,
 		quality: 2,
@@ -137,7 +138,7 @@ const CATALOG: ModelInfo[] = [
 		sizeMb: 1300,
 		tag: "Balanced",
 		description:
-			"The best all-rounder for most phones. Clear writing, solid general knowledge, and it can think a problem through when asked.",
+			"The best all-rounder for most devices. Clear writing, solid general knowledge, and it can think a problem through when asked.",
 		best_for: ["Everyday chat", "Writing help", "Many languages"],
 		min_ram_gb: 4,
 		quality: 3,
@@ -167,7 +168,7 @@ const CATALOG: ModelInfo[] = [
 		sizeMb: 2700,
 		tag: "Smart",
 		description:
-			"The most capable model that fits a modern phone. Noticeably better at code, analysis and long answers.",
+			"The most capable of the everyday models. Noticeably better at code, analysis and long answers.",
 		best_for: ["Code", "Analysis", "Long, detailed answers"],
 		min_ram_gb: 8,
 		quality: 5,
@@ -307,6 +308,7 @@ const knobs: MockKnobs = {
 	failSettings: false,
 	stopReason: null,
 	ramGb: 8,
+	existingFiles: [],
 	tokenDelayMs: 25,
 	promptDelayMs: 0,
 	calls: {},
@@ -379,6 +381,9 @@ const SAMPLE_REASONING =
 
 const words = (text: string) => text.match(/\S+\s*/g) ?? [];
 
+const SAMPLE_FILE_REPLY =
+	'Here is your page.\n\nFile: index.html\n```html\n<!doctype html>\n<title>Demo</title>\n<h1 style="font-family:sans-serif">Hello from Neurix</h1>\n```\n\nFile: run.bat\n```text\necho no\n```\n\nOpen it in a browser to see it.';
+
 async function runInference(args: {
 	prompt: string;
 	maxTokens: number;
@@ -394,7 +399,9 @@ async function runInference(args: {
 	const emit = (e: InferenceEvent) => args.onEvent.onmessage(e);
 	const full = args.assistantPrefix
 		? " …and this is the continuation of the earlier reply, picking up where it stopped."
-		: sampleReply(args.prompt);
+		: /landing page/i.test(args.prompt)
+			? SAMPLE_FILE_REPLY
+			: sampleReply(args.prompt);
 	const pieces = words(full);
 	const forced = knobs.stopReason;
 	knobs.stopReason = null;
@@ -494,6 +501,17 @@ async function downloadModel(args: { modelId: string; onEvent: Emitter<DownloadE
 }
 
 type Args = Record<string, unknown>;
+
+function mockFolder(path: unknown) {
+	return {
+		name: String(path).split("/").pop(),
+		path,
+		total_files: 3,
+		text_files: ["medication-policy.md", "rota.csv"],
+		unreadable: ["logo.png"],
+		partial: false,
+	};
+}
 
 const handlers: Record<string, (args: Args) => unknown> = {
 	get_model_catalog: () => CATALOG,
@@ -661,16 +679,24 @@ const handlers: Record<string, (args: Args) => unknown> = {
 		return { conversations: backup.conversations?.length ?? 0, characters: incoming.length };
 	},
 	pick_folder: () => "/Users/demo/Documents/Care policies",
-	read_folder: ({ path }) => ({
-		name: String(path).split("/").pop(),
-		path,
-		total_files: 3,
-		text_files: 2,
-		files: [
-			{ path: "medication-policy.md", size_bytes: 1200, content: "# Medication policy\nTwo staff sign every controlled drug.", truncated: false },
-			{ path: "rota.csv", size_bytes: 300, content: "day,staff\nMon,Ana\nTue,Ben", truncated: false },
-			{ path: "logo.png", size_bytes: 9000, content: null, truncated: false },
-		],
+	save_file_as: ({ name }) => `/Users/demo/Downloads/${name}`,
+	check_workspace_file: ({ name }) => {
+		if (/\.(bat|exe)$/i.test(String(name))) throw `Neurix doesn't create ${String(name).split(".").pop()} files.`;
+		return knobs.existingFiles.includes(String(name));
+	},
+	write_workspace_file: ({ folder, name, overwrite }) => {
+		if (knobs.existingFiles.includes(String(name)) && !overwrite) throw `${name} already exists.`;
+		knobs.existingFiles.push(String(name));
+		return `${folder}/${name}`;
+	},
+	open_workspace_file: () => null,
+	read_folder: ({ path }) => mockFolder(path),
+	search_folder: ({ path, question }) => ({
+		folder: mockFolder(path),
+		excerpts: /drug|medication|sign/i.test(String(question))
+			? [{ path: "medication-policy.md", text: "# Medication policy\nTwo staff sign every controlled drug." }]
+			: [],
+		unreadable_matches: /logo/i.test(String(question)) ? ["logo.png"] : [],
 	}),
 	gmail_fetch: () => [
 		{ from: "Ana Lewis <ana@example.com>", subject: "Rota swap Thursday", date: "Wed, 29 Oct 2026 09:12", snippet: "Can I swap my Thursday morning with Ben?" },

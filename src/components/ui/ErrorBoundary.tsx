@@ -100,7 +100,7 @@ export class ErrorBoundary extends Component<Props, State> {
 				<Container>
 					<Title>Something went wrong</Title>
 					<Message>
-						The app encountered an unexpected error. Your data is safe. Tap below to restart.
+						The app encountered an unexpected error. Your data is safe. Use the button below to restart.
 					</Message>
 					<RestartBtn onClick={this.handleRestart}>
 						Restart Neurix

@@ -30,7 +30,7 @@ use crate::models::catalog::SamplingDefaults;
 
 /// Tokens fed to the model per decode call while reading the prompt. Also
 /// the granularity of cancellation and progress reports during that phase.
-const PROMPT_BATCH: usize = 256;
+const PROMPT_BATCH: usize = 128;
 /// Room kept free in the context for template tokens that are not counted
 /// precisely (the generation prompt, an end-of-turn token).
 const CONTEXT_MARGIN: usize = 16;

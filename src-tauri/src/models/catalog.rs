@@ -82,7 +82,7 @@ fn current() -> Vec<ModelInfo> {
         ModelInfo {
             id: "qwen-3.5-0.8b".into(),
             name: "Qwen 3.5 0.8B".into(),
-            description: "The smallest model that still holds a real conversation. Starts instantly and runs on almost any phone; best for quick questions, rewording and short summaries.".into(),
+            description: "The smallest model that still holds a real conversation. Starts instantly and runs on almost any device; best for quick questions, rewording and short summaries.".into(),
             size_bytes: 639_029_504,
             size_label: "640 MB".into(),
             tag: "Tiny".into(),
@@ -92,7 +92,7 @@ fn current() -> Vec<ModelInfo> {
             company: "Alibaba".into(),
             parameters: "0.8B".into(),
             quantization: "Q6_K (6-bit)".into(),
-            best_for: strings(&["Quick answers", "Older phones", "Many languages"]),
+            best_for: strings(&["Quick answers", "Older devices", "Many languages"]),
             context_length: 8192,
             min_ram_gb: 3,
             quality: 2,
@@ -105,7 +105,7 @@ fn current() -> Vec<ModelInfo> {
         ModelInfo {
             id: "lfm-2.5-1.2b".into(),
             name: "LFM 2.5 1.2B".into(),
-            description: "Liquid AI's model built specifically for phones. Very fast for its quality, and good at following instructions and pulling facts out of text.".into(),
+            description: "Liquid AI's model built for small devices. Very fast for its quality, and good at following instructions and pulling facts out of text.".into(),
             size_bytes: 843_354_944,
             size_label: "840 MB".into(),
             tag: "Fast".into(),
@@ -128,7 +128,7 @@ fn current() -> Vec<ModelInfo> {
         ModelInfo {
             id: "qwen-3.5-2b".into(),
             name: "Qwen 3.5 2B".into(),
-            description: "The best all-rounder for most phones. Clear writing, solid general knowledge and strong multilingual support, and it can think a problem through when you ask it to.".into(),
+            description: "The best all-rounder for most devices. Clear writing, solid general knowledge and strong multilingual support, and it can think a problem through when you ask it to.".into(),
             size_bytes: 1_280_835_840,
             size_label: "1.3 GB".into(),
             tag: "Balanced".into(),
@@ -174,7 +174,7 @@ fn current() -> Vec<ModelInfo> {
         ModelInfo {
             id: "qwen-3.5-4b".into(),
             name: "Qwen 3.5 4B".into(),
-            description: "The most capable model that fits a modern phone. Noticeably better at code, analysis and long answers; needs a recent device with 8 GB of memory.".into(),
+            description: "The most capable of the everyday models. Noticeably better at code, analysis and long answers; needs a recent device with 8 GB of memory.".into(),
             size_bytes: 2_740_937_888,
             size_label: "2.7 GB".into(),
             tag: "Smart".into(),

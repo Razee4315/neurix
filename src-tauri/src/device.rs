@@ -7,13 +7,67 @@ use std::fs;
 
 /// Physical RAM in bytes, when the platform exposes it. `None` means
 /// unknown — callers must not treat that as "too little".
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn total_memory_bytes() -> Option<u64> {
     // Android and Linux expose RAM through procfs. Other platforms report
     // unknown rather than pulling in a system-info dependency.
     fs::read_to_string("/proc/meminfo").ok().and_then(|text| parse_mem_total(&text))
 }
 
+/// Physical RAM in bytes, from the sysctl key, which needs no dependency.
+#[cfg(target_os = "macos")]
+pub fn total_memory_bytes() -> Option<u64> {
+    use std::ffi::{c_char, c_int, c_void};
+
+    unsafe extern "C" {
+        fn sysctlbyname(
+            name: *const c_char,
+            value: *mut c_void,
+            length: *mut usize,
+            new_value: *mut c_void,
+            new_length: usize,
+        ) -> c_int;
+    }
+
+    let mut bytes: u64 = 0;
+    let mut length = std::mem::size_of::<u64>();
+    // SAFETY: the name is NUL-terminated and `bytes` is as long as `length` says.
+    let result = unsafe {
+        sysctlbyname(c"hw.memsize".as_ptr(), (&raw mut bytes).cast(), &mut length, std::ptr::null_mut(), 0)
+    };
+    (result == 0 && bytes > 0).then_some(bytes)
+}
+
+/// Physical RAM in bytes, from the Win32 call, which needs no dependency.
+#[cfg(windows)]
+pub fn total_memory_bytes() -> Option<u64> {
+    #[repr(C)]
+    #[derive(Default)]
+    struct MemoryStatus {
+        length: u32,
+        memory_load: u32,
+        total_phys: u64,
+        avail_phys: u64,
+        total_page_file: u64,
+        avail_page_file: u64,
+        total_virtual: u64,
+        avail_virtual: u64,
+        avail_extended_virtual: u64,
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GlobalMemoryStatusEx(buffer: *mut MemoryStatus) -> i32;
+    }
+
+    let mut status = MemoryStatus { length: std::mem::size_of::<MemoryStatus>() as u32, ..Default::default() };
+    // SAFETY: `status` is a live MEMORYSTATUSEX with its length set, as the call requires.
+    let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
+    (ok != 0).then_some(status.total_phys)
+}
+
 /// Parse the `MemTotal` line of `/proc/meminfo` ("MemTotal:  8040348 kB").
+#[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
 fn parse_mem_total(meminfo: &str) -> Option<u64> {
     meminfo
         .lines()
@@ -77,6 +131,12 @@ mod tests {
     fn reads_mem_total() {
         let sample = "MemTotal:        8040348 kB\nMemFree:          123456 kB\n";
         assert_eq!(parse_mem_total(sample), Some(8_040_348 * 1024));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_reports_memory() {
+        assert!(total_memory_bytes().is_some_and(|bytes| bytes > 1 << 30));
     }
 
     #[test]

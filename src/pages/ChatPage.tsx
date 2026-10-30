@@ -6,12 +6,15 @@ import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { chatService, historyService, modelService } from "@/services";
+import { pickFolder } from "@/services/connectorService";
+import { saveFileAs } from "@/services/fileService";
 import { CHAT_STARTED } from "@/services/historyService";
 import type { Character, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
-import { copyText, isTouchPrimary, vibrate } from "@/utils/platform";
+import { CREATE_INSTRUCTIONS, CREATE_MAX_TOKENS, fenceBareFiles } from "@/utils/fileBlocks";
+import { copyText, isMobile, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
 import { relationshipOf } from "@/utils/persona";
 import {
@@ -26,6 +29,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
+import { FileCards } from "./chat/FileCards";
 import { Markdown } from "./chat/Markdown";
 import { ModelSelect } from "./chat/ModelSelect";
 import {
@@ -36,6 +40,7 @@ import {
 	Reasoning,
 	ThinkChip,
 	ToolHint,
+	ToolLink,
 } from "./chat/Reasoning";
 import {
 	type Message,
@@ -99,6 +104,8 @@ const MAX_PROMPT_LENGTH = 16_000;
 const DRAFT_KEY = "neurix.chat.draft";
 const COACH_KEY = "neurix.coach.subtitle.v2";
 const THINK_KEY = "neurix.chat.think";
+const CREATE_KEY = "neurix.chat.create";
+const CREATE_FOLDER_KEY = "neurix.chat.createFolder";
 /** Share of the context window at which the chat is called "nearly full". */
 const CONTEXT_WARN_RATIO = 0.85;
 /** How close to the bottom (px) still counts as "following" the stream. */
@@ -147,6 +154,23 @@ function writeDraft(text: string) {
 		else localStorage.removeItem(DRAFT_KEY);
 	} catch {
 		// Storage unavailable: the draft just won't survive leaving the page.
+	}
+}
+
+function readStored(key: string): string | null {
+	try {
+		return localStorage.getItem(key);
+	} catch {
+		return null;
+	}
+}
+
+function writeStored(key: string, value: string | null) {
+	try {
+		if (value) localStorage.setItem(key, value);
+		else localStorage.removeItem(key);
+	} catch {
+		// Not persisted: the choice just resets next launch.
 	}
 }
 
@@ -211,6 +235,8 @@ export function ChatPage() {
 	/** Percent of the conversation read so far, while that is the wait. */
 	const [reading, setReading] = useState<number | null>(null);
 	const [thinkOn, setThinkOn] = useState(readThink);
+	const [createFolder, setCreateFolder] = useState(() => readStored(CREATE_FOLDER_KEY));
+	const [createOn, setCreateOn] = useState(() => !isMobile() && readStored(CREATE_KEY) === "1" && !!createFolder);
 	const [replyStats, setReplyStats] = useState<ReplyStats | null>(null);
 	const [tokensPerSecond, setTokensPerSecond] = useState(0);
 	const [openActionsId, setOpenActionsId] = useState<string | null>(null);
@@ -235,9 +261,11 @@ export function ChatPage() {
 		isGenerating,
 		modelInfo: activeModelInfo,
 		thinkOn,
+		createIn: null as string | null,
 	});
 	live.current.modelInfo = activeModelInfo;
 	live.current.thinkOn = thinkOn;
+	live.current.createIn = createOn ? createFolder : null;
 	live.current.activeModel = activeModel;
 	live.current.activeModelId = activeModelId;
 	live.current.saveHistory = settings?.save_history ?? false;
@@ -258,7 +286,14 @@ export function ChatPage() {
 	const persist = useCallback((msgs: Message[]) => {
 		const s = live.current;
 		const toSave = persistable(msgs);
-		if (!s.saveHistory || toSave.length < 2 || !s.activeModelId || !s.activeModel) return;
+		// Every message deleted: the chat itself goes.
+		if (toSave.length === 0) {
+			const id = s.conversationId;
+			s.conversationId = null;
+			if (id) historyService.deleteConversation(id).catch(() => showToast("Couldn't delete this conversation", "error"));
+			return;
+		}
+		if (!s.saveHistory || !s.activeModelId || !s.activeModel) return;
 		if (!s.conversationId) s.conversationId = crypto.randomUUID();
 		historyService
 			.saveConversation(
@@ -486,9 +521,11 @@ export function ChatPage() {
 					const speed = duration_ms > 0 ? total_tokens / (duration_ms / 1000) : 0;
 
 					if (cleaned) {
-						const reply = createMessage("ai", cleaned, {
+						const createIn = live.current.createIn ?? undefined;
+						const reply = createMessage("ai", createIn ? fenceBareFiles(cleaned, stop_reason === "eos") : cleaned, {
 							stopReason: stop_reason,
 							reasoning: reasoning || undefined,
+							createIn,
 						});
 						if (speed > 0) {
 							setReplyStats({ messageId: reply.id, tokensPerSecond: speed, tokens: total_tokens });
@@ -531,16 +568,23 @@ export function ChatPage() {
 		};
 
 		try {
-			const sources = prefix ? "" : await connectorContext(prompt);
+			const sources = prefix ? null : await connectorContext(prompt);
 			if (!isCurrent()) return;
+			for (const warning of sources?.warnings ?? []) showToast(warning, "error");
 			await chatService.runInference(
 				{
-					prompt: withContext(sources, prompt),
-					systemPrompt: withGreeting(character, character?.system_prompt ?? settings?.system_prompt ?? ""),
+					prompt: withContext(sources?.text ?? "", prompt, sources?.noMatch),
+					systemPrompt: [
+						withGreeting(character, character?.system_prompt ?? settings?.system_prompt ?? ""),
+						...(live.current.createIn ? [CREATE_INSTRUCTIONS] : []),
+					].join("\n"),
 					history: buildHistory(context),
 					temperature: character?.temperature ?? settings?.temperature ?? 0.7,
 					topP: character?.top_p ?? settings?.top_p ?? 0.9,
-					maxTokens: character?.max_tokens ?? settings?.max_tokens ?? 512,
+					maxTokens: Math.max(
+						character?.max_tokens ?? settings?.max_tokens ?? 512,
+						live.current.createIn ? CREATE_MAX_TOKENS : 0,
+					),
 					assistantPrefix: prefix || undefined,
 					enableThinking: live.current.thinkOn && live.current.modelInfo?.reasoning === "optional",
 				},
@@ -559,7 +603,7 @@ export function ChatPage() {
 			// header and the next send reflect that.
 			refreshActiveModel();
 		}
-	}, [commit, flushStream, resetStream, setGenerating, refreshActiveModel, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
+	}, [commit, flushStream, resetStream, setGenerating, refreshActiveModel, showToast, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
 
 	/** Make sure a model is loaded, loading the last-used one if needed. */
 	const ensureModel = useCallback(async (): Promise<boolean> => {
@@ -598,7 +642,8 @@ export function ChatPage() {
 			if (!(await ensureModel())) return;
 
 			const context = live.current.messages;
-			show([...context, createMessage("user", text)]);
+			const sent = [...context, createMessage("user", text)];
+			show(sent);
 			// List a new chat in the sidebar right away, before the reply.
 			if (live.current.saveHistory && !live.current.conversationId) {
 				live.current.conversationId = crypto.randomUUID();
@@ -608,6 +653,8 @@ export function ChatPage() {
 					}),
 				);
 			}
+			// Saved now, so a stopped or failed reply can't lose the message.
+			persist(sent);
 			setInput("");
 			writeDraft("");
 			setOpenActionsId(null);
@@ -671,7 +718,10 @@ export function ChatPage() {
 		const idx = msgs.findIndex((m) => m.id === id);
 		if (idx < 0 || msgs[idx].role !== "user") return;
 		setOpenActionsId(null);
-		commit(msgs.slice(0, idx));
+		// Editing the first message empties the view but keeps the saved chat
+		// until the new text is sent, so changing your mind loses nothing.
+		if (idx === 0) show([]);
+		else commit(msgs.slice(0, idx));
 		fillInput(msgs[idx].text);
 	};
 
@@ -694,19 +744,8 @@ export function ChatPage() {
 		else showToast("Couldn't copy the conversation", "error");
 	};
 
-	const handleNewChat = () => {
-		// Invalidate the running generation first so its completion event
-		// cannot land in the new, empty conversation.
-		runIdRef.current += 1;
-		if (isGenerating) chatService.stopInference().catch(() => {});
-		resetStream();
-		setGenerating(false);
-		live.current.conversationId = null;
-		show([]);
-		setOpenActionsId(null);
-		setContextNotice(null);
-		textareaRef.current?.focus();
-	};
+	// The same route the sidebar takes, which also clears the Recents highlight.
+	const handleNewChat = () => navigate("/chat", { state: { freshChat: true } });
 
 	// Leaving mid-generation: stop the model and keep what it wrote so far
 	// in the same conversation (if history is on).
@@ -766,6 +805,36 @@ export function ChatPage() {
 			else localStorage.removeItem(THINK_KEY);
 		} catch {
 			// Not persisted: the choice just resets next launch.
+		}
+	};
+
+	const chooseCreateFolder = async () => {
+		try {
+			const folder = await pickFolder();
+			if (folder) {
+				setCreateFolder(folder);
+				writeStored(CREATE_FOLDER_KEY, folder);
+			}
+			return folder;
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : String(err), "error");
+			return null;
+		}
+	};
+
+	const toggleCreate = async () => {
+		vibrate(5);
+		const next = !createOn && !!(createFolder ?? (await chooseCreateFolder()));
+		setCreateOn(next);
+		writeStored(CREATE_KEY, next ? "1" : null);
+	};
+
+	const saveReply = async (text: string) => {
+		try {
+			const path = await saveFileAs("reply.md", text);
+			if (path) showToast(`Saved to ${path}`, "success");
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : String(err), "error");
 		}
 	};
 
@@ -957,6 +1026,7 @@ export function ChatPage() {
 										<BubbleBody>
 											{msg.role === "ai" && msg.reasoning && <Reasoning text={msg.reasoning} />}
 											{msg.role === "ai" ? <Markdown text={msg.text} /> : <UserText>{msg.text}</UserText>}
+											{msg.role === "ai" && msg.createIn && <FileCards text={msg.text} folder={msg.createIn} />}
 										</BubbleBody>
 										{settings?.show_speed && replyStats?.messageId === msg.id && (
 											<SpeedBadge>
@@ -978,6 +1048,16 @@ export function ChatPage() {
 									{!isGenerating && (
 										<MessageActions $open={openActionsId === msg.id}>
 											{msg.role !== "error" && <CopyAction text={msg.text} />}
+											{msg.role === "ai" && !isMobile() && (
+												<MsgActionBtn
+													type="button"
+													onClick={() => saveReply(msg.text)}
+													title="Save as file"
+													aria-label="Save reply as a file"
+												>
+													<Icon name="download" size={15} />
+												</MsgActionBtn>
+											)}
 											{msg.role === "user" && (
 												<MsgActionBtn
 													type="button"
@@ -1095,6 +1175,25 @@ export function ChatPage() {
 										{thinkOn && <ToolHint>Reasons first: slower, more careful</ToolHint>}
 									</ComposerTools>
 								)}
+								{!isMobile() && (
+									<ComposerTools>
+											<ThinkChip
+												type="button"
+												$on={createOn}
+												aria-pressed={createOn}
+												onClick={toggleCreate}
+												title="Let the assistant propose files. You approve each one before it is created."
+											>
+												<Icon name="description" size={15} />
+												Create files
+											</ThinkChip>
+											{createOn && createFolder && (
+												<ToolLink type="button" onClick={chooseCreateFolder} title={`Files go to ${createFolder}. Click to change.`}>
+													in {createFolder.split(/[\\/]/).filter(Boolean).pop()}
+												</ToolLink>
+											)}
+										</ComposerTools>
+									)}
 								{connectedFolders.map((folder) => (
 									<FolderChip
 										key={folder.path}
@@ -1103,8 +1202,8 @@ export function ChatPage() {
 										aria-pressed={folder.enabled}
 										title={
 											folder.enabled
-												? `Reading ${folder.path} for this chat. Click to stop.`
-												: `Click to use ${folder.path} in this chat`
+												? `Reading ${folder.path}. Click to stop.`
+												: `Click to use ${folder.path}`
 										}
 										onClick={() => setFolderEnabled(folder.path, !folder.enabled)}
 									>
@@ -1185,7 +1284,7 @@ export function ChatPage() {
 			{showCoach && !pickerOpen && (
 				<Coachmark role="status">
 					<Icon name="touch_app" size={14} color={tokens.colors.primary} />
-					<span>Tap the name above to switch character. Pick the model next to Send.</span>
+					<span>{isTouchPrimary() ? "Tap" : "Click"} the name above to switch character. Pick the model next to Send.</span>
 					<CoachClose type="button" onClick={dismissCoach} aria-label="Dismiss tip">
 						<Icon name="close" size={14} />
 					</CoachClose>

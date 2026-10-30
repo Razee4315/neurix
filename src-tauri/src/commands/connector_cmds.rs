@@ -1,16 +1,20 @@
 //! The local folders connector: the user picks a folder in a native dialog,
-//! and its text files are read on this device to give the model context.
+//! and its text files are searched on this device to give the model context.
 //! Nothing here touches the network.
 
+#[cfg(desktop)]
+use crate::documents::{self, Reading};
+use crate::folder_search::{best_excerpts, decode_text, search_terms, Doc, Excerpt};
 use serde::Serialize;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 #[cfg(desktop)]
 use tauri::{AppHandle, Manager};
 #[cfg(desktop)]
 use tauri_plugin_dialog::DialogExt;
 
-/// Extensions read as plain text. Anything else is listed but not read.
+/// Extensions read as plain text. Anything else is reported as unreadable.
 const TEXT_EXTENSIONS: &[&str] = &[
     "txt", "md", "markdown", "csv", "tsv", "json", "yaml", "yml", "toml", "xml", "html", "css",
     "log", "ini", "rs", "ts", "tsx", "js", "jsx", "py", "java", "kt", "swift", "go", "c", "h",
@@ -20,26 +24,35 @@ const TEXT_EXTENSIONS: &[&str] = &[
 const SKIP_DIRS: &[&str] = &["node_modules", "target", "dist", "build", ".git", "__pycache__", "venv"];
 const MAX_DEPTH: usize = 3;
 const MAX_FILES: usize = 400;
-/// Per file, so one long file can't crowd out the rest.
-const MAX_FILE_CHARS: usize = 4_000;
-
-#[derive(Serialize)]
-pub struct FolderFile {
-    /// Path relative to the connected folder.
-    pub path: String,
-    pub size_bytes: u64,
-    /// Text read for the model, or `None` when it didn't fit or isn't text.
-    pub content: Option<String>,
-    pub truncated: bool,
-}
+/// Read from each file, so one huge log can't eat the whole scan.
+const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+/// Read per search, which runs on every question.
+const MAX_SCAN_BYTES: u64 = 64 * 1024 * 1024;
+/// Spent reading new PDF and Word files per search. Text is kept once read,
+/// so a folder of many documents fills in over a few questions.
+#[cfg(desktop)]
+const DOCUMENT_SCAN_TIME: std::time::Duration = std::time::Duration::from_secs(20);
 
 #[derive(Serialize)]
 pub struct FolderSnapshot {
     pub name: String,
     pub path: String,
     pub total_files: usize,
-    pub text_files: usize,
-    pub files: Vec<FolderFile>,
+    /// Files actually read as text, relative to the connected folder.
+    pub text_files: Vec<String>,
+    /// Files that can't be read: other formats, scans, or not really text.
+    pub unreadable: Vec<String>,
+    /// True when the folder was too big to read all of it.
+    pub partial: bool,
+}
+
+#[derive(Serialize)]
+pub struct FolderSearch {
+    pub folder: FolderSnapshot,
+    /// The passages that match the question, best first.
+    pub excerpts: Vec<Excerpt>,
+    /// Unreadable files the question seems to be about.
+    pub unreadable_matches: Vec<String>,
 }
 
 /// Show the native folder picker. `None` when the user cancels.
@@ -104,52 +117,100 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// List a connected folder and read its text files, up to `max_chars` in total.
-#[tauri::command]
-pub async fn read_folder(path: String, max_chars: usize) -> Result<FolderSnapshot, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let root = PathBuf::from(&path);
-        if !root.is_dir() {
-            return Err(format!("The folder {path} is no longer there."));
+/// Read a file's text, or `None` when it isn't text. Only the start of a
+/// very long file is read; the second value says that happened.
+fn read_text(path: &Path, limit: u64) -> Option<(String, bool)> {
+    let mut bytes = Vec::new();
+    fs::File::open(path).ok()?.take(limit + 1).read_to_end(&mut bytes).ok()?;
+    let cut = bytes.len() as u64 > limit;
+    bytes.truncate(limit as usize);
+    decode_text(&bytes).map(|text| (text, cut))
+}
+
+/// Walk a connected folder and read every text file in it.
+fn scan_folder(path: &str) -> Result<(FolderSnapshot, Vec<Doc>), String> {
+    let root = PathBuf::from(path);
+    if !root.is_dir() {
+        return Err(format!("The folder {path} is no longer there."));
+    }
+    let mut paths = Vec::new();
+    walk(&root, 0, &mut paths);
+
+    let mut partial = paths.len() >= MAX_FILES;
+    let mut budget = MAX_SCAN_BYTES;
+    let mut docs = Vec::new();
+    let mut unreadable = Vec::new();
+    #[cfg(desktop)]
+    let document_deadline = std::time::Instant::now() + DOCUMENT_SCAN_TIME;
+    for p in &paths {
+        let rel = p.strip_prefix(&root).unwrap_or(p).to_string_lossy().into_owned();
+        #[cfg(desktop)]
+        if documents::is_document(p) {
+            match documents::read_cached(p, std::time::Instant::now() < document_deadline) {
+                Reading::Text(text) => docs.push(Doc { path: rel, text }),
+                Reading::Unreadable => unreadable.push(rel),
+                Reading::NotReached => partial = true,
+            }
+            continue;
         }
-        let mut paths = Vec::new();
-        walk(&root, 0, &mut paths);
+        if !is_text(p) {
+            unreadable.push(rel);
+            continue;
+        }
+        if budget == 0 {
+            partial = true;
+            continue;
+        }
+        match read_text(p, MAX_FILE_BYTES.min(budget)) {
+            Some((text, cut)) => {
+                partial |= cut;
+                budget = budget.saturating_sub(text.len() as u64);
+                docs.push(Doc { path: rel, text });
+            }
+            None => unreadable.push(rel),
+        }
+    }
 
-        let mut budget = max_chars;
-        let mut text_files = 0;
-        let files = paths
+    let snapshot = FolderSnapshot {
+        name: root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.to_string()),
+        path: path.to_string(),
+        total_files: paths.len(),
+        text_files: docs.iter().map(|d| d.path.clone()).collect(),
+        unreadable,
+        partial,
+    };
+    Ok((snapshot, docs))
+}
+
+/// What a connected folder holds and which of its files can be read.
+#[tauri::command]
+pub async fn read_folder(path: String) -> Result<FolderSnapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || scan_folder(&path).map(|(snapshot, _)| snapshot))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Search every text file in a folder for what bears on `question`, keeping
+/// up to `max_chars` of the best passages.
+#[tauri::command]
+pub async fn search_folder(path: String, question: String, max_chars: usize) -> Result<FolderSearch, String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<FolderSearch, String> {
+        let (folder, docs) = scan_folder(&path)?;
+        let terms = search_terms(&question);
+        let excerpts = best_excerpts(&docs, &terms, max_chars);
+        let unreadable_matches = folder
+            .unreadable
             .iter()
-            .map(|p| {
-                let size_bytes = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-                let rel = p.strip_prefix(&root).unwrap_or(p).to_string_lossy().into_owned();
-                let mut content = None;
-                let mut truncated = false;
-                if is_text(p) {
-                    text_files += 1;
-                    if budget > 0 {
-                        if let Ok(text) = fs::read_to_string(p) {
-                            let limit = MAX_FILE_CHARS.min(budget);
-                            let taken: String = text.chars().take(limit).collect();
-                            truncated = taken.len() < text.len();
-                            budget = budget.saturating_sub(taken.chars().count());
-                            content = Some(taken);
-                        }
-                    }
-                }
-                FolderFile { path: rel, size_bytes, content, truncated }
+            .filter(|f| {
+                let name = f.to_lowercase();
+                terms.iter().any(|t| name.contains(t.as_str()))
             })
+            .cloned()
             .collect();
-
-        Ok(FolderSnapshot {
-            name: root
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.clone()),
-            path,
-            total_files: paths.len(),
-            text_files,
-            files,
-        })
+        Ok(FolderSearch { folder, excerpts, unreadable_matches })
     })
     .await
     .map_err(|e| e.to_string())?
@@ -300,12 +361,11 @@ const README_CHARS: usize = 3_000;
 /// Public data of a GitHub repository: description, README and open issues.
 #[tauri::command]
 pub async fn github_fetch(repo: String) -> Result<GithubSnapshot, String> {
-    let repo = repo
-        .trim()
-        .trim_start_matches("https://github.com/")
-        .trim_end_matches('/')
-        .trim_end_matches(".git")
-        .to_string();
+    let repo = repo.trim();
+    let repo = repo.strip_prefix("https://").or_else(|| repo.strip_prefix("http://")).unwrap_or(repo);
+    let repo = repo.strip_prefix("www.").unwrap_or(repo);
+    let repo = repo.strip_prefix("github.com/").unwrap_or(repo);
+    let repo = repo.trim_end_matches('/').trim_end_matches(".git").to_string();
     if repo.split('/').count() != 2 {
         return Err("Use the form owner/repository, for example Razee4315/neurix.".into());
     }
@@ -422,25 +482,30 @@ mod tests {
     use crate::inference::engine::InferenceEvent;
     use tokio_util::sync::CancellationToken;
 
-    /// The folder connector against a real model: the demo folder is read,
-    /// the relevant file goes in front of the question, and the answer must
-    /// come from it. Needs `NEURIX_TEST_MODEL` and `NEURIX_TEST_FOLDER`.
+    /// The folder connector against a real model: the folder is searched,
+    /// the matching passages go in front of the question, and the answer must
+    /// come from them. Needs `NEURIX_TEST_MODEL`.
     #[test]
-    #[ignore = "needs a model file and a folder"]
+    #[ignore = "needs a model file"]
     fn real_model_answers_from_folder() {
         let model_path = std::env::var("NEURIX_TEST_MODEL").expect("NEURIX_TEST_MODEL");
-        let folder = std::env::var("NEURIX_TEST_FOLDER").expect("NEURIX_TEST_FOLDER");
-        let snap = tauri::async_runtime::block_on(read_folder(folder, 120_000)).expect("read_folder");
-        println!("folder {}: {} files, {} text", snap.name, snap.total_files, snap.text_files);
-        assert!(snap.text_files > 0, "no readable files");
-
-        // Same shape as connectorContext + withContext in the frontend.
-        let bodies: String = snap
-            .files
-            .iter()
-            .filter_map(|f| f.content.as_ref().map(|c| format!("--- File: {} ---\n{c}\n\n", f.path)))
-            .collect();
-        let sources = format!("Local folder \"{}\".\n\n{bodies}", snap.name);
+        let dir = std::env::temp_dir().join("neurix-folder-test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp folder");
+        let mut utf16: Vec<u8> = vec![0xFF, 0xFE];
+        utf16.extend("The generator fuel cost is 6,350 rupees.".encode_utf16().flat_map(u16::to_le_bytes));
+        let filler = "These are ordinary notes about the week.\n".repeat(300);
+        let long = format!("{filler}The final invoice number is INV-55120.\n");
+        for (name, bytes) in [
+            ("policy.md", &b"Two staff must sign for every controlled drug."[..]),
+            ("rent.txt", &b"Caf\xE9 rent is 91,000 rupees per month."[..]),
+            ("fuel.txt", &utf16[..]),
+            ("report.txt", long.as_bytes()),
+            ("scan.pdf", &b"%PDF-1.4"[..]),
+        ] {
+            fs::write(dir.join(name), bytes).expect("write file");
+        }
+        let folder = dir.to_string_lossy().into_owned();
         let sampling = SamplingDefaults { top_k: 40, min_p: 0.05, repeat_penalty: 1.0 };
         let mut model = load_model_from_disk(
             "test",
@@ -452,12 +517,22 @@ mod tests {
 
         for (question, expect) in [
             ("How many staff must sign for a controlled drug?", "two"),
-            ("Who works the night shift on Wednesday?", "tom"),
+            ("How much is the cafe rent per month?", "91,000"),
+            ("How much is the generator fuel cost?", "6,350"),
+            ("What is the final invoice number?", "inv-55120"),
         ] {
+            let found = tauri::async_runtime::block_on(search_folder(folder.clone(), question.into(), 2600))
+                .expect("search_folder");
+            let bodies: String =
+                found.excerpts.iter().map(|e| format!("--- File: {} ---\n{}\n\n", e.path, e.text)).collect();
+            assert!(!bodies.is_empty(), "nothing found for: {question}");
+            // Same shape as folderBlock + withContext in the frontend.
+            let sources = format!("Local folder \"{}\".\n\n{bodies}", found.folder.name);
             let prompt = format!(
-                "Use the following material from my connected sources to answer. It was read on this device.\n\
-                 Answer from it when it is relevant and say which file, email or repository you used.\n\
-                 If the answer is not in it, say so and then answer from general knowledge.\n\n\
+                "Use the following material from my connected sources to answer.\n\
+                 Copy names, numbers and dates exactly as written, and say which file, email or repository you used.\n\
+                 If my question is about my sources and the answer is not in them, say you could not find it there. Never guess or fill in a blank.\n\
+                 If my question has nothing to do with them, just answer it.\n\n\
                  <sources>\n{sources}</sources>\n\nMy question: {question}"
             );
             let request = GenerationRequest {

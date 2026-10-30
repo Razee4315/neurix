@@ -20,7 +20,7 @@ import {
 	useConnectors,
 } from "@/utils/connectors";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { isMobile } from "@/utils/platform";
+import { isMac, isMobile } from "@/utils/platform";
 import { useRef, useState } from "react";
 import styled from "styled-components";
 
@@ -477,17 +477,22 @@ export function ConnectorsPage() {
 		try {
 			const path = await pickFolder();
 			if (!path) return;
-			const snapshot = await readFolder(path, 0);
+			const snapshot = await readFolder(path);
 			if (snapshot.total_files === 0) {
 				showToast(
-					`Neurix couldn't see any files in ${snapshot.name}. If macOS asked for access, allow it, or check System Settings › Privacy & Security › Files and Folders.`,
+					isMac()
+						? `Neurix couldn't see any files in ${snapshot.name}. If macOS asked for access, allow it, or check System Settings › Privacy & Security › Files and Folders.`
+						: `Neurix couldn't see any files in ${snapshot.name}.`,
 					"error",
 				);
 				return;
 			}
 			addFolder(snapshot);
+			const skipped = snapshot.unreadable.length;
 			showToast(
-				`Connected ${snapshot.name}: ${snapshot.text_files} readable files`,
+				`Connected ${snapshot.name}: ${snapshot.text_files.length} readable files${
+					skipped > 0 ? `, ${skipped} skipped (images, scans and other formats)` : ""
+				}${snapshot.partial ? ". The folder is very large, so only part of it can be searched" : ""}`,
 				"success",
 			);
 		} catch (err) {

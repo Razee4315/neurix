@@ -17,6 +17,8 @@ export interface Message {
 	stopReason?: StopReason;
 	/** What a reasoning model wrote before its answer. Shown collapsed. */
 	reasoning?: string;
+	/** The folder chosen in Create mode when this reply was written. */
+	createIn?: string;
 }
 
 let counter = 0;
@@ -24,7 +26,7 @@ let counter = 0;
 export function createMessage(
 	role: Message["role"],
 	text: string,
-	extra: Partial<Pick<Message, "timestamp" | "stopReason" | "reasoning">> = {},
+	extra: Partial<Pick<Message, "timestamp" | "stopReason" | "reasoning" | "createIn">> = {},
 ): Message {
 	counter += 1;
 	return {
@@ -34,6 +36,7 @@ export function createMessage(
 		timestamp: extra.timestamp ?? new Date().toISOString(),
 		...(extra.stopReason ? { stopReason: extra.stopReason } : {}),
 		...(extra.reasoning ? { reasoning: extra.reasoning } : {}),
+		...(extra.createIn ? { createIn: extra.createIn } : {}),
 	};
 }
 
@@ -126,10 +129,11 @@ export function toConversation(messages: Message[], ctx: ConversationContext): C
 
 /** Whether a reply ended early in a way the user can act on. */
 export function wasCutShort(reason: StopReason | undefined): boolean {
-	return reason === "length" || reason === "repetition";
+	return reason === "length" || reason === "repetition" || reason === "cancelled";
 }
 
 export function cutShortLabel(reason: StopReason | undefined): string {
 	if (reason === "repetition") return "Stopped: the model started repeating itself.";
+	if (reason === "cancelled") return "You stopped this reply.";
 	return "Reply reached the length limit.";
 }

@@ -1,10 +1,11 @@
 import {
+	type FolderSearch,
 	type FolderSnapshot,
 	type GithubSnapshot,
 	type MailSummary,
 	githubFetch,
 	gmailFetch,
-	readFolder,
+	searchFolder,
 } from "@/services/connectorService";
 import { useSyncExternalStore } from "react";
 
@@ -123,7 +124,7 @@ export function addFolder(snapshot: FolderSnapshot) {
 		name: snapshot.name,
 		enabled: true,
 		files: snapshot.total_files,
-		textFiles: snapshot.text_files,
+		textFiles: snapshot.text_files.length,
 	};
 	save({ ...state, folders: [...state.folders.filter((f) => f.path !== snapshot.path), entry] });
 }
@@ -256,13 +257,18 @@ function words(text: string): string[] {
 	return (text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []).filter((w) => !STOP.has(w));
 }
 
+interface PickedFile {
+	path: string;
+	content: string;
+}
+
 /**
- * Pick the files that matter for this question. A folder can hold far more
- * than a small model reads, so files are scored by how many of the
- * question's words appear in their name and text, and the best fill the
- * budget. With no matching words, the first files are used.
+ * Pick the documents that matter for this question. They can hold far more
+ * than a small model reads, so they are scored by how many of the question's
+ * words appear in their name and text, and the best fill the budget. With no
+ * matching words, the first documents are used.
  */
-function relevantFiles(files: FolderSnapshot["files"], question: string, budget: number) {
+function relevantFiles(files: PickedFile[], question: string, budget: number) {
 	const q = new Set(words(question));
 	const scored = files
 		.filter((f) => f.content)
@@ -273,10 +279,10 @@ function relevantFiles(files: FolderSnapshot["files"], question: string, budget:
 			return { f, score, i };
 		})
 		.sort((a, b) => b.score - a.score || a.i - b.i);
-	const picked: typeof files = [];
+	const picked: PickedFile[] = [];
 	let used = 0;
 	for (const { f } of scored) {
-		const text = f.content ?? "";
+		const text = f.content;
 		if (used + text.length > budget && picked.length > 0) continue;
 		picked.push({ ...f, content: text.slice(0, budget - used) });
 		used += Math.min(text.length, budget - used);
@@ -285,40 +291,72 @@ function relevantFiles(files: FolderSnapshot["files"], question: string, budget:
 	return picked;
 }
 
-/** How much of each folder is read before the relevant part is picked. */
-const SCAN_CHARS = 120_000;
-/** File names listed for the model, so it knows what else is there. */
+/** File names listed for the model when asked what is in a folder. */
 const LISTED_FILES = 40;
+/** Questions about the folder itself rather than what its files say. */
+const ABOUT_FILES = /\b(files?|folders?|documents?|docs?)\b/i;
+
+/**
+ * What the model is told about one folder, or "" when its files have nothing
+ * on this question. Reading is the slow part on a phone or laptop, so a
+ * question the files can't help with costs nothing.
+ */
+export function folderBlock({ folder, excerpts, unreadable_matches }: FolderSearch, question: string): string {
+	const lines = [`Local folder "${folder.name}".`];
+	for (const file of unreadable_matches) {
+		lines.push(`${file} is in this folder, but it can't be read, so what it says is unknown.`);
+	}
+	if (excerpts.length > 0) {
+		lines.push(...excerpts.map((e) => `--- File: ${e.path} ---\n${e.text}`));
+	} else if (ABOUT_FILES.test(question)) {
+		const names = folder.text_files;
+		const more = names.length > LISTED_FILES ? ` and ${names.length - LISTED_FILES} more` : "";
+		lines.push(`Readable files: ${names.slice(0, LISTED_FILES).join(", ") || "none"}${more}.`);
+		if (folder.unreadable.length > 0) lines.push(`Files that can't be read: ${folder.unreadable.slice(0, LISTED_FILES).join(", ")}.`);
+	} else if (unreadable_matches.length === 0 && !folder.partial) {
+		return "";
+	}
+	if (folder.partial) lines.push("The folder is very large, so only part of it was searched.");
+	return lines.join("\n\n");
+}
+
+export interface ConnectorContext {
+	/** The material to put in front of the question, or "". */
+	text: string;
+	/** Sources that were on but couldn't be read, to tell the user. */
+	warnings: string[];
+	/** Folders were searched and nothing in them bears on the question. */
+	noMatch: boolean;
+}
 
 /**
  * Everything the enabled connectors know that bears on `question`, as one
- * block to put in front of it, or "" when nothing is enabled.
+ * block to put in front of it, with "" when nothing is enabled.
  */
-export async function connectorContext(question = ""): Promise<string> {
+export async function connectorContext(question = ""): Promise<ConnectorContext> {
 	const folders = state.folders.filter((f) => f.enabled);
 	const docs = state.docs.filter((d) => d.enabled);
 	const repos = state.repos.filter((r) => r.enabled);
 	const sources =
 		folders.length + repos.length + (docs.length > 0 ? 1 : 0) + (state.gmail?.enabled && gmailPassword ? 1 : 0);
-	if (sources === 0) return "";
+	if (sources === 0) return { text: "", warnings: [], noMatch: false };
 	const share = Math.floor(CONTEXT_CHARS / sources);
 	const parts: string[] = [];
+	const warnings: string[] = [];
+	let searched = false;
 	for (const folder of folders) {
 		try {
-			const snap = await readFolder(folder.path, SCAN_CHARS);
-			const chosen = relevantFiles(snap.files, question, share);
-			const names = snap.files.filter((f) => f.content !== null).map((f) => f.path);
-			const listing =
-				names.slice(0, LISTED_FILES).join(", ") +
-				(names.length > LISTED_FILES ? ` and ${names.length - LISTED_FILES} more` : "");
-			const bodies = chosen.map((f) => `--- File: ${f.path} ---\n${f.content}`).join("\n\n");
-			parts.push(`Local folder "${snap.name}". Text files: ${listing || "none readable"}.\n\n${bodies}`);
+			const block = folderBlock(await searchFolder(folder.path, question, share), question);
+			if (block) parts.push(block);
+			searched = true;
 		} catch {
-			// Folder moved or unreadable: answer without it.
+			// Say so to both: the model must not act as if it had read the folder.
+			parts.push(`Local folder "${folder.name}" could not be read, so its files are not available.`);
+			warnings.push(`Couldn't read ${folder.name}. It may have been moved or renamed.`);
 		}
 	}
 	if (docs.length > 0) {
-		const files = docs.map((d) => ({ path: d.name, size_bytes: d.text.length, content: d.text, truncated: d.truncated }));
+		const files = docs.map((d) => ({ path: d.name, content: d.text }));
 		const chosen = relevantFiles(files, question, share);
 		const bodies = chosen.map((f) => `--- File: ${f.path} ---\n${f.content}`).join("\n\n");
 		parts.push(`Documents shared from this device: ${docs.map((d) => d.name).join(", ")}.\n\n${bodies}`);
@@ -327,17 +365,18 @@ export async function connectorContext(question = ""): Promise<string> {
 		const mail = await gmailBlock();
 		if (mail) parts.push(mail.slice(0, share));
 	} catch {
-		// Offline or signed out: answer without the inbox.
+		parts.push("The Gmail inbox could not be read just now.");
+		warnings.push("Couldn't read Gmail. Check your connection.");
 	}
 	for (const repo of repos) {
 		try {
 			parts.push((await repoBlock(repo, share)).slice(0, share));
 		} catch {
-			// Offline: answer without the repository.
+			parts.push(`The GitHub repository ${repo.repo} could not be read just now.`);
+			warnings.push(`Couldn't read ${repo.repo}. Check your connection.`);
 		}
 	}
-	if (parts.length === 0) return "";
-	return parts.join("\n\n");
+	return { text: parts.join("\n\n"), warnings, noMatch: searched && parts.length === 0 };
 }
 
 /**
@@ -345,12 +384,22 @@ export async function connectorContext(question = ""): Promise<string> {
  * models follow material placed right next to the question much better
  * than material in the system prompt.
  */
-export function withContext(context: string, question: string): string {
+export function withContext(context: string, question: string, noMatch = false): string {
+	if (noMatch) {
+		return [
+			"I searched my connected files and found nothing on this.",
+			"If this is about my own files, notes or data, say you could not find it there and do not guess.",
+			"Otherwise answer it normally from what you know.",
+			"",
+			`My question: ${question}`,
+		].join("\n");
+	}
 	if (!context) return question;
 	return [
-		"Use the following material from my connected sources to answer. It was read on this device.",
-		"Answer from it when it is relevant and say which file, email or repository you used.",
-		"If the answer is not in it, say so and then answer from general knowledge.",
+		"Use the following material from my connected sources to answer.",
+		"Copy names, numbers and dates exactly as written, and say which file, email or repository you used.",
+		"If my question is about my sources and the answer is not in them, say you could not find it there. Never guess or fill in a blank.",
+		"If my question has nothing to do with them, just answer it.",
 		"",
 		"<sources>",
 		context,

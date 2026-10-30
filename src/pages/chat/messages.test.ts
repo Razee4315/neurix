@@ -106,7 +106,7 @@ describe("wasCutShort", () => {
 		expect(wasCutShort("length")).toBe(true);
 		expect(wasCutShort("repetition")).toBe(true);
 		expect(wasCutShort("eos")).toBe(false);
-		expect(wasCutShort("cancelled")).toBe(false);
+		expect(wasCutShort("cancelled")).toBe(true);
 		expect(wasCutShort(undefined)).toBe(false);
 	});
 });
