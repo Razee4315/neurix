@@ -5,6 +5,8 @@ mod characters;
 mod chat;
 mod commands;
 mod device;
+#[cfg(desktop)]
+mod documents;
 mod folder_search;
 mod imap_lite;
 mod inference;
@@ -21,6 +23,19 @@ fn default_log_level() -> log::LevelFilter {
     } else {
         log::LevelFilter::Info
     }
+}
+
+/// When started as the document helper, do that job and return its exit
+/// code. `documents` explains why this is a separate process.
+#[cfg(desktop)]
+pub fn document_helper() -> Option<i32> {
+    let mut args = env::args().skip(1);
+    (args.next()? == documents::HELPER_FLAG).then(|| documents::run_helper(&args.next().unwrap_or_default()))
+}
+
+#[cfg(mobile)]
+pub fn document_helper() -> Option<i32> {
+    None
 }
 
 use commands::{

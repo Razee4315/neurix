@@ -491,7 +491,7 @@ export function ConnectorsPage() {
 			const skipped = snapshot.unreadable.length;
 			showToast(
 				`Connected ${snapshot.name}: ${snapshot.text_files.length} readable files${
-					skipped > 0 ? `, ${skipped} skipped (PDF, Word, images and other formats)` : ""
+					skipped > 0 ? `, ${skipped} skipped (images, scans and other formats)` : ""
 				}${snapshot.partial ? ". The folder is very large, so only part of it can be searched" : ""}`,
 				"success",
 			);

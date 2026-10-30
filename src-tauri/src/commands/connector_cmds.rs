@@ -2,6 +2,8 @@
 //! and its text files are searched on this device to give the model context.
 //! Nothing here touches the network.
 
+#[cfg(desktop)]
+use crate::documents::{self, Reading};
 use crate::folder_search::{best_excerpts, decode_text, search_terms, Doc, Excerpt};
 use serde::Serialize;
 use std::fs;
@@ -26,6 +28,10 @@ const MAX_FILES: usize = 400;
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 /// Read per search, which runs on every question.
 const MAX_SCAN_BYTES: u64 = 64 * 1024 * 1024;
+/// Spent reading new PDF and Word files per search. Text is kept once read,
+/// so a folder of many documents fills in over a few questions.
+#[cfg(desktop)]
+const DOCUMENT_SCAN_TIME: std::time::Duration = std::time::Duration::from_secs(20);
 
 #[derive(Serialize)]
 pub struct FolderSnapshot {
@@ -34,7 +40,7 @@ pub struct FolderSnapshot {
     pub total_files: usize,
     /// Files actually read as text, relative to the connected folder.
     pub text_files: Vec<String>,
-    /// Files that can't be read: other formats, or not really text.
+    /// Files that can't be read: other formats, scans, or not really text.
     pub unreadable: Vec<String>,
     /// True when the folder was too big to read all of it.
     pub partial: bool,
@@ -134,8 +140,19 @@ fn scan_folder(path: &str) -> Result<(FolderSnapshot, Vec<Doc>), String> {
     let mut budget = MAX_SCAN_BYTES;
     let mut docs = Vec::new();
     let mut unreadable = Vec::new();
+    #[cfg(desktop)]
+    let document_deadline = std::time::Instant::now() + DOCUMENT_SCAN_TIME;
     for p in &paths {
         let rel = p.strip_prefix(&root).unwrap_or(p).to_string_lossy().into_owned();
+        #[cfg(desktop)]
+        if documents::is_document(p) {
+            match documents::read_cached(p, std::time::Instant::now() < document_deadline) {
+                Reading::Text(text) => docs.push(Doc { path: rel, text }),
+                Reading::Unreadable => unreadable.push(rel),
+                Reading::NotReached => partial = true,
+            }
+            continue;
+        }
         if !is_text(p) {
             unreadable.push(rel);
             continue;

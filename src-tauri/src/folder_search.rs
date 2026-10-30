@@ -21,7 +21,7 @@ const STOP_WORDS: &[&str] = &[
     "does", "did", "can", "could", "would", "should", "will", "there", "their", "them", "they",
     "his", "her", "its", "our", "out", "not", "all", "any", "tell", "give", "show", "find", "list",
     "please", "file", "files", "folder", "folders", "document", "documents", "connected", "name",
-    "names", "according",
+    "names", "according", "much", "many",
 ];
 
 pub struct Doc {
@@ -128,6 +128,8 @@ fn chunks(text: &str) -> Vec<String> {
 /// The passages that best match `terms`, best first, within `max_chars`.
 /// A word found in few passages counts for more than one found everywhere,
 /// and a word in the file's name counts a little even if the text lacks it.
+/// A passage must match at least half of the words: one shared word ("secret")
+/// isn't a match, and a small model will answer from whatever it is handed.
 pub fn best_excerpts(docs: &[Doc], terms: &[String], max_chars: usize) -> Vec<Excerpt> {
     if terms.is_empty() {
         return Vec::new();
@@ -146,10 +148,15 @@ pub fn best_excerpts(docs: &[Doc], terms: &[String], max_chars: usize) -> Vec<Ex
         })
         .collect();
     let paths: Vec<String> = docs.iter().map(|d| d.path.to_lowercase()).collect();
+    let needed = terms.len().div_ceil(2);
 
     let mut scored: Vec<(f64, usize)> = passages
         .iter()
         .enumerate()
+        .filter(|(_, (doc, lower, _))| {
+            let hits = terms.iter().filter(|t| lower.contains(t.as_str()) || paths[*doc].contains(t.as_str())).count();
+            hits >= needed
+        })
         .map(|(index, (doc, lower, _))| {
             let score: f64 = terms
                 .iter()
@@ -262,6 +269,22 @@ mod tests {
     fn nothing_matching_sends_nothing() {
         let docs = [doc("a.txt", "lorem ipsum")];
         assert!(best_excerpts(&docs, &search_terms("capital of Japan"), 4000).is_empty());
+    }
+
+    #[test]
+    fn one_shared_word_is_not_a_match() {
+        let docs = [doc("recipe.md", "The secret ingredient in the biryani is black cardamom.")];
+        let weak = search_terms("Which fruit is mentioned in the hidden secret file?");
+        assert!(best_excerpts(&docs, &weak, 4000).is_empty());
+        let strong = search_terms("What is the secret ingredient in the biryani?");
+        assert_eq!(best_excerpts(&docs, &strong, 4000).len(), 1);
+    }
+
+    #[test]
+    fn a_file_name_counts_towards_the_match() {
+        let docs = [doc("staff.csv", "name,role,city\nZara,Manager,Multan\n")];
+        let found = best_excerpts(&docs, &search_terms("Which staff member is based in Multan?"), 4000);
+        assert_eq!(found.len(), 1);
     }
 
     #[test]

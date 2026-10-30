@@ -40,7 +40,7 @@ describe("folderBlock", () => {
 
 	it("says when the file in question can't be read", () => {
 		const block = folderBlock(search({ unreadable_matches: ["report.pdf"] }), "What does the report say?");
-		expect(block).toContain("report.pdf is in this folder, but that file type can't be read");
+		expect(block).toContain("report.pdf is in this folder, but it can't be read");
 	});
 
 	it("says when a huge folder was only partly searched", () => {

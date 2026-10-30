@@ -303,7 +303,7 @@ const ABOUT_FILES = /\b(files?|folders?|documents?|docs?)\b/i;
 export function folderBlock({ folder, excerpts, unreadable_matches }: FolderSearch, question: string): string {
 	const lines = [`Local folder "${folder.name}".`];
 	for (const file of unreadable_matches) {
-		lines.push(`${file} is in this folder, but that file type can't be read, so what it says is unknown.`);
+		lines.push(`${file} is in this folder, but it can't be read, so what it says is unknown.`);
 	}
 	if (excerpts.length > 0) {
 		lines.push(...excerpts.map((e) => `--- File: ${e.path} ---\n${e.text}`));
