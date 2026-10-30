@@ -11,6 +11,7 @@ mod inference;
 mod models;
 mod settings;
 mod state;
+mod workspace;
 
 /// Verbose logs in development; quiet in release builds, where Debug output
 /// only costs battery and fills logcat.
@@ -27,6 +28,7 @@ use commands::{
     chat_cmds::{benchmark_model, get_active_model, run_inference, stop_inference, unload_model},
     connector_cmds::{github_fetch, gmail_fetch, pick_folder, read_folder, search_folder},
     data_cmds::{export_data_to_file, import_data_from_file},
+    file_cmds::{check_workspace_file, open_workspace_file, save_file_as, write_workspace_file},
     history_cmds::{
         clear_all_conversations, delete_conversation, get_conversations, load_conversation,
         save_conversation, search_conversations,
@@ -113,6 +115,10 @@ pub fn run() {
             search_folder,
             gmail_fetch,
             github_fetch,
+            save_file_as,
+            check_workspace_file,
+            write_workspace_file,
+            open_workspace_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Neurix")

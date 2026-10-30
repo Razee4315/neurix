@@ -37,6 +37,7 @@ interface MockKnobs {
 	stopReason: StopReason | null;
 	/** Reported device RAM in GB (null = unknown). */
 	ramGb: number | null;
+	existingFiles: string[];
 	/** Milliseconds between streamed tokens. */
 	tokenDelayMs: number;
 	/** Simulated time spent reading the conversation before the first token. */
@@ -307,6 +308,7 @@ const knobs: MockKnobs = {
 	failSettings: false,
 	stopReason: null,
 	ramGb: 8,
+	existingFiles: [],
 	tokenDelayMs: 25,
 	promptDelayMs: 0,
 	calls: {},
@@ -379,6 +381,9 @@ const SAMPLE_REASONING =
 
 const words = (text: string) => text.match(/\S+\s*/g) ?? [];
 
+const SAMPLE_FILE_REPLY =
+	'Here is your page.\n\nFile: index.html\n```html\n<!doctype html>\n<title>Demo</title>\n<h1 style="font-family:sans-serif">Hello from Neurix</h1>\n```\n\nFile: run.bat\n```text\necho no\n```\n\nOpen it in a browser to see it.';
+
 async function runInference(args: {
 	prompt: string;
 	maxTokens: number;
@@ -394,7 +399,9 @@ async function runInference(args: {
 	const emit = (e: InferenceEvent) => args.onEvent.onmessage(e);
 	const full = args.assistantPrefix
 		? " …and this is the continuation of the earlier reply, picking up where it stopped."
-		: sampleReply(args.prompt);
+		: /landing page/i.test(args.prompt)
+			? SAMPLE_FILE_REPLY
+			: sampleReply(args.prompt);
 	const pieces = words(full);
 	const forced = knobs.stopReason;
 	knobs.stopReason = null;
@@ -672,6 +679,17 @@ const handlers: Record<string, (args: Args) => unknown> = {
 		return { conversations: backup.conversations?.length ?? 0, characters: incoming.length };
 	},
 	pick_folder: () => "/Users/demo/Documents/Care policies",
+	save_file_as: ({ name }) => `/Users/demo/Downloads/${name}`,
+	check_workspace_file: ({ name }) => {
+		if (/\.(bat|exe)$/i.test(String(name))) throw `Neurix doesn't create ${String(name).split(".").pop()} files.`;
+		return knobs.existingFiles.includes(String(name));
+	},
+	write_workspace_file: ({ folder, name, overwrite }) => {
+		if (knobs.existingFiles.includes(String(name)) && !overwrite) throw `${name} already exists.`;
+		knobs.existingFiles.push(String(name));
+		return `${folder}/${name}`;
+	},
+	open_workspace_file: () => null,
 	read_folder: ({ path }) => mockFolder(path),
 	search_folder: ({ path, question }) => ({
 		folder: mockFolder(path),

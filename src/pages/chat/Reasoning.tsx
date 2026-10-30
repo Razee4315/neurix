@@ -117,6 +117,18 @@ export const ToolHint = styled.span`
   color: ${tokens.colors.onSurfaceVariant};
 `;
 
+export const ToolLink = styled.button`
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover { color: ${tokens.colors.onSurface}; text-decoration: underline; }
+`;
+
 /** Shown in place of the typing dots while a long conversation is re-read. */
 export const ReadingLine = styled.div`
   display: flex;

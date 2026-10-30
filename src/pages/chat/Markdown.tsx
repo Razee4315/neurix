@@ -1,10 +1,14 @@
 import { Icon } from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/Toast";
+import { saveFileAs } from "@/services/fileService";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
-import { copyText, vibrate } from "@/utils/platform";
+import { isHtml, suggestedName } from "@/utils/fileBlocks";
+import { copyText, isMobile, vibrate } from "@/utils/platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { type ReactNode, memo, useState } from "react";
 import styled from "styled-components";
+import { HtmlPreview } from "./HtmlPreview";
 import { INLINE, MAX_INLINE_LINE, isTableDivider } from "./markdownPatterns";
 
 /* ── Styles ── */
@@ -122,6 +126,11 @@ const CodeHeader = styled.div`
   background: ${tokens.colors.surfaceContainerHigh};
 `;
 
+const CodeActions = styled.div`
+  display: flex;
+  align-items: center;
+`;
+
 const CopyBtn = styled.button<{ $copied: boolean }>`
   display: inline-flex;
   align-items: center;
@@ -166,6 +175,42 @@ function CodeCopyButton({ code }: { code: string }) {
 			<Icon name={copied ? "check" : "content_copy"} size={14} />
 			{copied ? "Copied" : "Copy"}
 		</CopyBtn>
+	);
+}
+
+/* ── Save and preview ── */
+
+function CodeSaveButton({ code, language }: { code: string; language: string }) {
+	const { showToast } = useToast();
+
+	const handleSave = async () => {
+		try {
+			const path = await saveFileAs(suggestedName(language), code);
+			if (path) showToast(`Saved to ${path}`, "success");
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : String(err), "error");
+		}
+	};
+
+	return (
+		<CopyBtn type="button" onClick={handleSave} $copied={false} aria-label="Save code as a file">
+			<Icon name="download" size={14} />
+			Save
+		</CopyBtn>
+	);
+}
+
+function CodePreviewButton({ code }: { code: string }) {
+	const [open, setOpen] = useState(false);
+
+	return (
+		<>
+			<CopyBtn type="button" onClick={() => setOpen(true)} $copied={false} aria-label="Preview this page">
+				<Icon name="open_in_new" size={14} />
+				Preview
+			</CopyBtn>
+			{open && <HtmlPreview title="Page preview" html={code} onClose={() => setOpen(false)} />}
+		</>
 	);
 }
 
@@ -236,7 +281,11 @@ function renderBlocks(text: string): ReactNode[] {
 				<CodeBlock key={key++}>
 					<CodeHeader>
 						<span>{lang || "code"}</span>
-						<CodeCopyButton code={code} />
+						<CodeActions>
+							{isHtml(lang) && <CodePreviewButton code={code} />}
+							{!isMobile() && <CodeSaveButton code={code} language={lang} />}
+							<CodeCopyButton code={code} />
+						</CodeActions>
 					</CodeHeader>
 					<CodePre>{code}</CodePre>
 				</CodeBlock>,
