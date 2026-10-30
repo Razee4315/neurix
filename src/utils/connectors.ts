@@ -313,7 +313,7 @@ export function folderBlock({ folder, excerpts, unreadable_matches }: FolderSear
 		const more = names.length > LISTED_FILES ? ` and ${names.length - LISTED_FILES} more` : "";
 		lines.push(`Readable files: ${names.slice(0, LISTED_FILES).join(", ") || "none"}${more}.`);
 		if (folder.unreadable.length > 0) lines.push(`Files that can't be read: ${folder.unreadable.slice(0, LISTED_FILES).join(", ")}.`);
-	} else if (unreadable_matches.length === 0) {
+	} else if (unreadable_matches.length === 0 && !folder.partial) {
 		return "";
 	}
 	if (folder.partial) lines.push("The folder is very large, so only part of it was searched.");
