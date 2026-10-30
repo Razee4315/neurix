@@ -93,6 +93,19 @@ export const BubbleBody = styled.div`
   -webkit-user-select: text;
 `;
 
+/* What a reply looked at. Not proof it used all of it, so it says "Looked at". */
+export const SourcesLine = styled.div`
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+  overflow-wrap: anywhere;
+
+  svg { flex-shrink: 0; align-self: center; }
+`;
+
 export const UserText = styled.div`
   white-space: pre-wrap;
 `;

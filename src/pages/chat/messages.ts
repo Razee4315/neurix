@@ -19,6 +19,10 @@ export interface Message {
 	reasoning?: string;
 	/** The folder chosen in Create mode when this reply was written. */
 	createIn?: string;
+	/** What connectors this reply looked at. */
+	sources?: string[];
+	/** The character that wrote this reply, for this session only. */
+	characterId?: string;
 }
 
 let counter = 0;
@@ -26,7 +30,9 @@ let counter = 0;
 export function createMessage(
 	role: Message["role"],
 	text: string,
-	extra: Partial<Pick<Message, "timestamp" | "stopReason" | "reasoning" | "createIn">> = {},
+	extra: Partial<
+		Pick<Message, "timestamp" | "stopReason" | "reasoning" | "createIn" | "sources" | "characterId">
+	> = {},
 ): Message {
 	counter += 1;
 	return {
@@ -37,6 +43,8 @@ export function createMessage(
 		...(extra.stopReason ? { stopReason: extra.stopReason } : {}),
 		...(extra.reasoning ? { reasoning: extra.reasoning } : {}),
 		...(extra.createIn ? { createIn: extra.createIn } : {}),
+		...(extra.sources?.length ? { sources: extra.sources } : {}),
+		...(extra.characterId ? { characterId: extra.characterId } : {}),
 	};
 }
 
@@ -90,6 +98,8 @@ export function fromStored(messages: ChatMessage[]): Message[] {
 		createMessage(m.role === "user" ? "user" : "ai", m.content, {
 			timestamp: m.timestamp,
 			reasoning: m.reasoning,
+			sources: m.sources,
+			stopReason: m.stop_reason,
 		}),
 	);
 }
@@ -100,7 +110,29 @@ export function toStored(messages: Message[]): ChatMessage[] {
 		content: m.text,
 		timestamp: m.timestamp,
 		...(m.reasoning ? { reasoning: m.reasoning } : {}),
+		...(m.sources?.length ? { sources: m.sources } : {}),
+		...(m.stopReason ? { stop_reason: m.stopReason } : {}),
 	}));
+}
+
+/** Added to a message while earlier replies came from another character. */
+export const NEW_STYLE_NOTE = "(Answer in your own style, not the style of the earlier replies in this chat.)";
+
+/**
+ * What the model sees of earlier replies once the character has changed. It
+ * copies what it sees, so another character's emojis would carry over.
+ */
+export function plainEarlierReplies(messages: Message[], characterId: string | undefined): Message[] {
+	return messages.map((m) =>
+		m.role === "ai" && m.characterId && m.characterId !== characterId
+			? { ...m, text: m.text.replace(/\p{Extended_Pictographic}\uFE0F?/gu, "").replace(/ {2,}/g, " ").trim() }
+			: m,
+	);
+}
+
+/** Whether any reply so far was written by a different character. */
+export function spokenByAnother(messages: Message[], characterId: string | undefined): boolean {
+	return messages.some((m) => m.role === "ai" && !!m.characterId && m.characterId !== characterId);
 }
 
 interface ConversationContext {

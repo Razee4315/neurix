@@ -149,7 +149,10 @@ async fn download_weights(
 
     let response = match request.send().await {
         Ok(r) => r,
-        Err(e) => return fail(channel, format!("Network error: {}", e)).map(|_| Outcome::Completed),
+        Err(_) => {
+            return fail(channel, "Couldn't reach the download server. Check your internet connection.".to_string())
+                .map(|_| Outcome::Completed)
+        }
     };
 
     let status = response.status().as_u16();
@@ -314,7 +317,7 @@ async fn download_weights(
                     let message = if e.is_timeout() {
                         "The connection stalled. Check your network and resume.".to_string()
                     } else {
-                        format!("Download interrupted: {}", e)
+                        "Download interrupted. Check your network and resume.".to_string()
                     };
                     return fail(channel, message).map(|_| Outcome::Completed);
                 }

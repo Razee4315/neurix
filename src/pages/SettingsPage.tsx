@@ -88,6 +88,13 @@ const RowSub = styled.div`
 /* ── Toggle Switch ── */
 
 const Toggle = styled.button<{ $on: boolean }>`
+  /* A fingertip needs more than the switch's 22px. */
+  &::before {
+    content: "";
+    position: absolute;
+    inset: -11px -4px;
+  }
+
   width: 40px;
   height: 22px;
   border-radius: 11px;
@@ -409,11 +416,15 @@ export function SettingsPage() {
 	const handleImport = async () => {
 		setBusy("import");
 		try {
+			const before = (await historyService.getConversations()).length;
 			const summary = await dataService.importFromFile();
 			if (summary) {
 				await refreshSettings();
+				const added = (await historyService.getConversations()).length - before;
 				showToast(
-					`Imported ${summary.conversations} chat${summary.conversations === 1 ? "" : "s"} and ${summary.characters} character${summary.characters === 1 ? "" : "s"}`,
+					added > 0
+						? `Added ${added} new chat${added === 1 ? "" : "s"} from the backup`
+						: "Nothing new: this backup's chats are already here",
 					"success",
 				);
 			}

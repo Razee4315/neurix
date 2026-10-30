@@ -3,6 +3,8 @@ import {
 	buildHistory,
 	createMessage,
 	fromStored,
+	plainEarlierReplies,
+	spokenByAnother,
 	generateTitle,
 	persistable,
 	toConversation,
@@ -98,6 +100,53 @@ describe("generateTitle", () => {
 
 	it("falls back when there is no user message", () => {
 		expect(generateTitle([a("hi")])).toBe("Chat");
+	});
+});
+
+describe("saved reply details", () => {
+	it("keeps what a reply looked at and how it ended", () => {
+		const reply = createMessage("ai", "text", { sources: ["budget.md"], stopReason: "length" });
+		const stored = toStored([createMessage("user", "q"), reply]);
+		expect(stored[1].sources).toEqual(["budget.md"]);
+		expect(stored[1].stop_reason).toBe("length");
+		const back = fromStored(stored)[1];
+		expect(back.sources).toEqual(["budget.md"]);
+		expect(back.stopReason).toBe("length");
+	});
+
+	it("leaves plain replies plain", () => {
+		const stored = toStored([createMessage("user", "q"), createMessage("ai", "text")]);
+		expect(stored[1]).not.toHaveProperty("sources");
+		expect(stored[1]).not.toHaveProperty("stop_reason");
+	});
+});
+
+describe("plainEarlierReplies", () => {
+	it("takes emojis out of another character's replies only", () => {
+		const theirs = createMessage("ai", "oh wow 😂 tea is great 🍵", { characterId: "a" });
+		const mine = createMessage("ai", "nice 😊", { characterId: "b" });
+		const [first, second] = plainEarlierReplies([theirs, mine], "b");
+		expect(first.text).toBe("oh wow tea is great");
+		expect(second.text).toBe("nice 😊");
+	});
+
+	it("leaves what was shown alone", () => {
+		const theirs = createMessage("ai", "tea 🍵", { characterId: "a" });
+		plainEarlierReplies([theirs], "b");
+		expect(theirs.text).toBe("tea 🍵");
+	});
+});
+
+describe("spokenByAnother", () => {
+	const by = (id?: string) => createMessage("ai", "x", { characterId: id });
+
+	it("spots a reply from a different character", () => {
+		expect(spokenByAnother([by("a")], "b")).toBe(true);
+		expect(spokenByAnother([by("b")], "b")).toBe(false);
+	});
+
+	it("ignores replies with no record of who wrote them", () => {
+		expect(spokenByAnother([by()], "b")).toBe(false);
 	});
 });
 

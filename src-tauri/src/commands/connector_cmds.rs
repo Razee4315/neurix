@@ -300,7 +300,7 @@ pub async fn gmail_fetch(email: String, app_password: String, limit: u32) -> Res
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<MailSummary>, String> {
         let tls = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
         let client = imap::connect(("imap.gmail.com", 993), "imap.gmail.com", &tls)
-            .map_err(|e| format!("Couldn't reach Gmail: {e}"))?;
+            .map_err(|_| "Couldn't reach Gmail. Check your internet connection.".to_string())?;
         let password: String = app_password.chars().filter(|c| !c.is_whitespace()).collect();
         let mut session = client.login(&email, &password).map_err(|_| {
             "Gmail refused the sign-in. Check the address and use an app password, not your Google password.".to_string()
@@ -381,7 +381,7 @@ pub async fn github_fetch(repo: String) -> Result<GithubSnapshot, String> {
                 .header("Accept", "application/vnd.github+json")
                 .send()
                 .await
-                .map_err(|e| format!("Couldn't reach GitHub: {e}"))?;
+                .map_err(|_| "Couldn't reach GitHub. Check your internet connection.".to_string())?;
             if res.status().as_u16() == 404 {
                 return Err("GitHub has no public repository by that name.".to_string());
             }

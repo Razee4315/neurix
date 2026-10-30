@@ -1,6 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
 import { useAppContext } from "@/context/AppContext";
+import { useDownloads } from "@/context/DownloadContext";
 import { historyService } from "@/services";
 import { CHAT_STARTED, HISTORY_CHANGED } from "@/services/historyService";
 import type { ConversationMeta } from "@/services/types";
@@ -89,6 +90,14 @@ const Row = styled.button<{ $active?: boolean }>`
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+`;
+
+const Progress = styled.small`
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: ${tokens.typography.fontSize.xs};
+  font-variant-numeric: tabular-nums;
+  color: ${tokens.colors.primary};
 `;
 
 const NewChatIcon = styled.span`
@@ -254,6 +263,11 @@ export function Sidebar() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const { activeModel } = useAppContext();
+	const { downloads } = useDownloads();
+	const running = Object.values(downloads).filter((d) => d.status === "downloading" || d.status === "verifying");
+	const total = running.reduce((sum, d) => sum + d.totalBytes, 0);
+	const done = running.reduce((sum, d) => sum + d.downloadedBytes, 0);
+	const percent = total > 0 ? Math.floor((done / total) * 100) : 0;
 	const [recents, setRecents] = useState<(ConversationMeta & { pending?: boolean })[] | null>(null);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const footRef = useRef<HTMLDivElement>(null);
@@ -370,6 +384,9 @@ export function Sidebar() {
 					>
 						<Icon name={section.icon} size={17} />
 						<span>{section.label}</span>
+						{section.path === "/store" && running.length > 0 && (
+							<Progress aria-label={`Downloading, ${percent} percent`}>{percent}%</Progress>
+						)}
 					</Row>
 				))}
 			</Group>
