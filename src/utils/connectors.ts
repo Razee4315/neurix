@@ -297,8 +297,9 @@ const LISTED_FILES = 40;
 const ABOUT_FILES = /\b(files?|folders?|documents?|docs?)\b/i;
 
 /**
- * What the model is told about one folder. Reading is the slow part on a
- * phone or laptop, so a question the files can't help with costs one line.
+ * What the model is told about one folder, or "" when its files have nothing
+ * on this question. Reading is the slow part on a phone or laptop, so a
+ * question the files can't help with costs nothing.
  */
 export function folderBlock({ folder, excerpts, unreadable_matches }: FolderSearch, question: string): string {
 	const lines = [`Local folder "${folder.name}".`];
@@ -312,8 +313,8 @@ export function folderBlock({ folder, excerpts, unreadable_matches }: FolderSear
 		const more = names.length > LISTED_FILES ? ` and ${names.length - LISTED_FILES} more` : "";
 		lines.push(`Readable files: ${names.slice(0, LISTED_FILES).join(", ") || "none"}${more}.`);
 		if (folder.unreadable.length > 0) lines.push(`Files that can't be read: ${folder.unreadable.slice(0, LISTED_FILES).join(", ")}.`);
-	} else {
-		lines.push("Nothing in its files matches this question.");
+	} else if (unreadable_matches.length === 0) {
+		return "";
 	}
 	if (folder.partial) lines.push("The folder is very large, so only part of it was searched.");
 	return lines.join("\n\n");
@@ -324,6 +325,8 @@ export interface ConnectorContext {
 	text: string;
 	/** Sources that were on but couldn't be read, to tell the user. */
 	warnings: string[];
+	/** Folders were searched and nothing in them bears on the question. */
+	noMatch: boolean;
 }
 
 /**
@@ -336,13 +339,16 @@ export async function connectorContext(question = ""): Promise<ConnectorContext>
 	const repos = state.repos.filter((r) => r.enabled);
 	const sources =
 		folders.length + repos.length + (docs.length > 0 ? 1 : 0) + (state.gmail?.enabled && gmailPassword ? 1 : 0);
-	if (sources === 0) return { text: "", warnings: [] };
+	if (sources === 0) return { text: "", warnings: [], noMatch: false };
 	const share = Math.floor(CONTEXT_CHARS / sources);
 	const parts: string[] = [];
 	const warnings: string[] = [];
+	let searched = false;
 	for (const folder of folders) {
 		try {
-			parts.push(folderBlock(await searchFolder(folder.path, question, share), question));
+			const block = folderBlock(await searchFolder(folder.path, question, share), question);
+			if (block) parts.push(block);
+			searched = true;
 		} catch {
 			// Say so to both: the model must not act as if it had read the folder.
 			parts.push(`Local folder "${folder.name}" could not be read, so its files are not available.`);
@@ -370,7 +376,7 @@ export async function connectorContext(question = ""): Promise<ConnectorContext>
 			warnings.push(`Couldn't read ${repo.repo}. Check your connection.`);
 		}
 	}
-	return { text: parts.join("\n\n"), warnings };
+	return { text: parts.join("\n\n"), warnings, noMatch: searched && parts.length === 0 };
 }
 
 /**
@@ -378,7 +384,16 @@ export async function connectorContext(question = ""): Promise<ConnectorContext>
  * models follow material placed right next to the question much better
  * than material in the system prompt.
  */
-export function withContext(context: string, question: string): string {
+export function withContext(context: string, question: string, noMatch = false): string {
+	if (noMatch) {
+		return [
+			"I searched my connected files and found nothing on this.",
+			"If this is about my own files, notes or data, say you could not find it there and do not guess.",
+			"Otherwise answer it normally from what you know.",
+			"",
+			`My question: ${question}`,
+		].join("\n");
+	}
 	if (!context) return question;
 	return [
 		"Use the following material from my connected sources to answer.",

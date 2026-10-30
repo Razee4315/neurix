@@ -27,9 +27,8 @@ describe("folderBlock", () => {
 		expect(block).not.toContain("rota.csv");
 	});
 
-	it("costs one line when the files can't help", () => {
-		const block = folderBlock(search(), "What is the capital of Japan?");
-		expect(block).toBe('Local folder "Notes".\n\nNothing in its files matches this question.');
+	it("adds nothing when the files can't help", () => {
+		expect(folderBlock(search(), "What is the capital of Japan?")).toBe("");
 	});
 
 	it("lists the files when asked about them", () => {
@@ -51,6 +50,13 @@ describe("folderBlock", () => {
 describe("withContext", () => {
 	it("leaves a message alone when no source is on", () => {
 		expect(withContext("", "Hello")).toBe("Hello");
+	});
+
+	it("still lets a general question be answered when no file matches", () => {
+		const prompt = withContext("", "What is the capital of Japan?", true);
+		expect(prompt).toContain("Otherwise answer it normally");
+		expect(prompt).toContain("do not guess");
+		expect(prompt.endsWith("My question: What is the capital of Japan?")).toBe(true);
 	});
 
 	it("tells the model not to guess", () => {

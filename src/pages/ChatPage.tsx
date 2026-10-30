@@ -573,7 +573,7 @@ export function ChatPage() {
 			for (const warning of sources?.warnings ?? []) showToast(warning, "error");
 			await chatService.runInference(
 				{
-					prompt: withContext(sources?.text ?? "", prompt),
+					prompt: withContext(sources?.text ?? "", prompt, sources?.noMatch),
 					systemPrompt: [
 						withGreeting(character, character?.system_prompt ?? settings?.system_prompt ?? ""),
 						...(live.current.createIn ? [CREATE_INSTRUCTIONS] : []),
