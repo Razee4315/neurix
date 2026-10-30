@@ -15,6 +15,8 @@ export interface Prefs {
 	chatWidth: "comfortable" | "wide";
 	/** Copy a reply to the clipboard as soon as it finishes. */
 	autoCopy: boolean;
+	/** Friends keep facts you tell them in chat. */
+	friendsLearn: boolean;
 }
 
 const KEY = "neurix.prefs.v1";
@@ -24,6 +26,7 @@ const DEFAULTS: Prefs = {
 	showPrivacyNote: true,
 	chatWidth: "comfortable",
 	autoCopy: false,
+	friendsLearn: true,
 };
 
 function read(): Prefs {

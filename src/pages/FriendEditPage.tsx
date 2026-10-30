@@ -1229,7 +1229,7 @@ export function FriendEditPage() {
 					<Card>
 						<CardHead>
 							<h2>What {name || "they"} should remember</h2>
-							<p>Facts about you they keep in mind in every chat. They stay on this device.</p>
+							<p>Facts about you they keep in mind in every chat. They also pick these up as you talk. All of it stays on this device.</p>
 						</CardHead>
 						{p.memories.length > 0 && (
 							<MemoryList>
@@ -1265,7 +1265,7 @@ export function FriendEditPage() {
 								</SmallBtn>
 							</AddRow>
 						) : (
-							<Hint>That's the most they can keep in mind at once.</Hint>
+							<Hint>That's the most they can keep in mind at once. New facts replace the oldest.</Hint>
 						)}
 					</Card>
 

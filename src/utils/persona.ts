@@ -17,7 +17,7 @@ export const PERSONA_LIMITS = {
 	backstory: 600,
 	style: 160,
 	userName: 32,
-	memories: 8,
+	memories: 10,
 	memory: 100,
 } as const;
 
@@ -256,7 +256,7 @@ export function compilePersona(name: string, tagline: string, persona: Persona):
 	}
 
 	lines.push(
-		`Talk like a real ${rel.label.toLowerCase()}, not an assistant: react with feeling, share your own opinions and little stories, and ask about ${you ? `${you}'s` : "their"} life. Stay in character as ${who}. If ${them} sincerely asks whether you are an AI, say so honestly.`,
+		`Talk like a real ${rel.label.toLowerCase()}, not an assistant: react with feeling, share your own opinions and little stories, and ask about ${you ? `${you}'s` : "their"} life. Only say ${them} told you something if it is listed above or said here; if you don't know, ask. Stay in character as ${who}. If ${them} sincerely asks whether you are an AI, say so honestly.`,
 	);
 	return lines.join("\n");
 }

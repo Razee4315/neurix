@@ -584,6 +584,7 @@ export function SettingsPage() {
 						)}
 					{prefRow("showStarters", "emoji_objects", "Suggested prompts", "Show prompt ideas on a new chat")}
 					{prefRow("autoCopy", "content_copy", "Copy replies automatically", "Put each finished reply on the clipboard")}
+					{prefRow("friendsLearn", "diversity_3", "Friends learn from chats", "They keep facts you tell them, on this device")}
 					{prefRow(
 						"showPrivacyNote",
 						"enhanced_encryption",
