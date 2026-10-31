@@ -730,6 +730,8 @@ export function ChatPage() {
 	};
 
 	const sendingRef = useRef(false);
+	// The reply ends a moment before its send returns, so the queue looks again here.
+	const [sendsEnded, setSendsEnded] = useState(0);
 
 	const clearComposer = () => {
 		setInput("");
@@ -747,7 +749,8 @@ export function ChatPage() {
 			// shown in place, with a retry.
 			if (!(await ensureModel())) return false;
 
-			if (fromComposer) clearComposer();
+			// Loading can take a while: anything typed meanwhile stays in the box.
+			if (fromComposer && textareaRef.current?.value.trim() === text) clearComposer();
 			const context = live.current.messages;
 			const sent = [...context, createMessage("user", text)];
 			show(sent);
@@ -768,6 +771,7 @@ export function ChatPage() {
 			return true;
 		} finally {
 			sendingRef.current = false;
+			setSendsEnded((n) => n + 1);
 		}
 	};
 
@@ -796,7 +800,7 @@ export function ChatPage() {
 			setQueue((items) => [next, ...items]);
 			setQueuePaused("No model is ready, so the next message is waiting.");
 		});
-	}, [isGenerating, isLoadingModel, queue, queuePaused]);
+	}, [isGenerating, isLoadingModel, queue, queuePaused, sendsEnded]);
 
 	const handleStop = () => {
 		vibrate(12);

@@ -149,7 +149,8 @@ export function CommandPalette() {
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [active, setActive] = useState(0);
-	const [loaded, setLoaded] = useState<Entry[]>([]);
+	const [chatEntries, setChatEntries] = useState<Entry[]>([]);
+	const [modelEntries, setModelEntries] = useState<Entry[]>([]);
 	const returnFocus = useRef<HTMLElement | null>(null);
 	const listRef = useRef<HTMLDivElement>(null);
 
@@ -198,40 +199,49 @@ export function CommandPalette() {
 		};
 	}, [navigate, newChat, show]);
 
-	// Chats and models are read when the palette opens, not kept up to date.
+	// Read at startup and on every open, so the first open is already filled in.
+	// Chats and models load apart: neither waits for the other.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: open only asks for a fresh read
 	useEffect(() => {
-		if (!open) return;
 		let alive = true;
-		Promise.all([
-			historyService.getConversations().catch(() => []),
-			modelService.getDownloadedModels().catch(() => []),
-		]).then(([chats, models]) => {
-			if (!alive) return;
-			setLoaded([
-				...chats.map((chat) => ({
-					id: `chat:${chat.id}`,
-					group: "Chats",
-					label: chat.title || "Untitled chat",
-					icon: "chat_bubble",
-					run: () => navigate("/chat", { state: { conversationId: chat.id } }),
-				})),
-				...models.map((model) => ({
-					id: `model:${model.id}`,
-					group: "Models",
-					label: model.name,
-					icon: "deployed_code",
-					note: model.id === activeModelId ? "In use" : undefined,
-					run: async () => {
-						try {
-							await loadModel(model.id);
-							showToast(`Now using ${model.name}`, "success");
-						} catch {
-							showToast(`Couldn't load ${model.name}`, "error");
-						}
-					},
-				})),
-			]);
-		});
+		historyService
+			.getConversations()
+			.catch(() => [])
+			.then((list) => {
+				if (!alive) return;
+				setChatEntries(
+					list.map((chat) => ({
+						id: `chat:${chat.id}`,
+						group: "Chats",
+						label: chat.title || "Untitled chat",
+						icon: "chat_bubble",
+						run: () => navigate("/chat", { state: { conversationId: chat.id } }),
+					})),
+				);
+			});
+		modelService
+			.getDownloadedModels()
+			.catch(() => [])
+			.then((list) => {
+				if (!alive) return;
+				setModelEntries(
+					list.map((model) => ({
+						id: `model:${model.id}`,
+						group: "Models",
+						label: model.name,
+						icon: "deployed_code",
+						note: model.id === activeModelId ? "In use" : undefined,
+						run: async () => {
+							try {
+								await loadModel(model.id);
+								showToast(`Now using ${model.name}`, "success");
+							} catch {
+								showToast(`Couldn't load ${model.name}`, "error");
+							}
+						},
+					})),
+				);
+			});
 		return () => {
 			alive = false;
 		};
@@ -271,9 +281,10 @@ export function CommandPalette() {
 				note: theme.id === settings?.theme ? "Active" : undefined,
 				run: () => updateSettings({ theme: theme.id }).then(() => undefined),
 			})),
-			...loaded,
+			...chatEntries,
+			...modelEntries,
 		];
-	}, [allCharacters, activeCharacter?.id, loaded, navigate, newChat, setActiveCharacter, settings?.theme, updateSettings]);
+	}, [allCharacters, activeCharacter?.id, chatEntries, modelEntries, navigate, newChat, setActiveCharacter, settings?.theme, updateSettings]);
 
 	const shown = useMemo(() => {
 		if (!query.trim()) {
