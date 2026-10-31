@@ -96,6 +96,17 @@ export async function notifyDownloadProgress(
 	}
 }
 
+/** A reply finished while the app was in the background. Never says what it wrote. */
+export async function notifyReplyReady(name: string): Promise<void> {
+	try {
+		if (!(await isPermissionGranted())) return;
+		await ensureChannels();
+		sendNotification({ title: `${name} replied`, body: "Your reply is ready in Neurix.", channelId: "general" });
+	} catch {
+		// Notification failed: the reply is waiting in the chat all the same.
+	}
+}
+
 /** Show download complete notification (replaces progress notification). */
 export async function notifyDownloadComplete(modelName: string): Promise<void> {
 	lastNotifiedPercent = -1;

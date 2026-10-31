@@ -1,3 +1,4 @@
+import { CommandPalette } from "@/components/CommandPalette";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -68,6 +69,7 @@ function App() {
 				<DownloadProvider>
 				<ConfirmProvider>
 				<HashRouter>
+					<CommandPalette />
 					<div className="app-container">
 						<Suspense fallback={<BootScreen />}>
 							<Routes>

@@ -21,6 +21,8 @@ export interface Message {
 	createIn?: string;
 	/** What connectors this reply looked at. */
 	sources?: string[];
+	/** How long the model thought before answering. */
+	thoughtMs?: number;
 	/** The character that wrote this reply, for this session only. */
 	characterId?: string;
 }
@@ -31,7 +33,7 @@ export function createMessage(
 	role: Message["role"],
 	text: string,
 	extra: Partial<
-		Pick<Message, "timestamp" | "stopReason" | "reasoning" | "createIn" | "sources" | "characterId">
+		Pick<Message, "timestamp" | "stopReason" | "reasoning" | "createIn" | "sources" | "characterId" | "thoughtMs">
 	> = {},
 ): Message {
 	counter += 1;
@@ -45,6 +47,7 @@ export function createMessage(
 		...(extra.createIn ? { createIn: extra.createIn } : {}),
 		...(extra.sources?.length ? { sources: extra.sources } : {}),
 		...(extra.characterId ? { characterId: extra.characterId } : {}),
+		...(extra.thoughtMs ? { thoughtMs: extra.thoughtMs } : {}),
 	};
 }
 
@@ -100,6 +103,7 @@ export function fromStored(messages: ChatMessage[]): Message[] {
 			reasoning: m.reasoning,
 			sources: m.sources,
 			stopReason: m.stop_reason,
+			thoughtMs: m.thought_ms,
 		}),
 	);
 }
@@ -112,6 +116,7 @@ export function toStored(messages: Message[]): ChatMessage[] {
 		...(m.reasoning ? { reasoning: m.reasoning } : {}),
 		...(m.sources?.length ? { sources: m.sources } : {}),
 		...(m.stopReason ? { stop_reason: m.stopReason } : {}),
+		...(m.thoughtMs ? { thought_ms: m.thoughtMs } : {}),
 	}));
 }
 
@@ -166,6 +171,6 @@ export function wasCutShort(reason: StopReason | undefined): boolean {
 
 export function cutShortLabel(reason: StopReason | undefined): string {
 	if (reason === "repetition") return "Stopped: the model started repeating itself.";
-	if (reason === "cancelled") return "You stopped this reply.";
+	if (reason === "cancelled") return "This reply stopped before the end.";
 	return "Reply reached the length limit.";
 }

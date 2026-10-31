@@ -1,5 +1,7 @@
+import { OPEN_PALETTE } from "@/components/CommandPalette";
 import { Icon } from "@/components/ui/Icon";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
+import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
 import { historyService } from "@/services";
@@ -7,9 +9,11 @@ import { CHAT_STARTED, HISTORY_CHANGED } from "@/services/historyService";
 import type { ConversationMeta } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { togglePin, usePins } from "@/utils/pins";
 import { isMac } from "@/utils/platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -37,7 +41,6 @@ const Aside = styled.aside`
     width: 264px;
     min-height: 0;
     background: ${tokens.colors.surfaceContainerLow};
-    border-right: 1px solid ${alpha(tokens.colors.outlineVariant, "80")};
     padding: 0.625rem 0.5rem 0.5rem;
   }
 `;
@@ -84,6 +87,8 @@ const Row = styled.button<{ $active?: boolean }>`
     color: ${tokens.colors.onSurface};
   }
 
+  &:active { transform: scale(0.985); }
+
   > span {
     min-width: 0;
     overflow: hidden;
@@ -119,6 +124,7 @@ const Group = styled.nav`
 `;
 
 const SectionLabel = styled.div`
+  flex-shrink: 0;
   padding: 1.125rem 0.625rem 0.375rem;
   font-size: ${tokens.typography.fontSize.xs};
   font-weight: ${tokens.typography.fontWeight.medium};
@@ -141,10 +147,62 @@ const Recents = styled.div`
 
 const RecentRow = styled(Row)`
   height: 32px;
-  /* Keep full height when the list outgrows the sidebar, so it scrolls. */
-  flex-shrink: 0;
   font-size: ${tokens.typography.fontSize.sm};
   color: ${({ $active }) => ($active ? tokens.colors.onSurface : alpha(tokens.colors.onSurface, "bf"))};
+`;
+
+const MoreBtn = styled.button`
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: ${tokens.borderRadius.md};
+  background: ${tokens.colors.surfaceContainerHighest};
+  color: ${tokens.colors.onSurfaceVariant};
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity ${tokens.transitions.fast};
+
+  &:hover { color: ${tokens.colors.onSurface}; }
+  &:focus-visible { opacity: 1; }
+`;
+
+const RecentWrap = styled.div`
+  position: relative;
+  /* Keep full height when the list outgrows the sidebar, so it scrolls. */
+  flex-shrink: 0;
+
+  &:hover ${MoreBtn}, &:focus-within ${MoreBtn}, &[data-menu] ${MoreBtn} { opacity: 1; }
+`;
+
+const RenameField = styled.input`
+  width: 100%;
+  height: 32px;
+  padding: 0 0.625rem;
+  border: 1px solid ${tokens.colors.outline};
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.surfaceContainerHighest};
+  color: ${tokens.colors.onSurface};
+  font-family: inherit;
+  font-size: ${tokens.typography.fontSize.sm};
+  outline: none;
+`;
+
+const RowMenu = styled.div<{ $x: number; $y: number }>`
+  position: fixed;
+  left: ${({ $x }) => $x}px;
+  top: ${({ $y }) => $y}px;
+  width: 11rem;
+  padding: 0.25rem;
+  background: ${tokens.colors.surfaceContainer};
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
+  border-radius: ${tokens.borderRadius.xl};
+  z-index: ${tokens.zIndex.overlay};
 `;
 
 const Empty = styled.div`
@@ -259,11 +317,177 @@ const FootText = styled.div`
   }
 `;
 
+interface RecentItemProps {
+	entry: ConversationMeta & { pending?: boolean };
+	active: boolean;
+	pinned: boolean;
+	onOpen: () => void;
+	/** The open chat was deleted, so leave it. */
+	onDeletedOpen: () => void;
+}
+
+const MENU_WIDTH = 176;
+const MENU_HEIGHT = 118;
+
+function RecentItem({ entry, active, pinned, onOpen, onDeletedOpen }: RecentItemProps) {
+	const { showToast } = useToast();
+	const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+	const [renaming, setRenaming] = useState(false);
+	const [title, setTitle] = useState(entry.title);
+	const menuRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		if (!menu) return;
+		const onPointer = (e: PointerEvent) => {
+			if (!menuRef.current?.contains(e.target as Node)) setMenu(null);
+		};
+		const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenu(null);
+		document.addEventListener("pointerdown", onPointer);
+		document.addEventListener("keydown", onKey);
+		return () => {
+			document.removeEventListener("pointerdown", onPointer);
+			document.removeEventListener("keydown", onKey);
+		};
+	}, [menu]);
+
+	const openMenuAt = (x: number, y: number) =>
+		setMenu({
+			x: Math.min(x, window.innerWidth - MENU_WIDTH - 8),
+			y: Math.min(y, window.innerHeight - MENU_HEIGHT - 8),
+		});
+
+	const finishRename = async () => {
+		setRenaming(false);
+		const next = title.trim();
+		if (!next || next === entry.title) return setTitle(entry.title);
+		try {
+			const conversation = await historyService.loadConversation(entry.id);
+			if (conversation) await historyService.saveConversation({ ...conversation, title: next });
+		} catch {
+			showToast("Couldn't rename that chat", "error");
+		}
+	};
+
+	const remove = async () => {
+		setMenu(null);
+		try {
+			const backup = await historyService.loadConversation(entry.id);
+			await historyService.deleteConversation(entry.id);
+			if (pinned) togglePin(entry.id);
+			if (active) onDeletedOpen();
+			showToast(
+				`Deleted "${entry.title}"`,
+				"info",
+				backup
+					? {
+							label: "Undo",
+							onAction: () => {
+								historyService
+									.saveConversation(backup)
+									.then(() => pinned && togglePin(entry.id))
+									.catch(() => showToast("Couldn't restore that chat", "error"));
+							},
+						}
+					: undefined,
+			);
+		} catch {
+			showToast("Couldn't delete that chat", "error");
+		}
+	};
+
+	if (renaming) {
+		return (
+			<RecentWrap>
+				<RenameField
+					autoFocus
+					value={title}
+					maxLength={80}
+					aria-label="Chat name"
+					onFocus={(e) => e.currentTarget.select()}
+					onChange={(e) => setTitle(e.target.value)}
+					onBlur={finishRename}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") e.currentTarget.blur();
+						if (e.key === "Escape") {
+							setTitle(entry.title);
+							setRenaming(false);
+						}
+					}}
+				/>
+			</RecentWrap>
+		);
+	}
+
+	return (
+		<RecentWrap data-menu={menu ? "" : undefined}>
+			<RecentRow
+				type="button"
+				title={entry.title}
+				$active={active}
+				onClick={onOpen}
+				onContextMenu={(e) => {
+					e.preventDefault();
+					openMenuAt(e.clientX, e.clientY);
+				}}
+			>
+				<span>{entry.title || "Untitled chat"}</span>
+			</RecentRow>
+			{!entry.pending && (
+				<MoreBtn
+					type="button"
+					aria-label={`More actions for ${entry.title}`}
+					aria-haspopup="menu"
+					onClick={(e) => {
+						const box = e.currentTarget.getBoundingClientRect();
+						openMenuAt(box.left, box.bottom + 4);
+					}}
+				>
+					<Icon name="more_horiz" size={15} />
+				</MoreBtn>
+			)}
+			{menu &&
+				createPortal(
+					<RowMenu ref={menuRef} role="menu" $x={menu.x} $y={menu.y}>
+						<MenuItem
+							type="button"
+							role="menuitem"
+							onClick={() => {
+								setMenu(null);
+								togglePin(entry.id);
+							}}
+						>
+							<Icon name={pinned ? "pin_off" : "push_pin"} size={15} />
+							{pinned ? "Unpin" : "Pin"}
+						</MenuItem>
+						<MenuItem
+							type="button"
+							role="menuitem"
+							onClick={() => {
+								setMenu(null);
+								setTitle(entry.title);
+								setRenaming(true);
+							}}
+						>
+							<Icon name="edit" size={15} />
+							Rename
+						</MenuItem>
+						<MenuItem type="button" role="menuitem" onClick={remove}>
+							<Icon name="delete" size={15} />
+							Delete
+						</MenuItem>
+					</RowMenu>,
+					document.body,
+				)}
+		</RecentWrap>
+	);
+}
+
 export function Sidebar() {
 	const location = useLocation();
 	const navigate = useNavigate();
 	const { activeModel } = useAppContext();
 	const { downloads } = useDownloads();
+	const pins = usePins();
 	const running = Object.values(downloads).filter((d) => d.status === "downloading" || d.status === "verifying");
 	const total = running.reduce((sum, d) => sum + d.totalBytes, 0);
 	const done = running.reduce((sum, d) => sum + d.downloadedBytes, 0);
@@ -289,7 +513,7 @@ export function Sidebar() {
 					setRecents((prev) => {
 						// Keep a just-started chat on top until its first save lands.
 						const pending = (prev ?? []).filter((p) => p.pending && !list.some((c) => c.id === p.id));
-						return [...pending, ...list].slice(0, RECENT_LIMIT);
+						return [...pending, ...list];
 					}),
 				)
 				.catch(() => alive && setRecents((prev) => prev ?? []));
@@ -345,6 +569,25 @@ export function Sidebar() {
 		navigate(path);
 	};
 
+	const pinned = (recents ?? []).filter((c) => pins.includes(c.id));
+	const unpinned = (recents ?? []).filter((c) => !pins.includes(c.id));
+	const item = (entry: ConversationMeta & { pending?: boolean }) => (
+		<RecentItem
+			key={entry.id}
+			entry={entry}
+			pinned={pins.includes(entry.id)}
+			active={location.pathname === "/chat" && (openId ?? liveId) === entry.id}
+			onOpen={() => {
+				setLiveId(null);
+				navigate("/chat", { state: { conversationId: entry.id } });
+			}}
+			onDeletedOpen={() => {
+				setLiveId(null);
+				navigate("/chat", { state: { freshChat: true } });
+			}}
+		/>
+	);
+
 	const isActive = (path: string, owns: readonly string[]) =>
 		location.pathname === path ||
 		(path !== "/chat" && location.pathname.startsWith(path)) ||
@@ -391,29 +634,30 @@ export function Sidebar() {
 				))}
 			</Group>
 
-			<SectionLabel>Recents</SectionLabel>
 			<Recents>
+				{pinned.length > 0 && <SectionLabel>Pinned</SectionLabel>}
+				{pinned.map(item)}
+				<SectionLabel>Recents</SectionLabel>
 				{recents?.length === 0 && <Empty>No chats yet</Empty>}
-				{recents?.map((entry) => (
-					<RecentRow
-						key={entry.id}
-						type="button"
-						title={entry.title}
-						$active={location.pathname === "/chat" && (openId ?? liveId) === entry.id}
-						onClick={() => {
-							setLiveId(null);
-							navigate("/chat", { state: { conversationId: entry.id } });
-						}}
-					>
-						<span>{entry.title || "Untitled chat"}</span>
-					</RecentRow>
-				))}
+				{unpinned.slice(0, RECENT_LIMIT).map(item)}
 			</Recents>
 
 			<FootWrap ref={footRef}>
 				{menuOpen && (
 					<Menu role="menu">
 						<MenuHeader>Private · runs on this device</MenuHeader>
+						<MenuItem
+							type="button"
+							role="menuitem"
+							onClick={() => {
+								setMenuOpen(false);
+								window.dispatchEvent(new Event(OPEN_PALETTE));
+							}}
+						>
+							<Icon name="command" size={16} />
+							Command palette
+							<kbd>{isMac() ? "⌘ K" : "Ctrl K"}</kbd>
+						</MenuItem>
 						<MenuItem type="button" role="menuitem" onClick={() => go("/settings")}>
 							<Icon name="settings" size={16} />
 							Settings

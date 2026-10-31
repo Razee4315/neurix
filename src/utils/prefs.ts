@@ -17,6 +17,8 @@ export interface Prefs {
 	autoCopy: boolean;
 	/** Friends keep facts you tell them in chat. */
 	friendsLearn: boolean;
+	/** Say when a slow reply finishes while Neurix is in the background. */
+	notifyReplies: boolean;
 }
 
 const KEY = "neurix.prefs.v1";
@@ -27,6 +29,7 @@ const DEFAULTS: Prefs = {
 	chatWidth: "comfortable",
 	autoCopy: false,
 	friendsLearn: true,
+	notifyReplies: true,
 };
 
 function read(): Prefs {

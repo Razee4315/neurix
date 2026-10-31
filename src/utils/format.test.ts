@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { LIMITS } from "./characterLimits";
 import { parseShared } from "./characterShare";
-import { formatBytes, formatEta, formatSpeed } from "./format";
+import { formatBytes, formatDuration, formatEta, formatSpeed } from "./format";
 
 describe("formatBytes", () => {
 	it("picks a sensible unit", () => {
@@ -9,6 +9,15 @@ describe("formatBytes", () => {
 		expect(formatBytes(1536)).toBe("1.5 KB");
 		expect(formatBytes(5_000_000)).toBe("5.0 MB");
 		expect(formatBytes(2_000_000_000)).toBe("2.00 GB");
+	});
+});
+
+describe("formatDuration", () => {
+	it("reads naturally", () => {
+		expect(formatDuration(200)).toBe("1s");
+		expect(formatDuration(12_000)).toBe("12s");
+		expect(formatDuration(65_000)).toBe("1m 5s");
+		expect(formatDuration(120_000)).toBe("2m");
 	});
 });
 

@@ -17,15 +17,16 @@ const fadeInUp = keyframes`
 
 /* ── Layout ── */
 
-export const ChatContainer = styled.div`
+export const ChatContainer = styled.div<{ $hero?: boolean }>`
   display: flex;
   flex-direction: column;
   height: 100%;
   position: relative;
+  ${({ $hero }) => ($hero ? "justify-content: center; padding-bottom: 8vh;" : "")}
 `;
 
-export const MessagesArea = styled.div<{ $wide?: boolean }>`
-  flex: 1;
+export const MessagesArea = styled.div<{ $wide?: boolean; $hero?: boolean }>`
+  flex: ${({ $hero }) => ($hero ? "0 0 auto" : "1")};
   overflow-y: auto;
   padding: 1.5rem 1.25rem 1rem;
 
@@ -59,8 +60,7 @@ export const Bubble = styled.div<{ $role: Message["role"] }>`
     max-width: min(80%, 40rem);
     padding: 0.625rem 1rem;
     border-radius: 1rem;
-    background: ${tokens.colors.surfaceContainerLowest};
-    border: 1px solid ${alpha(tokens.colors.outlineVariant, "66")};
+    background: ${tokens.colors.surfaceContainerHigh};
   `
 			: $role === "error"
 				? `
@@ -104,10 +104,6 @@ export const SourcesLine = styled.div`
   overflow-wrap: anywhere;
 
   svg { flex-shrink: 0; align-self: center; }
-`;
-
-export const UserText = styled.div`
-  white-space: pre-wrap;
 `;
 
 /* ── Message actions ──
@@ -242,8 +238,8 @@ export const JumpBtn = styled.button`
 
 /* ── Empty state ── */
 
-export const Welcome = styled.div`
-  flex: 1;
+export const Welcome = styled.div<{ $hero?: boolean }>`
+  flex: ${({ $hero }) => ($hero ? "0 0 auto" : "1")};
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -333,13 +329,14 @@ export const WelcomeText = styled.p`
   line-height: ${tokens.typography.lineHeight.relaxed};
 `;
 
-export const StartersGrid = styled.div`
+export const StartersGrid = styled.div<{ $hero?: boolean }>`
   display: grid;
   grid-template-columns: 1fr;
   gap: 0.5rem;
   width: 100%;
-  max-width: 34rem;
-  margin-top: 0.5rem;
+  max-width: ${({ $hero }) => ($hero ? "48rem" : "34rem")};
+  margin: ${({ $hero }) => ($hero ? "0.25rem auto 0" : "0.5rem 0 0")};
+  ${({ $hero }) => ($hero ? "padding: 0 1rem;" : "")}
 
   @media (min-width: 560px) { grid-template-columns: 1fr 1fr; }
 `;
@@ -413,7 +410,6 @@ export const ComposerBox = styled.div`
   background: ${tokens.colors.surfaceContainerHigh};
   border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
   border-radius: 1.25rem;
-  box-shadow: 0 4px 20px rgb(0 0 0 / 0.18);
 
   @media (max-width: 600px) {
     padding: 0.625rem 0.5rem 0.375rem 0.875rem;

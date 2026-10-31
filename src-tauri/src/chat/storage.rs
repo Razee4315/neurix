@@ -38,6 +38,9 @@ pub struct ChatMessage {
     /// the chat is reopened.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stop_reason: Option<String>,
+    /// How long the model thought before answering, in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -340,6 +343,7 @@ mod tests {
             reasoning: None,
             sources: None,
             stop_reason: None,
+            thought_ms: None,
         };
         let mut messages: Vec<ChatMessage> = (0..MAX_MESSAGES).map(|i| msg(i.to_string())).collect();
         messages.push(msg("[".repeat(1_000_000)));

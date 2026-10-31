@@ -247,6 +247,8 @@ export interface ChatMessage {
 	sources?: string[];
 	/** How generation ended. */
 	stop_reason?: StopReason;
+	/** How long the model thought before answering. */
+	thought_ms?: number;
 }
 
 export interface ConversationMeta {
