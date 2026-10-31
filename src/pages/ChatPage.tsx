@@ -7,17 +7,21 @@ import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { chatService, historyService, modelService } from "@/services";
 import { pickFolder } from "@/services/connectorService";
+import { notifyReplyReady } from "@/services/notificationService";
 import { saveFileAs } from "@/services/fileService";
 import { CHAT_STARTED } from "@/services/historyService";
 import type { Character, InferenceEvent } from "@/services/types";
 import { tokens } from "@/theme/tokens";
 import { accentOf } from "@/utils/characterAccent";
 import { cleanResponse } from "@/utils/cleanResponse";
+import { readDraft, writeDraft } from "@/utils/drafts";
 import { CREATE_INSTRUCTIONS, CREATE_MAX_TOKENS, fenceBareFiles } from "@/utils/fileBlocks";
 import { learnedFacts, mergeMemories, undoLearning, withFriendFacts, withMemories } from "@/utils/friendMemory";
 import { copyText, isMobile, isTouchPrimary, vibrate } from "@/utils/platform";
 import { getPrefs, usePrefs } from "@/utils/prefs";
 import { relationshipOf } from "@/utils/persona";
+import { useDelayedFlag } from "@/utils/useDelayedFlag";
+import { useMediaQuery } from "@/utils/useMediaQuery";
 import {
 	connectorContext,
 	setAllDocsEnabled,
@@ -27,12 +31,15 @@ import {
 	useConnectors,
 	withContext,
 } from "@/utils/connectors";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
+import { MemoryRing, type QueuedMessage, QueueList, SlashMenu, UserMessage, estimateTokens } from "./chat/ComposerExtras";
 import { FileCards } from "./chat/FileCards";
+import { FindBar } from "./chat/FindBar";
 import { Markdown } from "./chat/Markdown";
 import { ModelSelect } from "./chat/ModelSelect";
+import { type SlashCommand, matchSlashCommands, recallPrompt } from "./chat/composerKeys";
 import {
 	ComposerTools,
 	ReadingFill,
@@ -97,7 +104,6 @@ import {
 	TextInput,
 	TopBarBtn,
 	TypingDots,
-	UserText,
 	Welcome,
 	WelcomeText,
 	WelcomeTitle,
@@ -106,7 +112,6 @@ import {
 // Soft cap on prompt length. Models choke well before this; it mainly guards
 // against an accidental paste of a huge file. Enforced by the textarea.
 const MAX_PROMPT_LENGTH = 16_000;
-const DRAFT_KEY = "neurix.chat.draft";
 const COACH_KEY = "neurix.coach.subtitle.v2";
 const THINK_KEY = "neurix.chat.think";
 const CREATE_KEY = "neurix.chat.create";
@@ -118,6 +123,10 @@ const USUAL_REPLY_TOKENS = 512;
 const DESKTOP_REPLY_TOKENS = 1024;
 /** How close to the bottom (px) still counts as "following" the stream. */
 const FOLLOW_THRESHOLD = 96;
+/** How often a reply in progress is saved, so a crash loses little of it. */
+const CHECKPOINT_MS = 8000;
+/** A reply this slow is worth a notification when the app is out of sight. */
+const NOTIFY_AFTER_MS = 10_000;
 
 /* ── Small pieces ── */
 
@@ -148,21 +157,24 @@ function CopyAction({ text }: { text: string }) {
 	);
 }
 
-function readDraft(): string {
-	try {
-		return localStorage.getItem(DRAFT_KEY) ?? "";
-	} catch {
-		return "";
-	}
+interface StarterListProps {
+	starters: string[];
+	accent: string;
+	onPick: (text: string) => void;
+	hero?: boolean;
 }
 
-function writeDraft(text: string) {
-	try {
-		if (text) localStorage.setItem(DRAFT_KEY, text);
-		else localStorage.removeItem(DRAFT_KEY);
-	} catch {
-		// Storage unavailable: the draft just won't survive leaving the page.
-	}
+function StarterList({ starters, accent, onPick, hero }: StarterListProps) {
+	return (
+		<StartersGrid $hero={hero}>
+			{starters.map((starter) => (
+				<StarterChip key={starter} type="button" $accent={accent} onClick={() => onPick(starter)}>
+					<span>{starter}</span>
+					<Icon name="arrow_outward" size={14} />
+				</StarterChip>
+			))}
+		</StartersGrid>
+	);
 }
 
 function readStored(key: string): string | null {
@@ -234,7 +246,13 @@ export function ChatPage() {
 	const docsOn = connectors.docs.some((d) => d.enabled);
 
 	const [messages, setMessages] = useState<Message[]>([]);
-	const [input, setInput] = useState(readDraft);
+	// Which draft belongs here is known once the chat has opened, unless this
+	// is a new chat or one picked from a list.
+	const [input, setInput] = useState(() => {
+		const opening = location.state as { conversationId?: string; freshChat?: boolean } | null;
+		if (opening?.conversationId) return readDraft(opening.conversationId);
+		return opening?.freshChat ? readDraft(null) : "";
+	});
 	const [isGenerating, setIsGenerating] = useState(false);
 	const [isLoadingModel, setIsLoadingModel] = useState(false);
 	const [loadProblem, setLoadProblem] = useState<LoadProblem | null>(null);
@@ -252,8 +270,18 @@ export function ChatPage() {
 	const [openActionsId, setOpenActionsId] = useState<string | null>(null);
 	const [contextNotice, setContextNotice] = useState<string | null>(null);
 	const [following, setFollowing] = useState(true);
+	const [queue, setQueue] = useState<QueuedMessage[]>([]);
+	const [queuePaused, setQueuePaused] = useState<string | null>(null);
+	const [findOpen, setFindOpen] = useState(false);
+	const [slashActive, setSlashActive] = useState(0);
+	/** Tokens the last reply reported, so the memory ring needn't estimate. */
+	const [reportedTokens, setReportedTokens] = useState(0);
+	const showLoading = useDelayedFlag(isLoadingModel);
+	const roomy = useMediaQuery(`(min-width: ${tokens.breakpoints.wide})`);
 
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const composerRef = useRef<HTMLDivElement>(null);
+	const recallRef = useRef<number | null>(null);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const followingRef = useRef(true);
@@ -287,6 +315,10 @@ export function ChatPage() {
 	// Tokens arrive faster than the screen refreshes; they are buffered here
 	// and flushed to state once per animation frame.
 	const streamRef = useRef({ text: "", prefix: "", reasoning: "", frame: 0 });
+	// Saves run one at a time, so a slow one can't land over a newer one.
+	const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+	const queueRef = useRef(queue);
+	queueRef.current = queue;
 
 	const characterName = activeCharacter?.name ?? "Neurix";
 	const accent = accentOf(activeCharacter);
@@ -305,16 +337,15 @@ export function ChatPage() {
 		}
 		if (!s.saveHistory || !s.activeModelId || !s.activeModel) return;
 		if (!s.conversationId) s.conversationId = crypto.randomUUID();
-		historyService
-			.saveConversation(
-				toConversation(toSave, {
-					id: s.conversationId,
-					modelId: s.activeModelId,
-					modelName: s.activeModel,
-					characterId: s.character?.id,
-					characterName: s.character?.name,
-				}),
-			)
+		const conversation = toConversation(toSave, {
+			id: s.conversationId,
+			modelId: s.activeModelId,
+			modelName: s.activeModel,
+			characterId: s.character?.id,
+			characterName: s.character?.name,
+		});
+		saveChainRef.current = saveChainRef.current
+			.then(() => historyService.saveConversation(conversation))
 			.catch(() => {
 				showToast("Couldn't save this conversation", "error");
 			});
@@ -441,13 +472,18 @@ export function ChatPage() {
 			try {
 				// Open the requested conversation, or pick up the most recent one.
 				const id = state?.conversationId ?? (await historyService.getConversations())[0]?.id;
-				if (!id) return;
+				if (!id) {
+					setInput((typed) => typed || readDraft(null));
+					return;
+				}
 				const conv = await historyService.loadConversation(id);
 				// Don't overwrite a conversation the user already started here.
 				if (!conv || live.current.messages.length > 0) return;
 
 				live.current.conversationId = conv.id;
 				show(fromStored(conv.messages));
+				// Anything typed while the chat was opening stays.
+				setInput((typed) => typed || readDraft(conv.id));
 
 				// A conversation continues with the character it was held with.
 				const convCharacter = conv.character_id;
@@ -487,6 +523,10 @@ export function ChatPage() {
 	const run = useCallback(async ({ prompt, context, prefix = "", used = [] }: RunOptions) => {
 		const character = live.current.character;
 		let lookedAt = used;
+		let thinkingFrom = 0;
+		let thoughtMs = 0;
+		let savedAt = Date.now();
+		const startedAt = Date.now();
 		const runId = ++runIdRef.current;
 		const isCurrent = () => runIdRef.current === runId;
 
@@ -515,6 +555,7 @@ export function ChatPage() {
 					s.reasoning += event.data.token;
 					if (!s.frame) s.frame = requestAnimationFrame(flushStream);
 					setReading(null);
+					if (!thinkingFrom) thinkingFrom = Date.now();
 					break;
 				}
 				case "TokenGenerated": {
@@ -523,6 +564,19 @@ export function ChatPage() {
 					if (!s.frame) s.frame = requestAnimationFrame(flushStream);
 					setReading(null);
 					setTokensPerSecond(event.data.tokens_per_second);
+					if (thinkingFrom && !thoughtMs) thoughtMs = Date.now() - thinkingFrom;
+					// Saved as it goes, so a crash or a killed app keeps the reply.
+					if (Date.now() - savedAt > CHECKPOINT_MS) {
+						savedAt = Date.now();
+						const partial = cleanResponse(s.prefix + s.text);
+						const checkpoint = createMessage("ai", partial, {
+							stopReason: "cancelled",
+							reasoning: s.reasoning.trim() || undefined,
+							sources: lookedAt,
+							thoughtMs,
+						});
+						persist([...live.current.messages, checkpoint]);
+					}
 					break;
 				}
 				case "GenerationComplete": {
@@ -539,12 +593,17 @@ export function ChatPage() {
 							createIn,
 							sources: lookedAt,
 							characterId: character?.id,
+							thoughtMs,
 						});
 						if (speed > 0) {
 							setReplyStats({ messageId: reply.id, tokensPerSecond: speed, tokens: total_tokens });
 						}
 						finish([reply]);
 						if (getPrefs().autoCopy && stop_reason !== "cancelled") void copyText(cleaned);
+						const away = document.hidden || !document.hasFocus();
+						if (away && getPrefs().notifyReplies && Date.now() - startedAt > NOTIFY_AFTER_MS) {
+							void notifyReplyReady(character?.name ?? "Neurix");
+						}
 					} else if (reasoning && stop_reason !== "cancelled") {
 						// The whole reply budget went on thinking.
 						finish([
@@ -557,6 +616,7 @@ export function ChatPage() {
 						finish([]);
 					}
 
+					setReportedTokens(prompt_tokens + total_tokens);
 					const contextWindow = live.current.modelInfo?.context_length ?? 0;
 					if (contextWindow > 0 && (prompt_tokens + total_tokens) / contextWindow >= CONTEXT_WARN_RATIO) {
 						setContextNotice(
@@ -575,6 +635,7 @@ export function ChatPage() {
 					break;
 				}
 				case "Error":
+					setQueuePaused("The last reply failed, so the next message is waiting.");
 					finish([createMessage("error", event.data.message)]);
 					break;
 			}
@@ -610,6 +671,7 @@ export function ChatPage() {
 			// Keep whatever had streamed before the failure.
 			const partial = cleanResponse(streamRef.current.prefix + streamRef.current.text);
 			const message = err instanceof Error ? err.message : String(err);
+			setQueuePaused("The last reply failed, so the next message is waiting.");
 			finish([
 				...(partial ? [createMessage("ai", partial)] : []),
 				createMessage("error", message),
@@ -618,7 +680,7 @@ export function ChatPage() {
 			// header and the next send reflect that.
 			refreshActiveModel();
 		}
-	}, [commit, flushStream, resetStream, setGenerating, refreshActiveModel, showToast, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
+	}, [commit, persist, flushStream, resetStream, setGenerating, refreshActiveModel, showToast, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
 
 	/** Make sure a model is loaded, loading the last-used one if needed. */
 	const ensureModel = useCallback(async (): Promise<boolean> => {
@@ -669,16 +731,23 @@ export function ChatPage() {
 
 	const sendingRef = useRef(false);
 
-	const handleSend = async () => {
-		const text = input.trim();
-		if (!text || isGenerating || isLoadingModel || sendingRef.current) return;
+	const clearComposer = () => {
+		setInput("");
+		writeDraft(live.current.conversationId, "");
+		recallRef.current = null;
+		if (textareaRef.current) textareaRef.current.style.height = "auto";
+	};
+
+	/** Send one message. False when no model could be made ready for it. */
+	const sendMessage = async (text: string, fromComposer: boolean): Promise<boolean> => {
 		sendingRef.current = true;
 		try {
 			vibrate(10);
 			// On failure the typed message stays in the box and the reason is
 			// shown in place, with a retry.
-			if (!(await ensureModel())) return;
+			if (!(await ensureModel())) return false;
 
+			if (fromComposer) clearComposer();
 			const context = live.current.messages;
 			const sent = [...context, createMessage("user", text)];
 			show(sent);
@@ -694,19 +763,44 @@ export function ChatPage() {
 			// Saved now, so a stopped or failed reply can't lose the message.
 			persist(sent);
 			learnFrom(text);
-			setInput("");
-			writeDraft("");
 			setOpenActionsId(null);
-			if (textareaRef.current) textareaRef.current.style.height = "auto";
-
 			await run({ prompt: text, context });
+			return true;
 		} finally {
 			sendingRef.current = false;
 		}
 	};
 
+	/** The model is busy: this one waits its turn, and the box is free again. */
+	const queueMessage = (text: string) => {
+		setQueue((items) => [...items, { id: crypto.randomUUID(), text }]);
+		clearComposer();
+	};
+
+	const handleSend = () => {
+		const text = input.trim();
+		if (!text || isLoadingModel) return;
+		if (isGenerating || sendingRef.current || queue.length > 0) queueMessage(text);
+		else void sendMessage(text, true);
+	};
+
+	// Send what is waiting, one message each time the model comes free.
+	// biome-ignore lint/correctness/useExhaustiveDependencies: sendMessage is rebuilt each render and only runs on these changes
+	useEffect(() => {
+		if (isGenerating || isLoadingModel || queuePaused !== null || sendingRef.current) return;
+		const next = queue[0];
+		if (!next) return;
+		setQueue((items) => items.slice(1));
+		void sendMessage(next.text, false).then((sent) => {
+			if (sent) return;
+			setQueue((items) => [next, ...items]);
+			setQueuePaused("No model is ready, so the next message is waiting.");
+		});
+	}, [isGenerating, isLoadingModel, queue, queuePaused]);
+
 	const handleStop = () => {
 		vibrate(12);
+		if (queue.length > 0) setQueuePaused("You stopped the reply, so the next message is waiting.");
 		chatService.stopInference().catch(() => {});
 	};
 
@@ -791,6 +885,12 @@ export function ChatPage() {
 	// in the same conversation (if history is on).
 	useEffect(() => {
 		return () => {
+			// Messages still waiting go back to the draft rather than vanish.
+			const waiting = queueRef.current.map((item) => item.text);
+			if (waiting.length > 0) {
+				const draft = readDraft(live.current.conversationId);
+				writeDraft(live.current.conversationId, [draft, ...waiting].filter(Boolean).join("\n\n"));
+			}
 			if (!live.current.isGenerating) return;
 			runIdRef.current += 1;
 			chatService.stopInference().catch(() => {});
@@ -802,11 +902,68 @@ export function ChatPage() {
 
 	/* ── Input handling ── */
 
-	const handleKeyDown = (e: React.KeyboardEvent) => {
+	const updateInput = (text: string) => {
+		setInput(text);
+		writeDraft(live.current.conversationId, text);
+		requestAnimationFrame(autoResize);
+	};
+
+	const slashCommands = matchSlashCommands(input, !isMobile());
+	const slashIndex = Math.min(slashActive, Math.max(0, slashCommands.length - 1));
+
+	const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+		if (e.nativeEvent.isComposing) return;
+
+		if (slashCommands.length > 0) {
+			const step = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+			if (step !== 0) {
+				e.preventDefault();
+				setSlashActive((slashIndex + step + slashCommands.length) % slashCommands.length);
+				return;
+			}
+			if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+				e.preventDefault();
+				runSlashCommand(slashCommands[slashIndex]);
+				return;
+			}
+			if (e.key === "Escape") {
+				e.preventDefault();
+				updateInput("");
+				return;
+			}
+		}
+
+		if (e.key === "Escape" && isGenerating) {
+			e.preventDefault();
+			handleStop();
+			return;
+		}
+
+		if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+			const box = e.currentTarget;
+			const end = box.value.length;
+			const collapsed = box.selectionStart === box.selectionEnd;
+			const onRecalled = recallRef.current !== null;
+			const recalled = recallPrompt({
+				key: e.key,
+				input,
+				caretAtStart: collapsed && (box.selectionStart === 0 || (onRecalled && box.selectionStart === end)),
+				caretAtEnd: collapsed && (box.selectionStart === end || (onRecalled && box.selectionStart === 0)),
+				history: live.current.messages.filter((m) => m.role === "user").map((m) => m.text),
+				index: recallRef.current,
+			});
+			if (recalled) {
+				e.preventDefault();
+				recallRef.current = recalled.index;
+				updateInput(recalled.text);
+				return;
+			}
+		}
+
 		// With a hardware keyboard, Enter sends and Shift+Enter breaks the
 		// line. On touch keyboards Enter is the only way to add a line, so it
 		// inserts one and the send button sends.
-		if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || isTouchPrimary()) return;
+		if (e.key !== "Enter" || e.shiftKey || isTouchPrimary()) return;
 		if (prefs.enterSends || e.metaKey || e.ctrlKey) {
 			e.preventDefault();
 			handleSend();
@@ -829,11 +986,43 @@ export function ChatPage() {
 
 	const fillInput = (text: string) => {
 		setInput(text);
-		writeDraft(text);
+		writeDraft(live.current.conversationId, text);
 		requestAnimationFrame(() => {
 			textareaRef.current?.focus();
 			autoResize();
 		});
+	};
+
+	const runSlashCommand = (command: SlashCommand) => {
+		updateInput("");
+		setSlashActive(0);
+		switch (command.id) {
+			case "new":
+				handleNewChat();
+				break;
+			case "think":
+				if (activeModelInfo?.reasoning === "optional") toggleThink();
+				else showToast("This model can't switch thinking on or off", "info");
+				break;
+			case "create":
+				void toggleCreate();
+				break;
+			case "model":
+				setPickerOpen(true);
+				break;
+			case "find":
+				setFindOpen(true);
+				break;
+			case "history":
+				navigate("/chat/history");
+				break;
+			case "connectors":
+				navigate("/connectors");
+				break;
+			case "settings":
+				navigate("/settings");
+				break;
+		}
 	};
 
 	const toggleThink = () => {
@@ -878,15 +1067,53 @@ export function ChatPage() {
 		}
 	};
 
+	// Ctrl+F finds in this chat, and Esc stops a reply from anywhere. Typing
+	// anywhere goes to the message box, so there's nothing to click first.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "f") {
+				e.preventDefault();
+				setFindOpen(true);
+				return;
+			}
+			const target = e.target as HTMLElement | null;
+			const typing = !!target?.closest("input, textarea, select, [contenteditable='true']");
+			if (typing || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+			if (isTouchPrimary() || document.querySelector("[role=dialog], [role=alertdialog], [role=menu]")) return;
+			textareaRef.current?.focus();
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, []);
+
 	const canThink = activeModelInfo?.reasoning === "optional";
 	const lastId = messages[messages.length - 1]?.id;
 	const hasText = input.trim().length > 0;
 	const showStream = isGenerating || streamedText.length > 0 || streamedReasoning.length > 0;
 	const starters = prefs.showStarters ? (activeCharacter?.conversation_starters?.slice(0, 4) ?? []) : [];
+	// An empty chat on a computer: the message box sits in the middle, with the
+	// greeting above it. Phones keep it at the bottom, by the keyboard.
+	const hero = roomy && messages.length === 0 && !showStream;
+	const memoryUsed = reportedTokens || estimateTokens(messages.map((m) => m.text));
+
+	// The box glides down to its place when the first message goes out.
+	const composerTop = useRef<number | null>(null);
+	useLayoutEffect(() => {
+		const box = composerRef.current;
+		if (!box) return;
+		const top = box.getBoundingClientRect().top;
+		const moved = composerTop.current === null ? 0 : composerTop.current - top;
+		composerTop.current = top;
+		if (hero || Math.abs(moved) < 40 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+		box.animate([{ transform: `translateY(${moved}px)` }, { transform: "none" }], {
+			duration: 260,
+			easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+		});
+	}, [hero]);
 
 	return (
 		<>
-			{isLoadingModel && (
+			{showLoading && (
 				<LoadingOverlay title="Loading model" subtitle="This can take a few seconds…" />
 			)}
 			{!isLoadingModel && loadProblem?.kind === "failed" && (
@@ -967,10 +1194,20 @@ export function ChatPage() {
 					</>
 				}
 			>
-				<ChatContainer>
-					<MessagesArea ref={scrollRef} onScroll={handleScroll} $wide={prefs.chatWidth === "wide"}>
+				<ChatContainer $hero={hero}>
+					{findOpen && (
+						<FindBar
+							root={scrollRef}
+							version={messages.length}
+							onClose={() => {
+								setFindOpen(false);
+								textareaRef.current?.focus();
+							}}
+						/>
+					)}
+					<MessagesArea ref={scrollRef} onScroll={handleScroll} $wide={prefs.chatWidth === "wide"} $hero={hero}>
 						{messages.length === 0 && !showStream && activeCharacter?.persona && (
-							<Welcome>
+							<Welcome $hero={hero}>
 								<FriendHero>
 									<FriendAvatar $accent={accent}>
 										<Icon name={activeCharacter.icon || "person"} size={30} />
@@ -984,26 +1221,14 @@ export function ChatPage() {
 								{activeCharacter.greeting && (
 									<FriendGreeting $accent={accent}>{activeCharacter.greeting}</FriendGreeting>
 								)}
-								{starters.length > 0 && (
-									<StartersGrid>
-										{starters.map((starter) => (
-											<StarterChip
-												key={starter}
-												type="button"
-												$accent={accent}
-												onClick={() => fillInput(starter)}
-											>
-												<span>{starter}</span>
-												<Icon name="arrow_outward" size={14} />
-											</StarterChip>
-										))}
-									</StartersGrid>
+								{!hero && starters.length > 0 && (
+									<StarterList starters={starters} accent={accent} onPick={fillInput} />
 								)}
 							</Welcome>
 						)}
 
 						{messages.length === 0 && !showStream && !activeCharacter?.persona && (
-							<Welcome>
+							<Welcome $hero={hero}>
 								<WelcomeTitle>
 									<NeurixMark size={30} />
 									<span>{activeCharacter?.greeting || `Chat with ${characterName}`}</span>
@@ -1013,20 +1238,8 @@ export function ChatPage() {
 										? `${activeCharacter.description}. Everything stays on this device.`
 										: "Ask anything. Everything stays on this device."}
 								</WelcomeText>
-								{starters.length > 0 && (
-									<StartersGrid>
-										{starters.map((starter) => (
-											<StarterChip
-												key={starter}
-												type="button"
-												$accent={accent}
-												onClick={() => fillInput(starter)}
-											>
-												<span>{starter}</span>
-												<Icon name="arrow_outward" size={14} />
-											</StarterChip>
-										))}
-									</StartersGrid>
+								{!hero && starters.length > 0 && (
+									<StarterList starters={starters} accent={accent} onPick={fillInput} />
 								)}
 							</Welcome>
 						)}
@@ -1064,8 +1277,10 @@ export function ChatPage() {
 											</BubbleLabel>
 										)}
 										<BubbleBody>
-											{msg.role === "ai" && msg.reasoning && <Reasoning text={msg.reasoning} />}
-											{msg.role === "ai" ? <Markdown text={msg.text} /> : <UserText>{msg.text}</UserText>}
+											{msg.role === "ai" && msg.reasoning && (
+												<Reasoning text={msg.reasoning} durationMs={msg.thoughtMs} />
+											)}
+											{msg.role === "ai" ? <Markdown text={msg.text} /> : <UserMessage text={msg.text} expanded={findOpen} />}
 											{msg.role === "ai" && msg.createIn && <FileCards text={msg.text} folder={msg.createIn} />}
 											{msg.role === "ai" && msg.sources && (
 												<SourcesLine>
@@ -1183,14 +1398,32 @@ export function ChatPage() {
 					)}
 
 					<InputBar>
-						<ComposerBox>
+						<QueueList
+							items={queue}
+							paused={queuePaused}
+							onEdit={(item) => {
+								setQueue((items) => items.filter((i) => i.id !== item.id));
+								fillInput(item.text);
+							}}
+							onRemove={(id) => setQueue((items) => items.filter((i) => i.id !== id))}
+							onResume={() => setQueuePaused(null)}
+						/>
+						<ComposerBox ref={composerRef}>
+							{slashCommands.length > 0 && (
+								<SlashMenu
+									commands={slashCommands}
+									active={slashIndex}
+									onPick={runSlashCommand}
+									onHover={setSlashActive}
+								/>
+							)}
 							<TextInput
 								ref={textareaRef}
 								value={input}
 								onChange={(e) => {
-									setInput(e.target.value);
-									writeDraft(e.target.value);
-									autoResize();
+									recallRef.current = null;
+									setSlashActive(0);
+									updateInput(e.target.value);
 								}}
 								onKeyDown={handleKeyDown}
 								placeholder={`Message ${characterName}…`}
@@ -1297,18 +1530,20 @@ export function ChatPage() {
 									</FolderChip>
 								))}
 								</ComposerChips>
+								<MemoryRing used={memoryUsed} total={activeModelInfo?.context_length ?? 0} />
 								<ModelSelect disabled={isGenerating || isLoadingModel} />
-								{isGenerating ? (
+								{isGenerating && (
 									<RoundBtn type="button" $variant="stop" onClick={handleStop} aria-label="Stop generating">
 										<Icon name="stop_circle" size={13} fill />
 									</RoundBtn>
-								) : (
+								)}
+								{(!isGenerating || hasText) && (
 									<RoundBtn
 										type="button"
 										$variant={hasText ? "send" : "idle"}
 										onClick={handleSend}
 										disabled={!hasText || isLoadingModel}
-										aria-label="Send message"
+										aria-label={isGenerating ? "Queue message" : "Send message"}
 									>
 										<Icon name="arrow_upward" size={17} fill />
 									</RoundBtn>
@@ -1322,6 +1557,7 @@ export function ChatPage() {
 							</ComposerNote>
 						)}
 					</InputBar>
+					{hero && starters.length > 0 && <StarterList hero starters={starters} accent={accent} onPick={fillInput} />}
 				</ChatContainer>
 			</AppLayout>
 

@@ -11,7 +11,7 @@ import type { BenchmarkResult, Settings } from "@/services/types";
 import { chatService, dataService, historyService, settingsService } from "@/services";
 import { alpha } from "@/theme/alpha";
 import { FONT_SCALES, type FontSize, isFontSize } from "@/theme/themes";
-import { isMobile, vibrate } from "@/utils/platform";
+import { isMac, isMobile, vibrate } from "@/utils/platform";
 import { type Prefs, setPref, usePrefs } from "@/utils/prefs";
 import { tokens } from "@/theme/tokens";
 import { useEffect, useState } from "react";
@@ -275,6 +275,7 @@ type ToggleKey = "wifi_only" | "save_history" | "show_speed";
 export function SettingsPage() {
 	const prefs = usePrefs();
 	const phone = isMobile();
+	const mod = isMac() ? "⌘" : "Ctrl";
 	const navigate = useNavigate();
 	const {
 		settings,
@@ -596,6 +597,7 @@ export function SettingsPage() {
 					{prefRow("showStarters", "emoji_objects", "Suggested prompts", "Show prompt ideas on a new chat")}
 					{prefRow("autoCopy", "content_copy", "Copy replies automatically", "Put each finished reply on the clipboard")}
 					{prefRow("friendsLearn", "diversity_3", "Friends learn from chats", "They keep facts you tell them, on this device")}
+					{prefRow("notifyReplies", "notifications", "Tell me when a reply is ready", "A notification if Neurix is in the background. It never shows the reply")}
 					{prefRow(
 						"showPrivacyNote",
 						"enhanced_encryption",
@@ -625,6 +627,18 @@ export function SettingsPage() {
 					</ToggleRow>
 					)}
 				</Section>
+
+				{!phone && (
+					<>
+						<SectionHeading>Keyboard</SectionHeading>
+						<Section>
+							{infoRow("command", "Command palette", `${mod} K: go anywhere, open a chat, change model or theme`)}
+							{infoRow("add", "New chat", `${mod} N`)}
+							{infoRow("search", "Find in this chat", `${mod} F, and ${mod} Shift F to search all chats`)}
+							{infoRow("keyboard_return", "In the message box", "/ for commands, ↑ for earlier messages, Esc to stop a reply")}
+						</Section>
+					</>
+				)}
 
 				<SectionHeading>Connectors</SectionHeading>
 				<Section>

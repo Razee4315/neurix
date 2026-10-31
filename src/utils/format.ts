@@ -28,6 +28,14 @@ export function formatEta(bytesRemaining: number, speedBps: number): string {
 	return `${(seconds / 3600).toFixed(1)} hr`;
 }
 
+/** "12s", or "1m 5s" past a minute. */
+export function formatDuration(ms: number): string {
+	const seconds = Math.max(1, Math.round(ms / 1000));
+	if (seconds < 60) return `${seconds}s`;
+	const left = seconds % 60;
+	return left === 0 ? `${seconds / 60}m` : `${Math.floor(seconds / 60)}m ${left}s`;
+}
+
 /** Short random id for client-created records (characters). */
 export function shortId(): string {
 	return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;

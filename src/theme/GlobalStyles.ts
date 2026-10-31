@@ -77,6 +77,16 @@ export const GlobalStyles = createGlobalStyle`
     color: ${tokens.colors.onPrimary};
   }
 
+  /* Find in chat. */
+  ::highlight(neurix-find) {
+    background: rgb(var(--c-primary) / 0.32);
+    color: inherit;
+  }
+  ::highlight(neurix-find-current) {
+    background: ${tokens.colors.primary};
+    color: ${tokens.colors.onPrimaryFixed};
+  }
+
   :focus-visible {
     outline: 2px solid ${tokens.colors.primary};
     outline-offset: 2px;

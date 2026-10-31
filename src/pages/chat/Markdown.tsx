@@ -6,14 +6,16 @@ import { tokens } from "@/theme/tokens";
 import { isHtml, suggestedName } from "@/utils/fileBlocks";
 import { copyText, isMobile, vibrate } from "@/utils/platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { type ReactNode, memo, useState } from "react";
+import { Fragment, type ReactNode, memo, useEffect, useState } from "react";
 import styled from "styled-components";
 import { HtmlPreview } from "./HtmlPreview";
 import { INLINE, MAX_INLINE_LINE, isTableDivider } from "./markdownPatterns";
+import { splitStableBlocks } from "./streamBlocks";
 
 /* ── Styles ── */
 
-const Paragraph = styled.p`
+/* dir="auto" lets a line of Urdu or Arabic read right to left on its own. */
+const Paragraph = styled.p.attrs({ dir: "auto" })`
   margin: 0 0 0.375rem;
   &:last-child { margin-bottom: 0; }
 `;
@@ -43,7 +45,7 @@ const Link = styled.a`
   cursor: pointer;
 `;
 
-const Heading = styled.div<{ $level: number }>`
+const Heading = styled.div.attrs({ dir: "auto" })<{ $level: number }>`
   font-family: ${tokens.typography.fontFamily.headline};
   font-weight: ${tokens.typography.fontWeight.bold};
   color: ${tokens.colors.onSurface};
@@ -147,15 +149,23 @@ const CopyBtn = styled.button<{ $copied: boolean }>`
   &:hover { background: ${tokens.colors.surfaceBright}; color: ${tokens.colors.onSurface}; }
 `;
 
-const CodePre = styled.pre`
+const CodePre = styled.pre<{ $wrap: boolean }>`
   font-family: ${tokens.typography.fontFamily.mono};
   font-size: 0.8rem;
-  line-height: 1.5;
+  line-height: 1.55;
   padding: 0.75rem;
   margin: 0;
   overflow-x: auto;
   color: ${tokens.colors.onSurface};
-  white-space: pre;
+  white-space: ${({ $wrap }) => ($wrap ? "pre-wrap" : "pre")};
+  overflow-wrap: ${({ $wrap }) => ($wrap ? "anywhere" : "normal")};
+
+  .hljs-keyword, .hljs-selector-tag, .hljs-doctag, .hljs-meta .hljs-keyword { color: ${tokens.colors.primary}; }
+  .hljs-string, .hljs-regexp, .hljs-attr, .hljs-symbol, .hljs-template-variable { color: ${tokens.colors.secondary}; }
+  .hljs-number, .hljs-literal, .hljs-title, .hljs-built_in, .hljs-type, .hljs-name, .hljs-selector-class { color: ${tokens.colors.tertiary}; }
+  .hljs-comment, .hljs-quote, .hljs-meta { color: ${tokens.colors.onSurfaceVariant}; font-style: italic; }
+  .hljs-emphasis { font-style: italic; }
+  .hljs-strong { font-weight: ${tokens.typography.fontWeight.bold}; }
 `;
 
 /* ── Copy button ── */
@@ -175,6 +185,56 @@ function CodeCopyButton({ code }: { code: string }) {
 			<Icon name={copied ? "check" : "content_copy"} size={14} />
 			{copied ? "Copied" : "Copy"}
 		</CopyBtn>
+	);
+}
+
+/* ── Code ── */
+
+interface CodeViewProps {
+	code: string;
+	language: string;
+	/** The closing fence has arrived, so the text won't change any more. */
+	finished: boolean;
+}
+
+function CodeView({ code, language, finished }: CodeViewProps) {
+	const [html, setHtml] = useState<string | null>(null);
+	const [wrap, setWrap] = useState(false);
+
+	useEffect(() => {
+		if (!finished) return;
+		let alive = true;
+		import("./highlight")
+			.then(({ highlightCode }) => alive && setHtml(highlightCode(code, language)))
+			.catch(() => {
+				// Plain text is a fine result: the code is still all there.
+			});
+		return () => {
+			alive = false;
+		};
+	}, [code, language, finished]);
+
+	return (
+		<CodeBlock>
+			<CodeHeader>
+				<span>{language || "code"}</span>
+				<CodeActions>
+					<CopyBtn type="button" onClick={() => setWrap((w) => !w)} $copied={false} aria-pressed={wrap}>
+						{wrap ? "No wrap" : "Wrap"}
+					</CopyBtn>
+					{isHtml(language) && <CodePreviewButton code={code} />}
+					{!isMobile() && <CodeSaveButton code={code} language={language} />}
+					<CodeCopyButton code={code} />
+				</CodeActions>
+			</CodeHeader>
+			{/* highlight.js escapes the code, so this holds only its own colour spans. */}
+			{html === null ? (
+				<CodePre $wrap={wrap}>{code}</CodePre>
+			) : (
+				// biome-ignore lint/security/noDangerouslySetInnerHtml: escaped by highlight.js
+				<CodePre $wrap={wrap} dangerouslySetInnerHTML={{ __html: html }} />
+			)}
+		</CodeBlock>
 	);
 }
 
@@ -275,21 +335,9 @@ function renderBlocks(text: string): ReactNode[] {
 				codeLines.push(lines[i]);
 				i++;
 			}
+			const finished = i < lines.length;
 			i++; // skip the closing fence
-			const code = codeLines.join("\n");
-			parts.push(
-				<CodeBlock key={key++}>
-					<CodeHeader>
-						<span>{lang || "code"}</span>
-						<CodeActions>
-							{isHtml(lang) && <CodePreviewButton code={code} />}
-							{!isMobile() && <CodeSaveButton code={code} language={lang} />}
-							<CodeCopyButton code={code} />
-						</CodeActions>
-					</CodeHeader>
-					<CodePre>{code}</CodePre>
-				</CodeBlock>,
-			);
+			parts.push(<CodeView key={key++} code={codeLines.join("\n")} language={lang} finished={finished} />);
 			continue;
 		}
 
@@ -365,7 +413,7 @@ function renderBlocks(text: string): ReactNode[] {
 			parts.push(
 				<ListItem key={key++} $depth={Math.min(Math.floor(indent / 2), 4)}>
 					<Marker>{numbered ? `${numbered[2]}.` : "•"}</Marker>
-					<span>{renderInline(bullet ? bullet[2] : (numbered?.[3] ?? ""))}</span>
+					<span dir="auto">{renderInline(bullet ? bullet[2] : (numbered?.[3] ?? ""))}</span>
 				</ListItem>,
 			);
 			i++;
@@ -383,10 +431,26 @@ function renderBlocks(text: string): ReactNode[] {
 	return parts;
 }
 
+const Block = memo(function Block({ text }: { text: string }) {
+	return <>{renderBlocks(text)}</>;
+});
+
 /**
- * Renders a model reply. Memoised so finished messages are not re-parsed
- * while a new reply streams in beneath them.
+ * Renders a model reply. Finished messages aren't parsed again while a new
+ * reply streams in beneath them, and within a streaming reply only the piece
+ * still being written is, so a long reply stays as smooth as a short one.
  */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
-	return <>{renderBlocks(text)}</>;
+	// Pieces only ever join the end, so a position is a stable identity.
+	return (
+		<>
+			{splitStableBlocks(text).map((block, i) => (
+				// biome-ignore lint/suspicious/noArrayIndexKey: see above
+				<Fragment key={i}>
+					{i > 0 && <Spacer />}
+					<Block text={block} />
+				</Fragment>
+			))}
+		</>
+	);
 });

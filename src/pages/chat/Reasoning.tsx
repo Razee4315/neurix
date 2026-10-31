@@ -1,6 +1,7 @@
 import { Icon } from "@/components/ui/Icon";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { formatDuration } from "@/utils/format";
 import { useState } from "react";
 import styled, { keyframes } from "styled-components";
 
@@ -62,9 +63,11 @@ interface ReasoningProps {
 	text: string;
 	/** True while the model is still thinking (no answer text yet). */
 	live?: boolean;
+	/** How long it thought, when that was measured. */
+	durationMs?: number;
 }
 
-export function Reasoning({ text, live = false }: ReasoningProps) {
+export function Reasoning({ text, live = false, durationMs }: ReasoningProps) {
 	const [open, setOpen] = useState(false);
 	const preview = text.length > PREVIEW_CHARS ? `…${text.slice(-PREVIEW_CHARS)}` : text;
 
@@ -72,7 +75,7 @@ export function Reasoning({ text, live = false }: ReasoningProps) {
 		<Box>
 			<Toggle type="button" $live={live} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
 				<Icon name="psychology" size={14} />
-				{live ? "Thinking…" : "Thought process"}
+				{live ? "Thinking…" : durationMs ? `Thought for ${formatDuration(durationMs)}` : "Thought process"}
 				<Chevron $open={open}>
 					<Icon name="expand_more" size={14} />
 				</Chevron>
