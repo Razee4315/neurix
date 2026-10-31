@@ -272,6 +272,12 @@ export function ChatPage() {
 	const [following, setFollowing] = useState(true);
 	const [queue, setQueue] = useState<QueuedMessage[]>([]);
 	const [queuePaused, setQueuePaused] = useState<string | null>(null);
+	// The queue reads this one: a failure can land just after the render it is looking at.
+	const pausedRef = useRef(false);
+	const pauseQueue = useCallback((why: string | null) => {
+		pausedRef.current = why !== null;
+		setQueuePaused(why);
+	}, []);
 	const [findOpen, setFindOpen] = useState(false);
 	const [slashActive, setSlashActive] = useState(0);
 	/** Tokens the last reply reported, so the memory ring needn't estimate. */
@@ -529,6 +535,8 @@ export function ChatPage() {
 		const startedAt = Date.now();
 		const runId = ++runIdRef.current;
 		const isCurrent = () => runIdRef.current === runId;
+		// A new reply is starting, so whatever held the queue is over.
+		pauseQueue(null);
 
 		resetStream();
 		streamRef.current.prefix = prefix;
@@ -635,7 +643,7 @@ export function ChatPage() {
 					break;
 				}
 				case "Error":
-					setQueuePaused("The last reply failed, so the next message is waiting.");
+					pauseQueue("The last reply failed, so the next message is waiting.");
 					finish([createMessage("error", event.data.message)]);
 					break;
 			}
@@ -671,7 +679,7 @@ export function ChatPage() {
 			// Keep whatever had streamed before the failure.
 			const partial = cleanResponse(streamRef.current.prefix + streamRef.current.text);
 			const message = err instanceof Error ? err.message : String(err);
-			setQueuePaused("The last reply failed, so the next message is waiting.");
+			pauseQueue("The last reply failed, so the next message is waiting.");
 			finish([
 				...(partial ? [createMessage("ai", partial)] : []),
 				createMessage("error", message),
@@ -680,7 +688,7 @@ export function ChatPage() {
 			// header and the next send reflect that.
 			refreshActiveModel();
 		}
-	}, [commit, persist, flushStream, resetStream, setGenerating, refreshActiveModel, showToast, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
+	}, [commit, persist, flushStream, resetStream, setGenerating, refreshActiveModel, pauseQueue, showToast, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
 
 	/** Make sure a model is loaded, loading the last-used one if needed. */
 	const ensureModel = useCallback(async (): Promise<boolean> => {
@@ -730,6 +738,8 @@ export function ChatPage() {
 	};
 
 	const sendingRef = useRef(false);
+	// The reply ends a moment before its send returns, so the queue looks again here.
+	const [sendsEnded, setSendsEnded] = useState(0);
 
 	const clearComposer = () => {
 		setInput("");
@@ -747,7 +757,8 @@ export function ChatPage() {
 			// shown in place, with a retry.
 			if (!(await ensureModel())) return false;
 
-			if (fromComposer) clearComposer();
+			// Loading can take a while: anything typed meanwhile stays in the box.
+			if (fromComposer && textareaRef.current?.value.trim() === text) clearComposer();
 			const context = live.current.messages;
 			const sent = [...context, createMessage("user", text)];
 			show(sent);
@@ -768,6 +779,7 @@ export function ChatPage() {
 			return true;
 		} finally {
 			sendingRef.current = false;
+			setSendsEnded((n) => n + 1);
 		}
 	};
 
@@ -787,20 +799,20 @@ export function ChatPage() {
 	// Send what is waiting, one message each time the model comes free.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: sendMessage is rebuilt each render and only runs on these changes
 	useEffect(() => {
-		if (isGenerating || isLoadingModel || queuePaused !== null || sendingRef.current) return;
+		if (isGenerating || isLoadingModel || pausedRef.current || sendingRef.current) return;
 		const next = queue[0];
 		if (!next) return;
 		setQueue((items) => items.slice(1));
 		void sendMessage(next.text, false).then((sent) => {
 			if (sent) return;
 			setQueue((items) => [next, ...items]);
-			setQueuePaused("No model is ready, so the next message is waiting.");
+			pauseQueue("No model is ready, so the next message is waiting.");
 		});
-	}, [isGenerating, isLoadingModel, queue, queuePaused]);
+	}, [isGenerating, isLoadingModel, queue, queuePaused, sendsEnded]);
 
 	const handleStop = () => {
 		vibrate(12);
-		if (queue.length > 0) setQueuePaused("You stopped the reply, so the next message is waiting.");
+		if (queue.length > 0) pauseQueue("You stopped the reply, so the next message is waiting.");
 		chatService.stopInference().catch(() => {});
 	};
 
@@ -1406,7 +1418,7 @@ export function ChatPage() {
 								fillInput(item.text);
 							}}
 							onRemove={(id) => setQueue((items) => items.filter((i) => i.id !== id))}
-							onResume={() => setQueuePaused(null)}
+							onResume={() => pauseQueue(null)}
 						/>
 						<ComposerBox ref={composerRef}>
 							{slashCommands.length > 0 && (

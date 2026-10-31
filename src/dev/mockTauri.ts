@@ -457,6 +457,8 @@ async function runInference(args: {
 			prompt_ms: promptMs,
 		},
 	});
+	// The real command returns a moment after its last event.
+	await sleep(30);
 }
 
 async function downloadModel(args: { modelId: string; onEvent: Emitter<DownloadEvent> }): Promise<void> {
