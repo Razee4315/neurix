@@ -41,8 +41,8 @@ const Shell = styled.div`
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: "top" "content" "nav";
-  height: calc(100vh - var(--titlebar-h, 0px));
-  height: calc(100dvh - var(--titlebar-h, 0px));
+  height: 100vh;
+  height: 100dvh;
   background: ${tokens.surfaces.page};
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0px);
@@ -66,10 +66,16 @@ const TopBar = styled.header<{ $hasSubtitle: boolean }>`
   background: ${tokens.colors.background};
   border-bottom: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
   gap: 0.5rem;
+  /* On desktop this row is the window's title bar: room for the window
+     buttons at the right, and for macOS's traffic lights at the left when
+     there is no sidebar (see TitleBar.tsx). */
+  padding-right: calc(0.75rem + var(--window-controls-w, 0px));
+  padding-left: calc(0.75rem + var(--window-inset-left, 0px));
 
   @media (min-width: ${tokens.breakpoints.wide}) {
     min-height: 48px;
     padding: ${({ $hasSubtitle }) => ($hasSubtitle ? "0.25rem 1rem" : "0 1rem")};
+    padding-right: calc(1rem + var(--window-controls-w, 0px));
     border-bottom-color: transparent;
   }
 `;
@@ -182,8 +188,10 @@ export function AppLayout({ children, title, subtitle, rightActions, hideLogo, b
 	const hasSubtitle = subtitle != null && subtitle !== false;
 	return (
 		<Shell>
-			<TopBar $hasSubtitle={hasSubtitle && !!title}>
-				<TitleGroup>
+			{/* data-tauri-drag-region: dragging the empty parts of this row moves
+			    the desktop window, and a double-click maximizes it. */}
+			<TopBar $hasSubtitle={hasSubtitle && !!title} data-tauri-drag-region>
+				<TitleGroup data-tauri-drag-region>
 					{back ? (
 						<BackBtn
 							type="button"
@@ -204,12 +212,12 @@ export function AppLayout({ children, title, subtitle, rightActions, hideLogo, b
 						)
 					)}
 					{title ? (
-						<TitleStack>
-							<PageTitle>{title}</PageTitle>
-							{hasSubtitle && <Subtitle>{subtitle}</Subtitle>}
+						<TitleStack data-tauri-drag-region>
+							<PageTitle data-tauri-drag-region>{title}</PageTitle>
+							{hasSubtitle && <Subtitle data-tauri-drag-region>{subtitle}</Subtitle>}
 						</TitleStack>
 					) : (
-						hasSubtitle && <PrimarySlot>{subtitle}</PrimarySlot>
+						hasSubtitle && <PrimarySlot data-tauri-drag-region>{subtitle}</PrimarySlot>
 					)}
 				</TitleGroup>
 				{rightActions && <Actions>{rightActions}</Actions>}

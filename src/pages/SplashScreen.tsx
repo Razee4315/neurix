@@ -25,8 +25,8 @@ const subtleFloat = keyframes`
 /* ── Layout ── */
 
 const Container = styled.div`
-  height: calc(100vh - var(--titlebar-h, 0px));
-  height: calc(100dvh - var(--titlebar-h, 0px));
+  height: 100vh;
+  height: 100dvh;
   width: 100%;
   display: flex;
   flex-direction: column;
@@ -238,7 +238,7 @@ export function SplashScreen() {
 	if (!ready) return <BootScreen />;
 
 	return (
-		<Container data-testid="splash-screen">
+		<Container data-testid="splash-screen" data-tauri-drag-region>
 			<HeroSection>
 				<LogoBlock>
 					<LogoWrapper>

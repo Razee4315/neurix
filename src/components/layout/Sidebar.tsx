@@ -51,6 +51,8 @@ const Brand = styled.div`
   gap: 0.5rem;
   height: 40px;
   padding: 0 0.625rem;
+  /* Clear of macOS's traffic lights (see TitleBar.tsx). */
+  padding-left: calc(0.625rem + var(--window-inset-left, 0px));
   margin-bottom: 0.5rem;
   color: ${tokens.colors.primary};
 `;
@@ -595,9 +597,10 @@ export function Sidebar() {
 
 	return (
 		<Aside aria-label="Sidebar">
-			<Brand>
+			{/* Part of the window's title bar on desktop: drags the window. */}
+			<Brand data-tauri-drag-region>
 				<NeurixMark size={22} knockout="rgb(var(--c-surface-container-low))" />
-				<Wordmark>Neurix</Wordmark>
+				<Wordmark data-tauri-drag-region>Neurix</Wordmark>
 			</Brand>
 
 			<Group>

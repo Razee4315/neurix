@@ -25,8 +25,8 @@ const rise = keyframes`
 `;
 
 const Container = styled.div`
-  height: calc(100vh - var(--titlebar-h, 0px));
-  height: calc(100dvh - var(--titlebar-h, 0px));
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: ${tokens.surfaces.page};
@@ -260,7 +260,7 @@ export function OnboardingScreen() {
 	const ramGb = nominalRamGb(deviceMemory);
 
 	return (
-		<Container data-testid="onboarding-screen">
+		<Container data-testid="onboarding-screen" data-tauri-drag-region>
 			<Header>
 				<LogoGroup>
 					<NeurixLogo size={28} />
