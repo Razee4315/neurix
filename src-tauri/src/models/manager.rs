@@ -107,7 +107,33 @@ pub async fn delete_model(models_dir: &Path, model_id: &str) -> Result<(), Strin
     require_known_id(models_dir, model_id)?;
     let model_dir = models_dir.join(model_id);
     if model_dir.exists() {
-        fs::remove_dir_all(&model_dir).await.map_err(|e| e.to_string())?;
+        remove_model_dir(&model_dir).await?;
     }
     added::remove(models_dir, model_id)
+}
+
+/// Remove a model's folder. On Windows a model that was just unloaded can
+/// stay mapped for a while (seen for over a minute): its file is then only
+/// marked for deletion and the folder can't be removed yet (os error 32).
+/// Once the model files themselves are gone the model is deleted as far as
+/// anyone can tell, so an empty folder left behind is not an error; it is
+/// removed by a later delete or left as harmless clutter.
+async fn remove_model_dir(dir: &Path) -> Result<(), String> {
+    let mut last_error = None;
+    for attempt in 0..4u64 {
+        match fs::remove_dir_all(dir).await {
+            Ok(()) => return Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => last_error = Some(e),
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(150 * (attempt + 1))).await;
+    }
+    let files_left = ["model.gguf", "model.gguf.part"].iter().any(|f| dir.join(f).exists());
+    if !files_left {
+        if let Some(e) = last_error {
+            log::warn!("Model files deleted; their folder {:?} is still in use: {}", dir, e);
+        }
+        return Ok(());
+    }
+    Err("Couldn't delete this model because it is still in use. Wait a moment and try again.".to_string())
 }
