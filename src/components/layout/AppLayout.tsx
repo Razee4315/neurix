@@ -41,8 +41,8 @@ const Shell = styled.div`
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-areas: "top" "content" "nav";
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh - var(--titlebar-h, 0px));
+  height: calc(100dvh - var(--titlebar-h, 0px));
   background: ${tokens.surfaces.page};
   overflow: hidden;
   padding-top: env(safe-area-inset-top, 0px);

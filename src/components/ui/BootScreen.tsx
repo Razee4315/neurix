@@ -8,8 +8,8 @@ const pulse = keyframes`
 `;
 
 const Screen = styled.div`
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh - var(--titlebar-h, 0px));
+  height: calc(100dvh - var(--titlebar-h, 0px));
   width: 100%;
   display: flex;
   flex-direction: column;

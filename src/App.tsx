@@ -5,6 +5,7 @@ import { ToastProvider } from "@/components/ui/Toast";
 import { AppProvider } from "@/context/AppContext";
 import { CharacterProvider } from "@/context/CharacterContext";
 import { DownloadProvider } from "@/context/DownloadContext";
+import { TitleBar } from "@/components/layout/TitleBar";
 import { BootScreen } from "@/components/ui/BootScreen";
 import { SplashScreen } from "@/pages/SplashScreen";
 import { GlobalStyles, theme } from "@/theme";
@@ -63,6 +64,9 @@ function ChatRoute() {
 
 function App() {
 	return (
+		<>
+		{/* Outside the error boundary: the window must stay movable and closable. */}
+		<TitleBar />
 		<ErrorBoundary>
 		<ThemeProvider theme={theme}>
 			<GlobalStyles />
@@ -104,6 +108,7 @@ function App() {
 			</AppProvider>
 		</ThemeProvider>
 		</ErrorBoundary>
+		</>
 	);
 }
 

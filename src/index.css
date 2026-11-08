@@ -34,7 +34,8 @@ body {
 
 .app-container {
   position: fixed;
-  inset: 0;
+  /* Below the desktop title bar, when there is one (TitleBar.tsx). */
+  inset: var(--titlebar-h, 0px) 0 0 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;

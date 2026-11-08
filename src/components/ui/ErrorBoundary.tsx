@@ -3,8 +3,8 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import styled from "styled-components";
 
 const Container = styled.div`
-  height: 100vh;
-  height: 100dvh;
+  height: calc(100vh - var(--titlebar-h, 0px));
+  height: calc(100dvh - var(--titlebar-h, 0px));
   display: flex;
   flex-direction: column;
   align-items: center;
