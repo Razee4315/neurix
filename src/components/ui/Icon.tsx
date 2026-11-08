@@ -52,6 +52,7 @@ import {
 	Laptop,
 	Layers,
 	Lightbulb,
+	Link2,
 	LockKeyhole,
 	Mail,
 	type LucideIcon,
@@ -208,6 +209,7 @@ const ICONS = new Map<string, Glyph>(Object.entries({
 	plug: Plug,
 	description: FileText,
 	laptop: Laptop,
+	link: Link2,
 }));
 
 export function isKnownIcon(name: string): boolean {

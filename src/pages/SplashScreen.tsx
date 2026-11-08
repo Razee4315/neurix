@@ -238,7 +238,7 @@ export function SplashScreen() {
 	if (!ready) return <BootScreen />;
 
 	return (
-		<Container data-testid="splash-screen">
+		<Container data-testid="splash-screen" data-tauri-drag-region>
 			<HeroSection>
 				<LogoBlock>
 					<LogoWrapper>

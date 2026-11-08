@@ -71,7 +71,7 @@ pub async fn get_storage_info(app: AppHandle) -> Result<StorageInfo, String> {
     Ok(info)
 }
 
-fn space_check_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn space_check_path(app: &AppHandle) -> Result<PathBuf, String> {
     let data_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     // Use the data directory, or its parent if it has not been created yet.
     Ok(if data_dir.exists() {

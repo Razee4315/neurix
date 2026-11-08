@@ -3,12 +3,23 @@ import type {
 	ActiveModel,
 	DownloadEvent,
 	DownloadedModel,
+	HubModel,
 	ModelInfo,
 	PartialDownload,
 } from "./types";
 
 export async function getCatalog(): Promise<ModelInfo[]> {
 	return invoke("get_model_catalog");
+}
+
+/** Check a pasted Hugging Face link. Rejects with a message saying why it can't be used. */
+export async function inspectHfLink(link: string): Promise<HubModel> {
+	return invoke("inspect_hf_link", { link });
+}
+
+/** Add one file of a Hugging Face model; returns the entry to download. */
+export async function addHfModel(repo: string, filename: string): Promise<ModelInfo> {
+	return invoke("add_hf_model", { repo, filename });
 }
 
 export async function downloadModel(

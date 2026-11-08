@@ -8,7 +8,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::device;
 use crate::inference::engine::{self, LoadOptions};
-use crate::models::catalog::{self, ModelInfo, Reasoning};
+use crate::models::added;
+use crate::models::catalog::{ModelInfo, Reasoning};
 use crate::models::download::{self, DownloadEvent};
 use crate::models::manager::{self, DownloadedModel, PartialDownload};
 use crate::settings;
@@ -30,7 +31,7 @@ fn context_length_for(setting: u32, model_default: u32, ram_bytes: Option<u64>) 
     }
 }
 
-fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app
         .path()
         .app_local_data_dir()
@@ -38,9 +39,11 @@ fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .join("models"))
 }
 
+/// The built-in catalog, followed by the models the user added from
+/// Hugging Face (tagged "Added").
 #[tauri::command]
-pub fn get_model_catalog() -> Vec<ModelInfo> {
-    catalog::get_catalog()
+pub fn get_model_catalog(app: AppHandle) -> Result<Vec<ModelInfo>, String> {
+    Ok(added::all_models(&models_dir(&app)?))
 }
 
 #[tauri::command]
@@ -70,9 +73,7 @@ pub async fn download_model(
 
     let models_dir = models_dir(&app)?;
 
-    let model = catalog::get_catalog()
-        .into_iter()
-        .find(|m| m.id == model_id)
+    let model = added::find(&models_dir, &model_id)
         .ok_or_else(|| format!("Model {} not found in catalog", model_id))?;
 
     let cancel_token = CancellationToken::new();
@@ -157,7 +158,7 @@ pub async fn delete_model(
     state: State<'_, SharedState>,
     model_id: String,
 ) -> Result<(), String> {
-    manager::require_catalog_id(&model_id)?;
+    manager::require_known_id(&models_dir(&app)?, &model_id)?;
 
     // Unload first: a deleted model must not stay "active", or the next
     // message fails when it tries to reopen a file that no longer exists.
@@ -188,9 +189,7 @@ pub async fn load_model(
     state: State<'_, SharedState>,
     model_id: String,
 ) -> Result<(), String> {
-    let catalog_entry = catalog::get_catalog()
-        .into_iter()
-        .find(|m| m.id == model_id)
+    let catalog_entry = added::find(&models_dir(&app)?, &model_id)
         .ok_or_else(|| format!("Model {} not found in catalog", model_id))?;
 
     {

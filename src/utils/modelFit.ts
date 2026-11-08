@@ -32,6 +32,9 @@ export function modelFit(model: ModelInfo, totalMemoryBytes: number | null): Fit
 	return "too_big";
 }
 
+/** Fine-tunes of the base models, and models the user added themselves. */
+const FINE_TUNE_TAGS = ["Specialist", "Added"];
+
 /** Memory assumed when the device does not say (a typical desktop minimum). */
 const ASSUMED_RAM_GB = 8;
 
@@ -46,13 +49,14 @@ function better(a: ModelInfo, b: ModelInfo): number {
  * that only just fits runs slowly and gets the app killed in the background.
  * Models that always reason before answering are left out of the default
  * pick: they are slower to reply, which is a choice rather than a default.
+ * Fine-tunes are never picked: someone has to go looking for those.
  */
 export function recommendModel(
 	catalog: ModelInfo[],
 	totalMemoryBytes: number | null,
 ): ModelInfo | null {
 	const ram = nominalRamGb(totalMemoryBytes) ?? ASSUMED_RAM_GB;
-	const offered = catalog.filter((m) => !m.legacy);
+	const offered = catalog.filter((m) => !m.legacy && !FINE_TUNE_TAGS.includes(m.tag));
 	if (offered.length === 0) return null;
 	const everyday = offered.filter((m) => m.reasoning !== "always");
 	const pool = everyday.length > 0 ? everyday : offered;

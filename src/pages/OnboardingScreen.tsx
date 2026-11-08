@@ -260,7 +260,7 @@ export function OnboardingScreen() {
 	const ramGb = nominalRamGb(deviceMemory);
 
 	return (
-		<Container data-testid="onboarding-screen">
+		<Container data-testid="onboarding-screen" data-tauri-drag-region>
 			<Header>
 				<LogoGroup>
 					<NeurixLogo size={28} />

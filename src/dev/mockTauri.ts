@@ -17,6 +17,7 @@ import type {
 	Conversation,
 	ConversationMeta,
 	DownloadEvent,
+	HubModel,
 	InferenceEvent,
 	ModelInfo,
 	Settings,
@@ -55,6 +56,8 @@ interface MockState {
 	conversations: Record<string, Conversation>;
 	installed: string[];
 	partial: Record<string, number>;
+	/** Models added from a Hugging Face link. */
+	added?: ModelInfo[];
 }
 
 const STORAGE_KEY = "neurix.mock";
@@ -206,6 +209,21 @@ const CATALOG: ModelInfo[] = [
 		released: "2026-03",
 	}),
 	model({
+		id: "qwen-3.5-2b-artemis",
+		name: "Qwen 3.5 2B Artemis",
+		company: "TurinTech",
+		parameters: "2B",
+		sizeMb: 1400,
+		tag: "Specialist",
+		description: "Qwen 3.5 2B rebuilt by TurinTech to use about half the memory while getting more tool calls right.",
+		best_for: ["Tool calls", "Maths", "Following instructions"],
+		min_ram_gb: 4,
+		quality: 3,
+		speed: 4,
+		reasoning: "optional",
+		released: "2026-10",
+	}),
+	model({
 		id: "llama-3.2-3b",
 		name: "Llama 3.2 3B",
 		company: "Meta",
@@ -300,6 +318,103 @@ function loadState(): MockState {
 
 const state = loadState();
 const persist = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+for (const m of state.added ?? []) if (!CATALOG.some((c) => c.id === m.id)) CATALOG.push(m);
+
+/* "Add from Hugging Face". The words in the link pick the outcome, so each
+   check can be tried: "30b" is too big, "bert" is not a chat model,
+   "safetensors" has no GGUF, "gated" needs a sign-in, "base" has no chat
+   format; anything else on huggingface.co works. */
+function inspectHfLink(link: string): HubModel {
+	const text = link.trim();
+	const lower = text.toLowerCase();
+	const host = lower.replace(/^https?:\/\//, "").split("/")[0];
+	if (lower.includes("://") || host.includes(".")) {
+		if (host !== "huggingface.co" && host !== "hf.co" && host !== "www.huggingface.co")
+			throw "Only links to models on huggingface.co can be added. Open the model's page on Hugging Face and copy the address from there.";
+	}
+	const path = lower.replace(/^https?:\/\//, "").replace(/^(www\.)?(huggingface|hf)\.co\/?/, "");
+	const [owner, name] = path.split(/[/?#]/);
+	if (!owner || !name)
+		throw "That link doesn't name a model. A model's link looks like huggingface.co/owner/model-name.";
+	if (owner === "datasets") throw "That link is to a dataset, not a model.";
+	if (lower.includes("safetensors"))
+		throw "This model has no GGUF files, and GGUF is the only format Neurix can run. Many models have a separate GGUF upload: search Hugging Face for the model's name followed by “GGUF”.";
+	if (lower.includes("gated"))
+		throw "This model's authors ask you to sign in and accept their terms on Hugging Face before downloading, which Neurix can't do. Search Hugging Face for another GGUF upload of it.";
+	if (lower.includes("bert"))
+		throw "This is not a chat model (its type is “bert”: an embedding, vision, speech or helper model), so Neurix can't hold a conversation with it.";
+	const big = lower.includes("30b");
+	const ramGb = knobs.ramGb ?? 16;
+	const ramBytes = ramGb * 1024 ** 3;
+	const file = (quant: string, gb: number) => {
+		const size = Math.round(gb * 1e9);
+		const need = Math.ceil(gb * 2 + 2);
+		const tooBig = size > (ramBytes / 10) * 7;
+		return {
+			filename: `${name}-${quant}.gguf`,
+			size_bytes: size,
+			size_label: gb < 1 ? `${Math.round(gb * 100) * 10} MB` : `${gb.toFixed(1)} GB`,
+			quantization: `${quant} (${quant.match(/\d+/)?.[0] ?? "?"}-bit)`,
+			min_ram_gb: need,
+			fit: (ramGb >= need ? "good" : ramGb + 2 >= need ? "tight" : "too_big") as "good",
+			problem: tooBig
+				? `At ${gb.toFixed(1)} GB this model is too big for this device's ${ramGb} GB of memory. Pick a smaller file or a model with fewer parameters.`
+				: null,
+		};
+	};
+	const files = big
+		? [file("Q4_K_M", 18.6), file("Q8_0", 32.5)]
+		: [file("Q4_K_M", 1.3), file("Q6_K", 1.6), file("Q8_0", 2.1), file("F16", 4)];
+	if (files.every((f) => f.problem)) throw files[0].problem;
+	const shown = text.replace(/^https?:\/\//, "").replace(/^(www\.)?(huggingface|hf)\.co\//, "").split(/[/?#]/);
+	return {
+		repo: `${shown[0]}/${shown[1]}`,
+		author: shown[0],
+		name: shown[1],
+		architecture: "qwen35",
+		parameters: big ? "30B" : "2B",
+		license: "apache-2.0",
+		has_chat_template: !lower.includes("base"),
+		files,
+		selected: files.find((f) => !f.problem)?.filename ?? null,
+	};
+}
+
+async function addHfModel(repo: string, filename: string): Promise<ModelInfo> {
+	await sleep(600);
+	const hub = inspectHfLink(repo);
+	const file = hub.files.find((f) => f.filename === filename);
+	if (!file) throw "That file isn't in this model's repository any more.";
+	if (file.problem) throw file.problem;
+	const id = `hf-${`${repo}-${filename.replace(/\.gguf$/i, "")}`.toLowerCase().replace(/[^a-z0-9.]+/g, "-")}`;
+	const entry: ModelInfo = {
+		id,
+		name: filename.replace(/\.gguf$/i, ""),
+		description: `Added by you from Hugging Face (${repo}). Made by ${hub.author}; Neurix did not make or review it.`,
+		size_bytes: file.size_bytes,
+		size_label: file.size_label,
+		tag: "Added",
+		hf_repo: repo,
+		hf_filename: filename,
+		context_length: 8192,
+		company: hub.author,
+		parameters: hub.parameters ?? "Unknown",
+		quantization: file.quantization,
+		best_for: ["Added from Hugging Face"],
+		min_ram_gb: file.min_ram_gb,
+		quality: 3,
+		speed: 3,
+		reasoning: "optional",
+		released: "",
+		legacy: false,
+	};
+	state.added = [...(state.added ?? []).filter((m) => m.id !== id), entry];
+	const at = CATALOG.findIndex((m) => m.id === id);
+	if (at >= 0) CATALOG[at] = entry;
+	else CATALOG.push(entry);
+	persist();
+	return entry;
+}
 
 const knobs: MockKnobs = {
 	failLoad: false,
@@ -517,6 +632,11 @@ function mockFolder(path: unknown) {
 
 const handlers: Record<string, (args: Args) => unknown> = {
 	get_model_catalog: () => CATALOG,
+	inspect_hf_link: async (a) => {
+		await sleep(500);
+		return inspectHfLink(String(a.link));
+	},
+	add_hf_model: (a) => addHfModel(String(a.repo), String(a.filename)),
 	get_preset_characters: () => PRESETS,
 	get_downloaded_models: () =>
 		CATALOG.filter((m) => state.installed.includes(m.id)).map((m) => ({
@@ -551,6 +671,9 @@ const handlers: Record<string, (args: Args) => unknown> = {
 		const id = a.modelId as string;
 		state.installed = state.installed.filter((m) => m !== id);
 		delete state.partial[id];
+		state.added = (state.added ?? []).filter((m) => m.id !== id);
+		const at = CATALOG.findIndex((m) => m.id === id && m.tag === "Added");
+		if (at >= 0) CATALOG.splice(at, 1);
 		if (activeModel?.id === id) activeModel = null;
 		persist();
 	},

@@ -5,6 +5,7 @@ import { ToastProvider } from "@/components/ui/Toast";
 import { AppProvider } from "@/context/AppContext";
 import { CharacterProvider } from "@/context/CharacterContext";
 import { DownloadProvider } from "@/context/DownloadContext";
+import { TitleBar } from "@/components/layout/TitleBar";
 import { BootScreen } from "@/components/ui/BootScreen";
 import { SplashScreen } from "@/pages/SplashScreen";
 import { GlobalStyles, theme } from "@/theme";
@@ -17,6 +18,9 @@ const OnboardingScreen = lazy(() =>
 );
 const ModelStorePage = lazy(() =>
 	import("@/pages/ModelStorePage").then((m) => ({ default: m.ModelStorePage })),
+);
+const AddModelPage = lazy(() =>
+	import("@/pages/AddModelPage").then((m) => ({ default: m.AddModelPage })),
 );
 const ModelDetailPage = lazy(() =>
 	import("@/pages/ModelDetailPage").then((m) => ({ default: m.ModelDetailPage })),
@@ -60,6 +64,9 @@ function ChatRoute() {
 
 function App() {
 	return (
+		<>
+		{/* Outside the error boundary: the window must stay movable and closable. */}
+		<TitleBar />
 		<ErrorBoundary>
 		<ThemeProvider theme={theme}>
 			<GlobalStyles />
@@ -77,6 +84,7 @@ function App() {
 								<Route path="/onboarding" element={<OnboardingScreen />} />
 								<Route path="/store" element={<ModelStorePage />} />
 								<Route path="/store/model" element={<ModelDetailPage />} />
+								<Route path="/store/add" element={<AddModelPage />} />
 								<Route path="/downloading" element={<DownloadingPage />} />
 								<Route path="/models" element={<MyModelsPage />} />
 								<Route path="/chat" element={<ChatRoute />} />
@@ -100,6 +108,7 @@ function App() {
 			</AppProvider>
 		</ThemeProvider>
 		</ErrorBoundary>
+		</>
 	);
 }
 

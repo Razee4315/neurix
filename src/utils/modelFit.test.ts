@@ -37,6 +37,8 @@ const catalog = [
 	model("smart", { min_ram_gb: 8, quality: 5, speed: 2, size_bytes: 2_700_000_000 }),
 	model("huge", { min_ram_gb: 12, quality: 5, speed: 1, size_bytes: 5_000_000_000 }),
 	model("old", { min_ram_gb: 2, quality: 5, speed: 5, legacy: true }),
+	model("tuned", { min_ram_gb: 2, quality: 5, speed: 5, tag: "Specialist" }),
+	model("added", { min_ram_gb: 2, quality: 5, speed: 5, tag: "Added" }),
 ];
 
 describe("nominalRamGb", () => {
@@ -95,6 +97,13 @@ describe("recommendModel", () => {
 		for (const gib of [2, 4, 6, 8, 12, 16, 32]) {
 			expect(pick(gib)).not.toBe("old");
 			expect(pick(gib)).not.toBe("reasoner");
+		}
+	});
+
+	it("never suggests a fine-tune or a model the user added", () => {
+		for (const gib of [null, 2, 4, 6, 8, 12, 16, 32]) {
+			expect(pick(gib)).not.toBe("tuned");
+			expect(pick(gib)).not.toBe("added");
 		}
 	});
 

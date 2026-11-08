@@ -30,7 +30,9 @@ pub struct ModelInfo {
     pub description: String,
     pub size_bytes: u64,
     pub size_label: String,
-    /// One of "Tiny", "Fast", "Balanced", "Smart" — or "Legacy".
+    /// "Tiny", "Fast", "Balanced" or "Smart" for the base models;
+    /// "Specialist" for fine-tunes of them, which the store never suggests
+    /// on its own; "Legacy" for superseded models.
     pub tag: String,
     pub hf_repo: String,
     pub hf_filename: String,
@@ -59,11 +61,11 @@ pub struct ModelInfo {
     pub sampling: SamplingDefaults,
 }
 
-const QWEN: SamplingDefaults = SamplingDefaults { top_k: 20, min_p: 0.0, repeat_penalty: 1.0 };
+pub(crate) const QWEN: SamplingDefaults = SamplingDefaults { top_k: 20, min_p: 0.0, repeat_penalty: 1.0 };
 const QWEN_TINY: SamplingDefaults = SamplingDefaults { top_k: 20, min_p: 0.0, repeat_penalty: 1.05 };
-const GEMMA: SamplingDefaults = SamplingDefaults { top_k: 64, min_p: 0.0, repeat_penalty: 1.0 };
-const LFM: SamplingDefaults = SamplingDefaults { top_k: 50, min_p: 0.15, repeat_penalty: 1.05 };
-const GENERIC: SamplingDefaults = SamplingDefaults { top_k: 40, min_p: 0.05, repeat_penalty: 1.0 };
+pub(crate) const GEMMA: SamplingDefaults = SamplingDefaults { top_k: 64, min_p: 0.0, repeat_penalty: 1.0 };
+pub(crate) const LFM: SamplingDefaults = SamplingDefaults { top_k: 50, min_p: 0.15, repeat_penalty: 1.05 };
+pub(crate) const GENERIC: SamplingDefaults = SamplingDefaults { top_k: 40, min_p: 0.05, repeat_penalty: 1.0 };
 const GENERIC_TINY: SamplingDefaults = SamplingDefaults { top_k: 40, min_p: 0.05, repeat_penalty: 1.05 };
 
 fn strings(items: &[&str]) -> Vec<String> {
@@ -72,6 +74,7 @@ fn strings(items: &[&str]) -> Vec<String> {
 
 pub fn get_catalog() -> Vec<ModelInfo> {
     let mut models = current();
+    models.extend(specialist());
     models.extend(legacy());
     models
 }
@@ -243,6 +246,197 @@ fn current() -> Vec<ModelInfo> {
     ]
 }
 
+/// Community and vendor fine-tunes of the base models, each trained for one
+/// kind of work.
+fn specialist() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            id: "lfm-2.5-1.2b-thinking".into(),
+            name: "LFM 2.5 1.2B Thinking".into(),
+            description: "Liquid AI's own reasoning version of LFM 2.5 1.2B. It always thinks a question through before it answers, which makes it the smallest careful model in the store.".into(),
+            size_bytes: 843_358_848,
+            size_label: "840 MB".into(),
+            tag: "Specialist".into(),
+            hf_repo: "LiquidAI/LFM2.5-1.2B-Thinking-GGUF".into(),
+            hf_filename: "LFM2.5-1.2B-Thinking-Q5_K_M.gguf".into(),
+            sha256: Some("babe5939c947665fd57d02357661329990e9b9f7b8b3015d1c40e8621602467d".into()),
+            company: "Liquid AI".into(),
+            parameters: "1.2B".into(),
+            quantization: "Q5_K_M (5-bit)".into(),
+            best_for: strings(&["Step-by-step reasoning", "Maths", "Small devices"]),
+            context_length: 8192,
+            min_ram_gb: 3,
+            quality: 3,
+            speed: 4,
+            reasoning: Reasoning::Always,
+            released: "2026-01".into(),
+            legacy: false,
+            sampling: LFM,
+        },
+        ModelInfo {
+            id: "lfm-2.5-1.2b-function-calling".into(),
+            name: "LFM 2.5 1.2B Function Calling".into(),
+            description: "LFM 2.5 1.2B tuned by NovachronoAI to call tools and answer in structured JSON. A community fine-tune, best for automations rather than open conversation.".into(),
+            size_bytes: 843_354_688,
+            size_label: "840 MB".into(),
+            tag: "Specialist".into(),
+            hf_repo: "NovachronoAI/LFM2.5-1.2B-Nova-Function-Calling-GGUF".into(),
+            hf_filename: "LFM2.5-1.2B-Nova-Function-Calling.Q5_K_M.gguf".into(),
+            sha256: Some("027bf0a0b22267843e5b2142e890a3f8367244b9a9a0a0f3f0f8c096c06c14cd".into()),
+            company: "NovachronoAI".into(),
+            parameters: "1.2B".into(),
+            quantization: "Q5_K_M (5-bit)".into(),
+            best_for: strings(&["Tool calls", "Structured output", "Automations"]),
+            context_length: 8192,
+            min_ram_gb: 3,
+            quality: 2,
+            speed: 5,
+            reasoning: Reasoning::None,
+            released: "2026-01".into(),
+            legacy: false,
+            sampling: LFM,
+        },
+        ModelInfo {
+            id: "lfm-2.5-1.2b-jp".into(),
+            name: "LFM 2.5 1.2B Japanese".into(),
+            description: "Liquid AI's Japanese edition of LFM 2.5 1.2B, trained further on Japanese text. Pick it when you mostly chat or write in Japanese.".into(),
+            size_bytes: 843_354_400,
+            size_label: "840 MB".into(),
+            tag: "Specialist".into(),
+            hf_repo: "LiquidAI/LFM2.5-1.2B-JP-202606-GGUF".into(),
+            hf_filename: "LFM2.5-1.2B-JP-202606-Q5_K_M.gguf".into(),
+            sha256: Some("8f7b42aafe57c51e1f6453b6488a801e9fe255558f4a91ac3f823c105b00decf".into()),
+            company: "Liquid AI".into(),
+            parameters: "1.2B".into(),
+            quantization: "Q5_K_M (5-bit)".into(),
+            best_for: strings(&["Japanese", "Translation", "Fast replies"]),
+            context_length: 8192,
+            min_ram_gb: 3,
+            quality: 2,
+            speed: 5,
+            reasoning: Reasoning::None,
+            released: "2026-06".into(),
+            legacy: false,
+            sampling: LFM,
+        },
+        ModelInfo {
+            id: "qwen-3.5-2b-artemis".into(),
+            name: "Qwen 3.5 2B Artemis".into(),
+            description: "Qwen 3.5 2B rebuilt by TurinTech to use about half the memory while getting more tool calls right than a standard build. A strong pick for maths and precise instructions.".into(),
+            size_bytes: 1_394_786_208,
+            size_label: "1.4 GB".into(),
+            tag: "Specialist".into(),
+            hf_repo: "turintech/Qwen3.5-2B-Artemis-GGUF".into(),
+            hf_filename: "Qwen3.5-2B-Artemis-Q5_K_M.gguf".into(),
+            sha256: Some("00643c030243fd097ea7e3b3877f06c740562b4ed066964b2cd6d13c23c9820d".into()),
+            company: "TurinTech".into(),
+            parameters: "2B".into(),
+            quantization: "Q5_K_M (5-bit)".into(),
+            best_for: strings(&["Tool calls", "Maths", "Following instructions"]),
+            context_length: 8192,
+            min_ram_gb: 4,
+            quality: 3,
+            speed: 4,
+            reasoning: Reasoning::Optional,
+            released: "2026-10".into(),
+            legacy: false,
+            sampling: QWEN,
+        },
+        ModelInfo {
+            id: "qwen-3.5-2b-cybersec".into(),
+            name: "Qwen 3.5 2B CyberSec".into(),
+            description: "Qwen 3.5 2B tuned on a cybersecurity instruction dataset, for questions about threats, hardening and incident response. A small community project with no published benchmarks.".into(),
+            size_bytes: 1_312_164_576,
+            size_label: "1.3 GB".into(),
+            tag: "Specialist".into(),
+            hf_repo: "reaperdoesntknow/Qwen3.5-2B-CyberSec-GGUF".into(),
+            hf_filename: "Qwen3.5-2B.Q4_K_M.gguf".into(),
+            sha256: Some("35cb3a5a72ef06911a391dfb9924ab7b009c2e69718f2a92974b0c61e468974d".into()),
+            company: "reaperdoesntknow".into(),
+            parameters: "2B".into(),
+            quantization: "Q4_K_M (4-bit)".into(),
+            best_for: strings(&["Security questions", "Hardening advice", "Incident notes"]),
+            context_length: 8192,
+            min_ram_gb: 4,
+            quality: 2,
+            speed: 4,
+            reasoning: Reasoning::Optional,
+            released: "2026-08".into(),
+            legacy: false,
+            sampling: QWEN,
+        },
+        ModelInfo {
+            id: "qwen-3.5-4b-3d-coder".into(),
+            name: "Qwen 3.5 4B 3D Coder".into(),
+            description: "Qwen 3.5 4B tuned by CCORE for general coding, and especially for building interactive 3D scenes with Three.js. The author calls it an early preview that is still in training.".into(),
+            size_bytes: 2_708_804_096,
+            size_label: "2.7 GB".into(),
+            tag: "Specialist".into(),
+            hf_repo: "ccore/Qwen3.5-4B-3D-Coder".into(),
+            hf_filename: "Qwen3.5-4B-3D-Coder-Q4_K_M.gguf".into(),
+            sha256: Some("32c37c83d3ca055d30aefa679f1a1670d3e2eb889ee7cc805792d53f219cfae8".into()),
+            company: "CCORE".into(),
+            parameters: "4B".into(),
+            quantization: "Q4_K_M (4-bit)".into(),
+            best_for: strings(&["Code", "3D scenes", "Three.js"]),
+            context_length: 8192,
+            min_ram_gb: 8,
+            quality: 4,
+            speed: 2,
+            reasoning: Reasoning::Optional,
+            released: "2026-10".into(),
+            legacy: false,
+            sampling: QWEN,
+        },
+        ModelInfo {
+            id: "qwen-3.5-4b-reasoning-distill".into(),
+            name: "Qwen 3.5 4B Reasoning Distill".into(),
+            description: "Qwen 3.5 4B trained by Jackrong on reasoning written by a much larger model. It always thinks before it answers, in a longer and more structured way than the original.".into(),
+            size_bytes: 2_707_510_080,
+            size_label: "2.7 GB".into(),
+            tag: "Specialist".into(),
+            hf_repo: "Jackrong/Qwen3.5-4B-Claude-4.6-Opus-Reasoning-Distilled-GGUF".into(),
+            hf_filename: "Qwen3.5-4B.Q4_K_M.gguf".into(),
+            sha256: Some("e1a4a9886699fecb153747ae97aeb413a7e6bd69da80037aa66cef9a3c656d85".into()),
+            company: "Jackrong".into(),
+            parameters: "4B".into(),
+            quantization: "Q4_K_M (4-bit)".into(),
+            best_for: strings(&["Step-by-step reasoning", "Hard problems", "Planning"]),
+            context_length: 8192,
+            min_ram_gb: 8,
+            quality: 5,
+            speed: 1,
+            reasoning: Reasoning::Always,
+            released: "2026-03".into(),
+            legacy: false,
+            sampling: QWEN,
+        },
+        ModelInfo {
+            id: "gemma-4-e2b-security".into(),
+            name: "Gemma 4 E2B Security".into(),
+            description: "Gemma 4 E2B tuned by entrick as an assistant for authorised red-team, blue-team and SOC work. A small community project trained on a few hundred examples.".into(),
+            size_bytes: 3_427_880_384,
+            size_label: "3.4 GB".into(),
+            tag: "Specialist".into(),
+            hf_repo: "entrick/Security-SLM-Gemma-4-E2B-it-GGUF".into(),
+            hf_filename: "security-gemma-4-e2b-it.Q4_K_M.gguf".into(),
+            sha256: Some("9046894db49c38390088d151dd73397ce1a948480862b3fb8fcbb1b9e977ee5e".into()),
+            company: "entrick".into(),
+            parameters: "2B effective".into(),
+            quantization: "Q4_K_M (4-bit)".into(),
+            best_for: strings(&["Security work", "SOC triage", "Explanations"]),
+            context_length: 8192,
+            min_ram_gb: 8,
+            quality: 3,
+            speed: 3,
+            reasoning: Reasoning::None,
+            released: "2026-05".into(),
+            legacy: false,
+            sampling: GEMMA,
+        },
+    ]
+}
+
 /// A model from an earlier catalog. Kept so that copies people have already
 /// downloaded keep working after an update.
 #[allow(clippy::too_many_arguments)]
@@ -313,6 +507,9 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
+    /// Must match the filters in `src/pages/ModelStorePage.tsx`.
+    const STORE_TAGS: &[&str] = &["Tiny", "Fast", "Balanced", "Smart", "Specialist"];
+
     #[test]
     fn ids_are_unique_and_path_safe() {
         let catalog = get_catalog();
@@ -337,7 +534,15 @@ mod tests {
             assert!((1..=5).contains(&model.speed), "{}", model.id);
             assert!(model.hf_filename.ends_with(".gguf"), "{}", model.id);
             assert!(model.size_bytes > 100_000_000, "{}", model.id);
+            assert!(STORE_TAGS.contains(&model.tag.as_str()), "{} has tag {}", model.id, model.tag);
         }
+    }
+
+    #[test]
+    fn every_file_is_listed_once() {
+        let catalog = get_catalog();
+        let files: HashSet<_> = catalog.iter().map(|m| (&m.hf_repo, &m.hf_filename)).collect();
+        assert_eq!(files.len(), catalog.len());
     }
 
     #[test]

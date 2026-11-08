@@ -15,7 +15,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 
-const FILTERS = ["All", "Tiny", "Fast", "Balanced", "Smart"];
+// Matches the tags in src-tauri/src/models/catalog.rs.
+const FILTERS = ["All", "Tiny", "Fast", "Balanced", "Smart", "Specialist"];
 
 /* ── Styles ── */
 
@@ -428,6 +429,65 @@ const Footnote = styled.p`
   text-align: center;
 `;
 
+/* The way to models the store doesn't list: a link from Hugging Face. */
+const AddCard = styled.button`
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border-radius: ${tokens.borderRadius.lg};
+  border: 1px dashed ${tokens.colors.outlineVariant};
+  background: transparent;
+  color: ${tokens.colors.onSurface};
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { background: ${tokens.colors.surfaceContainerLow}; }
+`;
+
+const AddIcon = styled.span`
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: ${tokens.borderRadius.md};
+  background: ${alpha(tokens.colors.primary, "18")};
+  color: ${tokens.colors.primary};
+`;
+
+const AddText = styled.span`
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+
+  strong { font-weight: ${tokens.typography.fontWeight.semibold}; }
+  span {
+    font-size: ${tokens.typography.fontSize.sm};
+    color: ${tokens.colors.onSurfaceVariant};
+    line-height: ${tokens.typography.lineHeight.relaxed};
+  }
+`;
+
+function AddFromLink({ onClick }: { onClick: () => void }) {
+	return (
+		<AddCard type="button" onClick={onClick}>
+			<AddIcon>
+				<Icon name="link" size={20} />
+			</AddIcon>
+			<AddText>
+				<strong>Add a model from Hugging Face</strong>
+				<span>Paste a link to a GGUF chat model and Neurix checks it will run here.</span>
+			</AddText>
+			<Icon name="chevron_right" size={18} color={tokens.colors.outline} />
+		</AddCard>
+	);
+}
+
 /* ── Component ── */
 
 export function ModelStorePage() {
@@ -479,9 +539,10 @@ export function ModelStorePage() {
 	const installed = downloadedIds ?? new Set<string>();
 
 	// Superseded models stay out of the store unless the user already has
-	// one, in which case its page should still be reachable.
+	// one, in which case its page should still be reachable. Models the user
+	// added live in My Models, not here.
 	const offered = useMemo(
-		() => catalog.filter((m) => !m.legacy || downloadedIds?.has(m.id)),
+		() => catalog.filter((m) => m.tag !== "Added" && (!m.legacy || downloadedIds?.has(m.id))),
 		[catalog, downloadedIds],
 	);
 
@@ -629,11 +690,14 @@ export function ModelStorePage() {
 						))}
 					</Cards>
 				) : filtered.length === 0 ? (
-					<EmptyState
-						art="search"
-						message="No models match"
-						subtitle="Try a different search or filter."
-					/>
+					<>
+						<EmptyState
+							art="search"
+							message="No models match"
+							subtitle="Try a different search or filter, or add a model from Hugging Face."
+						/>
+						<AddFromLink onClick={() => navigate("/store/add")} />
+					</>
 				) : (
 					<>
 						<Cards>
@@ -680,6 +744,7 @@ export function ModelStorePage() {
 							Quality and speed compare the models in this list with each other. Use the speed test
 							in My Models to measure one on this device.
 						</Footnote>
+						<AddFromLink onClick={() => navigate("/store/add")} />
 					</>
 				)}
 			</Page>

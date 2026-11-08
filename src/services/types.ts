@@ -1,3 +1,29 @@
+/** One file of a Hugging Face model, as "Add from Hugging Face" lists it. */
+export interface HubFile {
+	filename: string;
+	size_bytes: number;
+	size_label: string;
+	quantization: string;
+	min_ram_gb: number;
+	fit: "good" | "tight" | "too_big" | "unknown";
+	/** Why this file can't be added, when it can't. */
+	problem: string | null;
+}
+
+/** A Hugging Face model a pasted link points at. */
+export interface HubModel {
+	repo: string;
+	author: string;
+	name: string;
+	architecture: string | null;
+	parameters: string | null;
+	license: string | null;
+	has_chat_template: boolean;
+	files: HubFile[];
+	/** The file to select first. */
+	selected: string | null;
+}
+
 /** Whether a model reasons ("thinks") before it answers. */
 export type Reasoning = "none" | "optional" | "always";
 
@@ -7,7 +33,11 @@ export interface ModelInfo {
 	description: string;
 	size_bytes: number;
 	size_label: string;
-	/** "Tiny" | "Fast" | "Balanced" | "Smart", or "Legacy" for superseded models. */
+	/**
+	 * "Tiny" | "Fast" | "Balanced" | "Smart" for base models, "Specialist"
+	 * for fine-tunes of them, "Added" for models the user added from
+	 * Hugging Face, or "Legacy" for superseded models.
+	 */
 	tag: string;
 	hf_repo: string;
 	hf_filename: string;
