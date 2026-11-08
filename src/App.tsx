@@ -18,6 +18,9 @@ const OnboardingScreen = lazy(() =>
 const ModelStorePage = lazy(() =>
 	import("@/pages/ModelStorePage").then((m) => ({ default: m.ModelStorePage })),
 );
+const AddModelPage = lazy(() =>
+	import("@/pages/AddModelPage").then((m) => ({ default: m.AddModelPage })),
+);
 const ModelDetailPage = lazy(() =>
 	import("@/pages/ModelDetailPage").then((m) => ({ default: m.ModelDetailPage })),
 );
@@ -77,6 +80,7 @@ function App() {
 								<Route path="/onboarding" element={<OnboardingScreen />} />
 								<Route path="/store" element={<ModelStorePage />} />
 								<Route path="/store/model" element={<ModelDetailPage />} />
+								<Route path="/store/add" element={<AddModelPage />} />
 								<Route path="/downloading" element={<DownloadingPage />} />
 								<Route path="/models" element={<MyModelsPage />} />
 								<Route path="/chat" element={<ChatRoute />} />

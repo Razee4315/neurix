@@ -761,7 +761,11 @@ export function MyModelsPage() {
 									</CardTop>
 									<CardMeta>
 										<span>{m.size_label}</span>
-										<span>{m.tag === "Legacy" ? "Earlier model · newer ones answer better" : m.tag}</span>
+										<span>{m.tag === "Legacy"
+												? "Earlier model · newer ones answer better"
+												: m.tag === "Added"
+													? "Added from Hugging Face"
+													: m.tag}</span>
 									</CardMeta>
 									{isActive && speed && (
 										<CardMeta role="status">

@@ -231,6 +231,7 @@ export function ModelDetailPage() {
 	const inProgress = !!dl && dl.status !== "finished";
 	const fit = modelFit(model, deviceMemory);
 	const noSpace = freeBytes !== null && freeBytes < model.size_bytes;
+	const added = model.tag === "Added";
 
 	return (
 		<AppLayout title={model.name} back="/store">
@@ -244,9 +245,12 @@ export function ModelDetailPage() {
 
 				<Description>{model.description}</Description>
 
-				<Meters>
-					<ModelMeters quality={model.quality} speed={model.speed} />
-				</Meters>
+				{/* Ratings compare catalog models; an added model has none. */}
+				{!added && (
+					<Meters>
+						<ModelMeters quality={model.quality} speed={model.speed} />
+					</Meters>
+				)}
 
 				{fit === "good" && !isDownloaded && (
 					<Notice $tone="info" role="note">
@@ -284,7 +288,7 @@ export function ModelDetailPage() {
 				<SectionLabel>Specifications</SectionLabel>
 				<Section>
 					<InfoRow>
-						<InfoLabel>Company</InfoLabel>
+						<InfoLabel>{added ? "Uploaded by" : "Company"}</InfoLabel>
 						<InfoValue>{model.company}</InfoValue>
 					</InfoRow>
 					<InfoRow>
@@ -307,10 +311,12 @@ export function ModelDetailPage() {
 						<InfoLabel>Context window</InfoLabel>
 						<InfoValue>up to {model.context_length.toLocaleString()} tokens</InfoValue>
 					</InfoRow>
-					<InfoRow>
-						<InfoLabel>Released</InfoLabel>
-						<InfoValue>{releaseLabel(model.released)}</InfoValue>
-					</InfoRow>
+					{model.released && (
+						<InfoRow>
+							<InfoLabel>Released</InfoLabel>
+							<InfoValue>{releaseLabel(model.released)}</InfoValue>
+						</InfoRow>
+					)}
 					<InfoRow>
 						<InfoLabel>Download size</InfoLabel>
 						<InfoValue>{model.size_label}</InfoValue>

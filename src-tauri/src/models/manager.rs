@@ -3,7 +3,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-use super::catalog;
+use super::added;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadedModel {
@@ -15,12 +15,11 @@ pub struct DownloadedModel {
 }
 
 pub async fn get_downloaded_models(models_dir: &Path) -> Result<Vec<DownloadedModel>, String> {
-    let catalog = catalog::get_catalog();
-
     if !models_dir.exists() {
         return Ok(vec![]);
     }
 
+    let catalog = added::all_models(models_dir);
     let mut result = Vec::new();
     let mut entries = fs::read_dir(models_dir).await.map_err(|e| e.to_string())?;
 
@@ -57,10 +56,11 @@ pub async fn get_downloaded_models(models_dir: &Path) -> Result<Vec<DownloadedMo
     Ok(result)
 }
 
-/// Reject ids that are not catalog entries. The id is joined onto the models
-/// directory, so an unchecked value such as `..` would resolve outside it.
-pub fn require_catalog_id(model_id: &str) -> Result<(), String> {
-    if catalog::get_catalog().iter().any(|m| m.id == model_id) {
+/// Reject ids that are neither catalog entries nor added models. The id is
+/// joined onto the models directory, so an unchecked value such as `..`
+/// would resolve outside it.
+pub fn require_known_id(models_dir: &Path, model_id: &str) -> Result<(), String> {
+    if added::all_models(models_dir).iter().any(|m| m.id == model_id) {
         Ok(())
     } else {
         Err(format!("Unknown model: {}", model_id))
@@ -83,7 +83,7 @@ pub async fn get_partial_downloads(models_dir: &Path) -> Result<Vec<PartialDownl
     if !models_dir.exists() {
         return Ok(result);
     }
-    for info in catalog::get_catalog() {
+    for info in added::all_models(models_dir) {
         let dir = models_dir.join(&info.id);
         let part = dir.join("model.gguf.part");
         if !part.exists() {
@@ -101,11 +101,13 @@ pub async fn get_partial_downloads(models_dir: &Path) -> Result<Vec<PartialDownl
     Ok(result)
 }
 
+/// Delete a model's files. An added model is forgotten as well, so it
+/// leaves no trace once deleted or once its download is cancelled.
 pub async fn delete_model(models_dir: &Path, model_id: &str) -> Result<(), String> {
-    require_catalog_id(model_id)?;
+    require_known_id(models_dir, model_id)?;
     let model_dir = models_dir.join(model_id);
     if model_dir.exists() {
         fs::remove_dir_all(&model_dir).await.map_err(|e| e.to_string())?;
     }
-    Ok(())
+    added::remove(models_dir, model_id)
 }

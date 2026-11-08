@@ -48,6 +48,7 @@ use commands::{
         clear_all_conversations, delete_conversation, get_conversations, load_conversation,
         save_conversation, search_conversations,
     },
+    hub_cmds::{add_hf_model, inspect_hf_link},
     model_cmds::{
         cancel_download, delete_model, download_model, get_active_downloads,
         get_downloaded_models, get_model_catalog, get_partial_downloads, load_model,
@@ -97,6 +98,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             get_model_catalog,
+            inspect_hf_link,
+            add_hf_model,
             download_model,
             cancel_download,
             get_downloaded_models,
