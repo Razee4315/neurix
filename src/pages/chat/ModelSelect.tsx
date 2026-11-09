@@ -133,10 +133,10 @@ interface Props {
 export function ModelSelect({ disabled = false }: Props) {
 	const navigate = useNavigate();
 	const { showToast } = useToast();
-	const { activeModel, activeModelId, loadModel } = useAppContext();
+	// Any load, started here or anywhere else, makes the picker wait.
+	const { activeModel, activeModelId, loadingModelId, loadModel } = useAppContext();
 	const [open, setOpen] = useState(false);
 	const [models, setModels] = useState<DownloadedModel[] | null>(null);
-	const [loadingId, setLoadingId] = useState<string | null>(null);
 	const wrapRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
@@ -162,17 +162,14 @@ export function ModelSelect({ disabled = false }: Props) {
 	const choose = async (model: DownloadedModel) => {
 		setOpen(false);
 		if (model.id === activeModelId) return;
-		setLoadingId(model.id);
 		try {
 			await loadModel(model.id);
 		} catch (err) {
 			showToast(err instanceof Error ? err.message : "Couldn't load that model", "error");
-		} finally {
-			setLoadingId(null);
 		}
 	};
 
-	const label = loadingId
+	const label = loadingModelId
 		? "Loading…"
 		: (activeModel ?? "Choose a model");
 
@@ -181,7 +178,7 @@ export function ModelSelect({ disabled = false }: Props) {
 			<Trigger
 				type="button"
 				$open={open}
-				disabled={disabled || loadingId !== null}
+				disabled={disabled || loadingModelId !== null}
 				onClick={() => setOpen((v) => !v)}
 				aria-haspopup="listbox"
 				aria-expanded={open}

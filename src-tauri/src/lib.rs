@@ -10,6 +10,7 @@ mod documents;
 mod folder_search;
 mod imap_lite;
 mod inference;
+mod model_slot;
 mod models;
 mod settings;
 mod state;
@@ -58,7 +59,7 @@ use commands::{
         get_storage_info, patch_settings, reset_settings,
     },
 };
-use state::SharedState;
+use state::{ModelOps, SharedState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -88,6 +89,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(app_state)
+        .manage(ModelOps::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())

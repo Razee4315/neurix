@@ -4,6 +4,7 @@ import { tokens } from "@/theme/tokens";
 import { useState } from "react";
 import styled from "styled-components";
 import type { SlashCommand } from "./composerKeys";
+import type { QueuedMessage } from "./turn";
 
 /* The small pieces around the message box: the slash menu, the queue of
    messages waiting for the model, and the ring showing how full its memory is. */
@@ -137,10 +138,7 @@ const ResumeBtn = styled.button`
   &:hover { background: ${tokens.colors.surfaceContainerHighest}; }
 `;
 
-export interface QueuedMessage {
-	id: string;
-	text: string;
-}
+export type { QueuedMessage };
 
 interface QueueListProps {
 	items: QueuedMessage[];

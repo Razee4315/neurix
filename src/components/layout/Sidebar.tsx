@@ -5,8 +5,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
 import { historyService } from "@/services";
-import { CHAT_STARTED, HISTORY_CHANGED } from "@/services/historyService";
-import type { ConversationMeta } from "@/services/types";
+import { CHAT_SAVE_FAILED, CHAT_STARTED, HISTORY_CHANGED } from "@/services/historyService";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { togglePin, usePins } from "@/utils/pins";
@@ -16,6 +15,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
+import { type RecentEntry, addPending, dropPending, mergeSaved } from "./recents";
 
 /**
  * The desktop sidebar: brand, new chat, the main sections, recent chats and
@@ -320,7 +320,7 @@ const FootText = styled.div`
 `;
 
 interface RecentItemProps {
-	entry: ConversationMeta & { pending?: boolean };
+	entry: RecentEntry;
 	active: boolean;
 	pinned: boolean;
 	onOpen: () => void;
@@ -494,7 +494,7 @@ export function Sidebar() {
 	const total = running.reduce((sum, d) => sum + d.totalBytes, 0);
 	const done = running.reduce((sum, d) => sum + d.downloadedBytes, 0);
 	const percent = total > 0 ? Math.floor((done / total) * 100) : 0;
-	const [recents, setRecents] = useState<(ConversationMeta & { pending?: boolean })[] | null>(null);
+	const [recents, setRecents] = useState<RecentEntry[] | null>(null);
 	const [menuOpen, setMenuOpen] = useState(false);
 	const footRef = useRef<HTMLDivElement>(null);
 	const openId = (location.state as { conversationId?: string } | null)?.conversationId;
@@ -510,14 +510,8 @@ export function Sidebar() {
 		const load = () =>
 			historyService
 				.getConversations()
-				.then((list) =>
-					alive &&
-					setRecents((prev) => {
-						// Keep a just-started chat on top until its first save lands.
-						const pending = (prev ?? []).filter((p) => p.pending && !list.some((c) => c.id === p.id));
-						return [...pending, ...list];
-					}),
-				)
+				// Keeps a just-started chat on top until its first save lands.
+				.then((list) => alive && setRecents((prev) => mergeSaved(prev, list)))
 				.catch(() => alive && setRecents((prev) => prev ?? []));
 		load();
 		window.addEventListener(HISTORY_CHANGED, load);
@@ -531,13 +525,18 @@ export function Sidebar() {
 		const onStart = (e: Event) => {
 			const { id, title } = (e as CustomEvent<{ id: string; title: string }>).detail;
 			setLiveId(id);
-			setRecents((prev) => [
-				{ id, title, model_name: "", updated_at: new Date().toISOString(), pending: true },
-				...(prev ?? []).filter((c) => c.id !== id),
-			]);
+			setRecents((prev) => addPending(prev, id, title));
+		};
+		const onSaveFailed = (e: Event) => {
+			const { id } = (e as CustomEvent<{ id: string }>).detail;
+			setRecents((prev) => dropPending(prev, id));
 		};
 		window.addEventListener(CHAT_STARTED, onStart);
-		return () => window.removeEventListener(CHAT_STARTED, onStart);
+		window.addEventListener(CHAT_SAVE_FAILED, onSaveFailed);
+		return () => {
+			window.removeEventListener(CHAT_STARTED, onStart);
+			window.removeEventListener(CHAT_SAVE_FAILED, onSaveFailed);
+		};
 	}, []);
 
 	useEffect(() => {
@@ -573,7 +572,7 @@ export function Sidebar() {
 
 	const pinned = (recents ?? []).filter((c) => pins.includes(c.id));
 	const unpinned = (recents ?? []).filter((c) => !pins.includes(c.id));
-	const item = (entry: ConversationMeta & { pending?: boolean }) => (
+	const item = (entry: RecentEntry) => (
 		<RecentItem
 			key={entry.id}
 			entry={entry}

@@ -4,16 +4,15 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
-import { chatService } from "@/services";
-import type { Character, InferenceEvent } from "@/services/types";
+import type { Character } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { ACCENT_PALETTE, DEFAULT_ACCENT, accentOf, isAccentHex } from "@/utils/characterAccent";
 import { LIMITS } from "@/utils/characterLimits";
-import { cleanResponse } from "@/utils/cleanResponse";
 import { shortId } from "@/utils/format";
 import { vibrate } from "@/utils/platform";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTestRun } from "@/utils/useTestRun";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -572,38 +571,12 @@ export function CharacterEditPage() {
 
 	/* ── Try it (live test) ── */
 
-	const [testing, setTesting] = useState(false);
-	const [testOutput, setTestOutput] = useState("");
-	const [testError, setTestError] = useState<string | null>(null);
-	const testingRef = useRef(false);
-	testingRef.current = testing;
+	const test = useTestRun();
+	const testing = test.running;
+	const testOutput = test.text;
+	const testError = test.error;
 
-	// Stop an in-flight test if the user leaves mid-stream.
-	useEffect(() => {
-		return () => {
-			if (testingRef.current) chatService.stopInference().catch(() => {});
-		};
-	}, []);
-
-	const onTestEvent = useCallback((event: InferenceEvent) => {
-		switch (event.event) {
-			case "TokenGenerated":
-				setTestOutput((prev) => prev + event.data.token);
-				break;
-			case "GenerationComplete":
-				setTesting(false);
-				setTestOutput((prev) => cleanResponse(prev) || prev);
-				break;
-			case "Error":
-				setTesting(false);
-				setTestError(event.data.message);
-				setTestOutput("");
-				break;
-			// ContextTrimmed cannot fire here — no history is sent.
-		}
-	}, []);
-
-	const handleTry = async () => {
+	const handleTry = () => {
 		if (testing) return;
 		if (!activeModelId) {
 			showToast("Load a model from the Models tab to test this character.", "info");
@@ -615,31 +588,17 @@ export function CharacterEditPage() {
 			return;
 		}
 		vibrate(8);
-		setTestError(null);
-		setTestOutput("");
-		setTesting(true);
-		try {
-			await chatService.runInference(
-				{
-					prompt: TEST_PROMPT,
-					systemPrompt: instructions,
-					history: [],
-					temperature: draft.temperature,
-					topP: draft.topP,
-					maxTokens: draft.maxTokens,
-				},
-				onTestEvent,
-			);
-		} catch (err) {
-			setTesting(false);
-			setTestError(err instanceof Error ? err.message : String(err));
-		}
+		void test.start({
+			prompt: TEST_PROMPT,
+			systemPrompt: instructions,
+			history: [],
+			temperature: draft.temperature,
+			topP: draft.topP,
+			maxTokens: draft.maxTokens,
+		});
 	};
 
-	const handleStopTest = () => {
-		chatService.stopInference().catch(() => {});
-		setTesting(false);
-	};
+	const handleStopTest = test.stop;
 
 	const appendToPrompt = (sentence: string) => {
 		setDraft((d) => {

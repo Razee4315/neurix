@@ -2,6 +2,7 @@ import { tokens } from "@/theme/tokens";
 import { useFocusTrap } from "@/utils/useFocusTrap";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import styled, { keyframes } from "styled-components";
+import { type DialogState, type OpenDialog, answerDialog, openDialog } from "./dialogState";
 
 /* ── Styles ── */
 
@@ -120,7 +121,10 @@ const ConfirmContext = createContext<{ showConfirm: ShowConfirm; showAlert: Show
 });
 
 export function ConfirmProvider({ children }: { children: React.ReactNode }) {
-	const [dialog, setDialog] = useState<(DialogOptions & { resolve: (v: boolean) => void }) | null>(null);
+	const [open, setOpen] = useState<DialogState<DialogOptions>>(null);
+	// The open dialog, read synchronously so a second question can settle it.
+	const openRef = useRef<DialogState<DialogOptions>>(null);
+	const dialog = open?.options ?? null;
 	const dialogRef = useRef<HTMLDivElement | null>(null);
 	const confirmBtnRef = useRef<HTMLButtonElement | null>(null);
 	const cancelBtnRef = useRef<HTMLButtonElement | null>(null);
@@ -128,38 +132,34 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
 	// Keeps Tab inside the dialog and restores focus to the trigger on close.
 	useFocusTrap(dialogRef, dialog !== null);
 
-	const showConfirm = useCallback((options: DialogOptions): Promise<boolean> => {
-		return new Promise((resolve) => {
-			setDialog({ ...options, resolve });
-		});
+	const show = useCallback((next: OpenDialog<DialogOptions>) => {
+		openRef.current = openDialog(openRef.current, next);
+		setOpen(openRef.current);
 	}, []);
 
-	const showAlert = useCallback((title: string, message: string): Promise<void> => {
-		return new Promise((resolve) => {
-			setDialog({
-				title,
-				message,
-				confirmLabel: "OK",
-				cancelLabel: undefined,
-				danger: false,
-				resolve: () => resolve(),
-			});
-		});
+	const showConfirm = useCallback(
+		(options: DialogOptions): Promise<boolean> => new Promise((resolve) => show({ options, resolve })),
+		[show],
+	);
+
+	const showAlert = useCallback(
+		(title: string, message: string): Promise<void> =>
+			new Promise((resolve) =>
+				show({
+					options: { title, message, confirmLabel: "OK", cancelLabel: undefined, danger: false },
+					resolve: () => resolve(),
+				}),
+			),
+		[show],
+	);
+
+	const answer = useCallback((confirmed: boolean) => {
+		openRef.current = answerDialog(openRef.current, confirmed);
+		setOpen(null);
 	}, []);
 
-	const closeDialog = useCallback(() => {
-		setDialog(null);
-	}, []);
-
-	const handleConfirm = useCallback(() => {
-		dialog?.resolve(true);
-		closeDialog();
-	}, [dialog, closeDialog]);
-
-	const handleCancel = useCallback(() => {
-		dialog?.resolve(false);
-		closeDialog();
-	}, [dialog, closeDialog]);
+	const handleConfirm = useCallback(() => answer(true), [answer]);
+	const handleCancel = useCallback(() => answer(false), [answer]);
 
 	// Start on the action that is safe to trigger by accident: Cancel for
 	// destructive prompts, the primary action otherwise.

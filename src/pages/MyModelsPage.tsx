@@ -453,7 +453,7 @@ const STATUS_LABEL = {
 
 export function MyModelsPage() {
 	const navigate = useNavigate();
-	const { activeModelId, loadModel, unloadModel, refreshActiveModel } = useAppContext();
+	const { activeModelId, loadingModelId, loadModel, unloadModel, refreshActiveModel } = useAppContext();
 	const { downloads, installedVersion, pauseDownload, resumeDownload, cancelDownload } = useDownloads();
 	const { showConfirm, showAlert } = useConfirm();
 	const { showToast } = useToast();
@@ -467,7 +467,6 @@ export function MyModelsPage() {
 	const pageRef = useRef<HTMLDivElement>(null);
 	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0, partial_bytes: 0 });
 	const [availableSpace, setAvailableSpace] = useState<number | null>(null);
-	const [loadingModel, setLoadingModel] = useState<DownloadedModel | null>(null);
 
 	const refresh = useCallback(async () => {
 		try {
@@ -517,15 +516,12 @@ export function MyModelsPage() {
 			navigate("/chat", { state: { freshChat: true } });
 			return;
 		}
-		setLoadingModel(model);
 		try {
 			await loadModel(model.id);
 			vibrate(15);
 			navigate("/chat", { state: { freshChat: true } });
 		} catch (err) {
 			showAlert("Couldn't load the model", err instanceof Error ? err.message : String(err));
-		} finally {
-			setLoadingModel(null);
 		}
 	};
 
@@ -584,14 +580,16 @@ export function MyModelsPage() {
 	};
 
 	const pending = Object.values(downloads).filter((d) => d.status !== "finished");
+	// Whatever started it, a load in progress covers the page: nothing here works until it ends.
+	const loadingName = loadingModelId ? (models.find((m) => m.id === loadingModelId)?.name ?? "model") : null;
 	const storageKnown = availableSpace !== null;
 	const totalSpace = storageKnown ? storage.used_bytes + availableSpace : 0;
 	const usagePercent = storageKnown && totalSpace > 0 ? (storage.used_bytes / totalSpace) * 100 : 0;
 
 	return (
 		<AppLayout title="My Models">
-			{loadingModel && (
-				<LoadingOverlay title={`Loading ${loadingModel.name}`} subtitle="This can take a few seconds…" />
+			{loadingName && (
+				<LoadingOverlay title={`Loading ${loadingName}`} subtitle="This can take a few seconds…" />
 			)}
 			<Page ref={pageRef} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
 				<PullIndicator $visible={isRefreshing}>
@@ -780,7 +778,7 @@ export function MyModelsPage() {
 											type="button"
 											$active={isActive}
 											onClick={() => handleUse(m)}
-											disabled={loadingModel !== null}
+											disabled={loadingModelId !== null}
 										>
 											{isActive ? "New chat" : "Use model"}
 										</UseBtn>

@@ -4,13 +4,11 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
-import { chatService } from "@/services";
-import type { Character, InferenceEvent, Persona } from "@/services/types";
+import type { Character, Persona } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { ACCENT_PALETTE, accentOf, isAccentHex } from "@/utils/characterAccent";
 import { LIMITS } from "@/utils/characterLimits";
-import { cleanResponse } from "@/utils/cleanResponse";
 import { shortId } from "@/utils/format";
 import {
 	FORMALITY,
@@ -27,7 +25,8 @@ import {
 	relationshipOf,
 } from "@/utils/persona";
 import { vibrate } from "@/utils/platform";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTestRun } from "@/utils/useTestRun";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -745,9 +744,10 @@ export function FriendEditPage() {
 	const [draft, setDraft] = useState<Draft>(initial);
 	const [templateId, setTemplateId] = useState<string | null>(seed ? null : FRIEND_TEMPLATES[0].id);
 	const [memoryInput, setMemoryInput] = useState("");
-	const [testing, setTesting] = useState(false);
-	const [testReply, setTestReply] = useState("");
-	const [testError, setTestError] = useState<string | null>(null);
+	const test = useTestRun();
+	const testing = test.running;
+	const testReply = test.text;
+	const testError = test.error;
 	const [testAsked, setTestAsked] = useState("");
 
 	// Characters load asynchronously: fill the form once the friend being
@@ -780,8 +780,7 @@ export function FriendEditPage() {
 			return { ...next, persona: { ...next.persona, user_name: d.persona.user_name, memories: d.persona.memories } };
 		});
 		setTestAsked("");
-		setTestReply("");
-		setTestError(null);
+		test.reset();
 	};
 
 	const toggleTrait = (id: string) => {
@@ -814,39 +813,12 @@ export function FriendEditPage() {
 
 	/* ── Say hi (test on the loaded model) ── */
 
-	const testingRef = useRef(false);
-	testingRef.current = testing;
-
-	useEffect(() => {
-		return () => {
-			if (testingRef.current) chatService.stopInference().catch(() => {});
-		};
-	}, []);
-
-	const onTestEvent = useCallback((event: InferenceEvent) => {
-		switch (event.event) {
-			case "TokenGenerated":
-				setTestReply((prev) => prev + event.data.token);
-				break;
-			case "GenerationComplete":
-				setTesting(false);
-				setTestReply((prev) => cleanResponse(prev) || prev);
-				break;
-			case "Error":
-				setTesting(false);
-				setTestError(event.data.message);
-				setTestReply("");
-				break;
-		}
-	}, []);
-
 	const name = draft.name.trim();
 	const systemPrompt = compilePersona(name, draft.tagline, p).slice(0, LIMITS.prompt);
 
-	const sayHi = async () => {
+	const sayHi = () => {
 		if (testing) {
-			chatService.stopInference().catch(() => {});
-			setTesting(false);
+			test.stop();
 			return;
 		}
 		if (!activeModelId) {
@@ -856,26 +828,15 @@ export function FriendEditPage() {
 		vibrate(8);
 		const message = TEST_MESSAGE(p.user_name.trim());
 		setTestAsked(message);
-		setTestError(null);
-		setTestReply("");
-		setTesting(true);
 		const sampling = personaSampling(p);
-		try {
-			await chatService.runInference(
-				{
-					prompt: message,
-					systemPrompt,
-					history: [],
-					temperature: sampling.temperature,
-					topP: sampling.top_p,
-					maxTokens: sampling.max_tokens,
-				},
-				onTestEvent,
-			);
-		} catch (err) {
-			setTesting(false);
-			setTestError(err instanceof Error ? err.message : String(err));
-		}
+		void test.start({
+			prompt: message,
+			systemPrompt,
+			history: [],
+			temperature: sampling.temperature,
+			topP: sampling.top_p,
+			maxTokens: sampling.max_tokens,
+		});
 	};
 
 	/* ── Save and delete ── */
@@ -1029,6 +990,8 @@ export function FriendEditPage() {
 										<Faint>{testError}</Faint>
 									) : testReply ? (
 										testReply
+									) : test.state.kind === "done" ? (
+										<Faint>No reply</Faint>
 									) : (
 										<Faint>typing…</Faint>
 									)}

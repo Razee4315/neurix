@@ -534,12 +534,11 @@ const TextLink = styled.button`
 export function CharacterPicker({ open, onClose, showModels = false }: Props) {
 	const navigate = useNavigate();
 	const { presets, customs, activeCharacter, setActiveCharacter, saveCustom, deleteCustom } = useCharacters();
-	const { activeModelId, loadModel } = useAppContext();
+	const { activeModelId, loadingModelId, loadModel } = useAppContext();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
 	const [menuFor, setMenuFor] = useState<Character | null>(null);
 	const [models, setModels] = useState<DownloadedModel[] | null>(null);
-	const [loadingModelId, setLoadingModelId] = useState<string | null>(null);
 	const sheetRef = useRef<HTMLDivElement>(null);
 	const menuRef = useRef<HTMLDivElement>(null);
 	const importRef = useRef<HTMLDivElement>(null);
@@ -607,15 +606,12 @@ export function CharacterPicker({ open, onClose, showModels = false }: Props) {
 
 	const handleSwitchModel = async (model: DownloadedModel) => {
 		if (loadingModelId || model.id === activeModelId) return;
-		setLoadingModelId(model.id);
 		try {
 			await loadModel(model.id);
 			vibrate(10);
 			showToast(`Now using ${model.name}`, "success");
 		} catch (err) {
 			showToast(err instanceof Error ? err.message : String(err), "error");
-		} finally {
-			setLoadingModelId(null);
 		}
 	};
 
