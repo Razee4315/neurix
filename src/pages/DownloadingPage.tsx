@@ -8,6 +8,7 @@ import { canDownloadInBackground } from "@/services/androidBridge";
 import type { ModelInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import { HANDOFF_DELAY_MS, handoffTarget } from "@/utils/downloadHandoff";
 import { formatBytes, formatEta, formatSpeed } from "@/utils/format";
 import { isMobile, vibrate } from "@/utils/platform";
 import { useCatalogModel } from "@/utils/useCatalogModel";
@@ -216,6 +217,18 @@ export function DownloadingPage() {
 	const dl = model ? downloads[model.id] : undefined;
 	const [opening, setOpening] = useState(false);
 	const finishedHandled = useRef(false);
+	const handoffTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const mounted = useRef(true);
+
+	// Leaving the page cancels the hand-off: it must not pull the user back
+	// from wherever they went.
+	useEffect(() => {
+		mounted.current = true;
+		return () => {
+			mounted.current = false;
+			if (handoffTimer.current) clearTimeout(handoffTimer.current);
+		};
+	}, []);
 
 	// When the download finishes: on a first install (nothing loaded yet)
 	// load the model and go straight to chat; otherwise show it in My Models
@@ -225,22 +238,25 @@ export function DownloadingPage() {
 		finishedHandled.current = true;
 		vibrate([10, 50, 10]);
 		const modelId = model.id;
-		// Not cleared on re-render on purpose: `finishedHandled` guarantees it
-		// is scheduled once, and it has to survive the state updates it causes.
-		setTimeout(async () => {
+		const target = handoffTarget(activeModelId);
+		// Not cleared when this effect re-runs on purpose: `finishedHandled`
+		// guarantees it is scheduled once, and it has to survive the state
+		// updates it causes. Only leaving the page cancels it (above).
+		handoffTimer.current = setTimeout(async () => {
+			handoffTimer.current = null;
 			removeDownload(modelId);
-			if (activeModelId) {
+			if (target === "models") {
 				navigate("/models");
 				return;
 			}
 			setOpening(true);
 			try {
 				await loadModel(modelId);
-				navigate("/chat", { state: { freshChat: true } });
+				if (mounted.current) navigate("/chat", { state: { freshChat: true } });
 			} catch {
-				navigate("/models");
+				if (mounted.current) navigate("/models");
 			}
-		}, 1200);
+		}, HANDOFF_DELAY_MS);
 	}, [dl?.status, model, activeModelId, loadModel, navigate, removeDownload]);
 
 	if (!model) {
