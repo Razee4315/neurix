@@ -26,15 +26,26 @@ const BUSY_RETRY_MS = 500;
 /** Long enough for the slowest chunk on a busy laptop. */
 const BUSY_RETRIES = 60;
 
+/** Thrown by `runInference` when its signal aborts it while it waits for the model. */
+export class InferenceAborted extends Error {
+	constructor() {
+		super("Stopped before the model started.");
+		this.name = "AbortError";
+	}
+}
+
 export async function runInference(
 	request: InferenceRequest,
 	onEvent: (event: InferenceEvent) => void,
+	/** Stops waiting for a busy model. A reply already running is stopped with `stopInference`. */
+	signal?: AbortSignal,
 ): Promise<void> {
 	const channel = new Channel<InferenceEvent>();
 	channel.onmessage = onEvent;
 	// A stopped reply finishes its current chunk first. Sending right after
 	// one, such as by leaving a chat mid-reply, only needs a short wait.
 	for (let attempt = 0; ; attempt++) {
+		if (signal?.aborted) throw new InferenceAborted();
 		try {
 			return await invoke("run_inference", {
 				...request,

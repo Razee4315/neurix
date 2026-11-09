@@ -293,13 +293,42 @@ fn summarize(raw: &[u8]) -> Option<MailSummary> {
     })
 }
 
+/// How long a connector may wait to connect, and for a whole request.
+/// Sources are read before every reply, so a dead network must end in an
+/// error, not a reply that never starts.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+/// Longest silence on an open IMAP connection (same as the phone client).
+#[cfg(desktop)]
+const IMAP_IO_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// An IMAP connection to Gmail that gives up instead of hanging: `imap::connect`
+/// sets no timeouts at all.
+#[cfg(desktop)]
+fn gmail_client() -> Result<imap::Client<native_tls::TlsStream<std::net::TcpStream>>, String> {
+    use std::net::{TcpStream, ToSocketAddrs};
+    const HOST: &str = "imap.gmail.com";
+    let tls = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
+    let addr = (HOST, 993)
+        .to_socket_addrs()
+        .map_err(|e| e.to_string())?
+        .next()
+        .ok_or_else(|| format!("{HOST} has no address"))?;
+    let tcp = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).map_err(|e| e.to_string())?;
+    tcp.set_read_timeout(Some(IMAP_IO_TIMEOUT)).map_err(|e| e.to_string())?;
+    tcp.set_write_timeout(Some(IMAP_IO_TIMEOUT)).map_err(|e| e.to_string())?;
+    let stream = tls.connect(HOST, tcp).map_err(|e| e.to_string())?;
+    let mut client = imap::Client::new(stream);
+    client.read_greeting().map_err(|e| e.to_string())?;
+    Ok(client)
+}
+
 /// The newest `limit` emails in the inbox, newest first.
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn gmail_fetch(email: String, app_password: String, limit: u32) -> Result<Vec<MailSummary>, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<MailSummary>, String> {
-        let tls = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
-        let client = imap::connect(("imap.gmail.com", 993), "imap.gmail.com", &tls)
+        let client = gmail_client()
             .map_err(|_| "Couldn't reach Gmail. Check your internet connection.".to_string())?;
         let password: String = app_password.chars().filter(|c| !c.is_whitespace()).collect();
         let mut session = client.login(&email, &password).map_err(|_| {
@@ -371,6 +400,8 @@ pub async fn github_fetch(repo: String) -> Result<GithubSnapshot, String> {
     }
     let client = reqwest::Client::builder()
         .user_agent("Neurix")
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|e| e.to_string())?;
     let get = |path: String| {

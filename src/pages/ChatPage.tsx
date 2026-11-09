@@ -6,6 +6,7 @@ import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { chatService, historyService, modelService } from "@/services";
+import { InferenceAborted } from "@/services/chatService";
 import { pickFolder } from "@/services/connectorService";
 import { notifyReplyReady } from "@/services/notificationService";
 import { saveFileAs } from "@/services/fileService";
@@ -34,12 +35,23 @@ import {
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { NeurixMark } from "@/components/ui/NeurixLogo";
-import { MemoryRing, type QueuedMessage, QueueList, SlashMenu, UserMessage, estimateTokens } from "./chat/ComposerExtras";
+import { MemoryRing, QueueList, SlashMenu, UserMessage, estimateTokens } from "./chat/ComposerExtras";
 import { FileCards } from "./chat/FileCards";
 import { FindBar } from "./chat/FindBar";
 import { Markdown } from "./chat/Markdown";
 import { ModelSelect } from "./chat/ModelSelect";
 import { type SlashCommand, matchSlashCommands, recallPrompt } from "./chat/composerKeys";
+import {
+	type ChatTurnAction,
+	type ChatTurnState,
+	type TurnRequest,
+	chatTurnReducer,
+	initialChatTurn,
+	isBusy,
+	isGenerating as isGeneratingTurn,
+	nextQueued,
+	runIdOf,
+} from "./chat/turn";
 import {
 	ComposerTools,
 	ReadingFill,
@@ -209,8 +221,6 @@ interface ReplyStats {
 	tokens: number;
 }
 
-type LoadProblem = { kind: "failed"; message: string } | { kind: "no-models" };
-
 interface RunOptions {
 	prompt: string;
 	/** Conversation up to, but not including, the prompt being answered. */
@@ -219,6 +229,8 @@ interface RunOptions {
 	prefix?: string;
 	/** What the reply being extended looked at. */
 	used?: string[];
+	/** The messages to show again if the reply is stopped before the model is asked. */
+	restore?: Message[];
 }
 
 /**
@@ -253,15 +265,29 @@ export function ChatPage() {
 		if (opening?.conversationId) return readDraft(opening.conversationId);
 		return opening?.freshChat ? readDraft(null) : "";
 	});
-	const [isGenerating, setIsGenerating] = useState(false);
-	const [isLoadingModel, setIsLoadingModel] = useState(false);
-	const [loadProblem, setLoadProblem] = useState<LoadProblem | null>(null);
+	// The turn (model, sources, reply) and the queue behind it: see chat/turn.ts.
+	// Mirrored in a ref so long-lived callbacks read the state as it is now.
+	const [chat, setChat] = useState<ChatTurnState>(initialChatTurn);
+	const chatRef = useRef(chat);
+	const dispatchTurn = useCallback((action: ChatTurnAction) => {
+		const next = chatTurnReducer(chatRef.current, action);
+		if (next !== chatRef.current) {
+			chatRef.current = next;
+			setChat(next);
+		}
+		return next;
+	}, []);
+	const { turn, queue, paused: queuePaused } = chat;
+	const isGenerating = isGeneratingTurn(turn);
+	const busy = isBusy(turn);
+	const isLoadingModel = turn.kind === "preparing";
+	const loadProblem = turn.kind === "load-failed" ? turn.problem : null;
+	/** Percent of the conversation read so far, while that is the wait. */
+	const reading = turn.kind === "reading" ? turn.percent : null;
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [showCoach, setShowCoach] = useState(false);
 	const [streamedText, setStreamedText] = useState("");
 	const [streamedReasoning, setStreamedReasoning] = useState("");
-	/** Percent of the conversation read so far, while that is the wait. */
-	const [reading, setReading] = useState<number | null>(null);
 	const [thinkOn, setThinkOn] = useState(readThink);
 	const [createFolder, setCreateFolder] = useState(() => readStored(CREATE_FOLDER_KEY));
 	const [createOn, setCreateOn] = useState(() => !isMobile() && readStored(CREATE_KEY) === "1" && !!createFolder);
@@ -270,14 +296,6 @@ export function ChatPage() {
 	const [openActionsId, setOpenActionsId] = useState<string | null>(null);
 	const [contextNotice, setContextNotice] = useState<string | null>(null);
 	const [following, setFollowing] = useState(true);
-	const [queue, setQueue] = useState<QueuedMessage[]>([]);
-	const [queuePaused, setQueuePaused] = useState<string | null>(null);
-	// The queue reads this one: a failure can land just after the render it is looking at.
-	const pausedRef = useRef(false);
-	const pauseQueue = useCallback((why: string | null) => {
-		pausedRef.current = why !== null;
-		setQueuePaused(why);
-	}, []);
 	const [findOpen, setFindOpen] = useState(false);
 	const [slashActive, setSlashActive] = useState(0);
 	/** Tokens the last reply reported, so the memory ring needn't estimate. */
@@ -302,7 +320,6 @@ export function ChatPage() {
 		activeModelId,
 		saveHistory: settings?.save_history ?? false,
 		character: activeCharacter,
-		isGenerating,
 		modelInfo: activeModelInfo,
 		thinkOn,
 		createIn: null as string | null,
@@ -320,16 +337,17 @@ export function ChatPage() {
 	live.current.saveHistory = settings?.save_history ?? false;
 	live.current.character = activeCharacter;
 
-	// Identifies the current generation. Events from an older run (one that
-	// was stopped by "New chat", or superseded) are ignored.
+	// Hands out run ids (see chat/turn.ts).
 	const runIdRef = useRef(0);
+	// False once the page has closed: late events and results are dropped.
+	const aliveRef = useRef(true);
+	// Ends the wait for a busy model when the reply is stopped.
+	const abortRef = useRef<AbortController | null>(null);
 	// Tokens arrive faster than the screen refreshes; they are buffered here
 	// and flushed to state once per animation frame.
 	const streamRef = useRef({ text: "", prefix: "", reasoning: "", frame: 0 });
 	// Saves run one at a time, so a slow one can't land over a newer one.
 	const saveChainRef = useRef<Promise<void>>(Promise.resolve());
-	const queueRef = useRef(queue);
-	queueRef.current = queue;
 
 	const characterName = activeCharacter?.name ?? "Neurix";
 	const accent = accentOf(activeCharacter);
@@ -374,11 +392,6 @@ export function ChatPage() {
 		show(next);
 		persist(next);
 	}, [show, persist]);
-
-	const setGenerating = useCallback((value: boolean) => {
-		live.current.isGenerating = value;
-		setIsGenerating(value);
-	}, []);
 
 	/* ── Scrolling ── */
 
@@ -529,10 +542,9 @@ export function ChatPage() {
 		streamRef.current = { text: "", prefix: "", reasoning: "", frame: 0 };
 		setStreamedText("");
 		setStreamedReasoning("");
-		setReading(null);
 	}, []);
 
-	const run = useCallback(async ({ prompt, context, prefix = "", used = [] }: RunOptions) => {
+	const run = useCallback(async ({ prompt, context, prefix = "", used = [], restore }: RunOptions) => {
 		const character = live.current.character;
 		let lookedAt = used;
 		let thinkingFrom = 0;
@@ -540,35 +552,54 @@ export function ChatPage() {
 		let savedAt = Date.now();
 		const startedAt = Date.now();
 		const runId = ++runIdRef.current;
-		const isCurrent = () => runIdRef.current === runId;
-		// A new reply is starting, so whatever held the queue is over.
-		pauseQueue(null);
+		// Only the run the turn is in may act; a stopped or superseded run, or
+		// one whose page has closed, is ignored.
+		const isCurrent = () => aliveRef.current && runIdOf(chatRef.current.turn) === runId;
+		// Refused when another turn is under way: then this one does nothing.
+		if (runIdOf(dispatchTurn({ type: "RUN_STARTED", runId }).turn) !== runId) return;
+		const abort = new AbortController();
+		abortRef.current = abort;
 
 		resetStream();
 		streamRef.current.prefix = prefix;
 		if (prefix) setStreamedText(prefix);
-		setGenerating(true);
 		setTokensPerSecond(0);
 		followingRef.current = true;
 		setFollowing(true);
 
-		const finish = (extra: Message[]) => {
+		// A run finishes exactly once, whichever of the event or the
+		// rejection reports the end first.
+		let finished = false;
+		const finish = (extra: Message[], failed = false) => {
+			if (finished) return;
+			finished = true;
 			resetStream();
-			setGenerating(false);
+			dispatchTurn({ type: "RUN_ENDED", runId, failed });
 			if (extra.length > 0) commit([...live.current.messages, ...extra]);
 		};
 
+		// A stop pressed before the backend had started the reply found
+		// nothing to stop; the first sign of life gets it again.
+		let stopResent = false;
 		const handleEvent = (event: InferenceEvent) => {
 			if (!isCurrent()) return;
+			if (chatRef.current.turn.kind === "stopping" && !stopResent) {
+				stopResent = true;
+				chatService.stopInference().catch(() => {});
+			}
 			switch (event.event) {
 				case "PromptProgress":
-					setReading(Math.round((event.data.processed / Math.max(event.data.total, 1)) * 100));
+					dispatchTurn({
+						type: "PROMPT_PROGRESS",
+						runId,
+						percent: Math.round((event.data.processed / Math.max(event.data.total, 1)) * 100),
+					});
 					break;
 				case "ReasoningGenerated": {
 					const s = streamRef.current;
 					s.reasoning += event.data.token;
 					if (!s.frame) s.frame = requestAnimationFrame(flushStream);
-					setReading(null);
+					dispatchTurn({ type: "TOKEN", runId });
 					if (!thinkingFrom) thinkingFrom = Date.now();
 					break;
 				}
@@ -576,7 +607,7 @@ export function ChatPage() {
 					const s = streamRef.current;
 					s.text += event.data.token;
 					if (!s.frame) s.frame = requestAnimationFrame(flushStream);
-					setReading(null);
+					dispatchTurn({ type: "TOKEN", runId });
 					setTokensPerSecond(event.data.tokens_per_second);
 					if (thinkingFrom && !thoughtMs) thoughtMs = Date.now() - thinkingFrom;
 					// Saved as it goes, so a crash or a killed app keeps the reply.
@@ -649,21 +680,30 @@ export function ChatPage() {
 					break;
 				}
 				case "Error":
-					pauseQueue("The last reply failed, so the next message is waiting.");
-					finish([createMessage("error", event.data.message)]);
+					finish([createMessage("error", event.data.message)], true);
 					break;
 			}
 		};
 
 		try {
+			// Continuing a reply reads no sources, so it goes straight to the model.
 			const sources = prefix ? null : await connectorContext(prompt);
-			if (!isCurrent()) return;
+			if (!isCurrent()) {
+				// Stopped while the sources were read: the model was never asked,
+				// so the chat goes back to how it was.
+				if (aliveRef.current) {
+					resetStream();
+					if (restore) show(restore);
+				}
+				return;
+			}
 			for (const warning of sources?.warnings ?? []) showToast(warning, "error");
 			if (sources) lookedAt = sources.used;
 			const asked = withFriendFacts(character, prompt);
 			const styled = spokenByAnother(context, character?.id) ? `${asked}\n\n${NEW_STYLE_NOTE}` : asked;
 			const usual = character?.max_tokens ?? settings?.max_tokens ?? USUAL_REPLY_TOKENS;
 			const replyLimit = !isMobile() && !character?.persona && usual === USUAL_REPLY_TOKENS ? DESKTOP_REPLY_TOKENS : usual;
+			dispatchTurn({ type: "INFERENCE_STARTED", runId });
 			await chatService.runInference(
 				{
 					prompt: withContext(sources?.text ?? "", styled, sources?.noMatch),
@@ -679,28 +719,35 @@ export function ChatPage() {
 					enableThinking: live.current.thinkOn && live.current.modelInfo?.reasoning === "optional",
 				},
 				handleEvent,
+				abort.signal,
 			);
 		} catch (err) {
-			if (!isCurrent()) return;
+			if (finished || !isCurrent()) return;
 			// Keep whatever had streamed before the failure.
 			const partial = cleanResponse(streamRef.current.prefix + streamRef.current.text);
+			if (err instanceof InferenceAborted) {
+				// Stopped while waiting for the model to come free: nothing ran.
+				finish(partial ? [createMessage("ai", partial, { stopReason: "cancelled" })] : []);
+				return;
+			}
 			const message = err instanceof Error ? err.message : String(err);
-			pauseQueue("The last reply failed, so the next message is waiting.");
-			finish([
-				...(partial ? [createMessage("ai", partial)] : []),
-				createMessage("error", message),
-			]);
+			finish([...(partial ? [createMessage("ai", partial)] : []), createMessage("error", message)], true);
 			// A failed run can leave the backend without a model; resync so the
 			// header and the next send reflect that.
 			refreshActiveModel();
+		} finally {
+			if (abortRef.current === abort) abortRef.current = null;
 		}
-	}, [commit, persist, flushStream, resetStream, setGenerating, refreshActiveModel, pauseQueue, showToast, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
+	}, [commit, persist, show, flushStream, resetStream, dispatchTurn, refreshActiveModel, showToast, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
 
-	/** Make sure a model is loaded, loading the last-used one if needed. */
-	const ensureModel = useCallback(async (): Promise<boolean> => {
+	/**
+	 * Make sure a model is loaded, loading the last-used one if needed. While
+	 * it loads the turn is "preparing"; if it can't, the turn shows why and
+	 * keeps `request` for Try again.
+	 */
+	const ensureModel = useCallback(async (request: TurnRequest): Promise<boolean> => {
 		if (live.current.activeModelId) return true;
-		setLoadProblem(null);
-		setIsLoadingModel(true);
+		if (dispatchTurn({ type: "PREPARE", request }).turn.kind !== "preparing") return false;
 		try {
 			// A load already under way (a switch from the picker, say) is
 			// joined rather than started twice.
@@ -716,7 +763,7 @@ export function ChatPage() {
 			}
 			const installed = await modelService.getDownloadedModels();
 			if (installed.length === 0) {
-				setLoadProblem({ kind: "no-models" });
+				dispatchTurn({ type: "PREPARE_FAILED", problem: { kind: "no-models" } });
 				return false;
 			}
 			const preferred = installed.find((m) => m.id === settings?.last_model_id) ?? installed[0];
@@ -726,12 +773,13 @@ export function ChatPage() {
 			live.current.historyModel = { id: preferred.id, name: preferred.name };
 			return true;
 		} catch (err) {
-			setLoadProblem({ kind: "failed", message: err instanceof Error ? err.message : String(err) });
+			dispatchTurn({
+				type: "PREPARE_FAILED",
+				problem: { kind: "failed", message: err instanceof Error ? err.message : String(err) },
+			});
 			return false;
-		} finally {
-			setIsLoadingModel(false);
 		}
-	}, [loadModel, refreshActiveModel, settings?.last_model_id]);
+	}, [dispatchTurn, loadModel, refreshActiveModel, settings?.last_model_id]);
 
 	/** Keep what a message says about the user, if a friend is listening. */
 	const learnFrom = (text: string) => {
@@ -756,10 +804,6 @@ export function ChatPage() {
 			});
 	};
 
-	const sendingRef = useRef(false);
-	// The reply ends a moment before its send returns, so the queue looks again here.
-	const [sendsEnded, setSendsEnded] = useState(0);
-
 	const clearComposer = () => {
 		setInput("");
 		writeDraft(live.current.conversationId, "");
@@ -767,72 +811,68 @@ export function ChatPage() {
 		if (textareaRef.current) textareaRef.current.style.height = "auto";
 	};
 
-	/** Send one message. False when no model could be made ready for it. */
-	const sendMessage = async (text: string, fromComposer: boolean): Promise<boolean> => {
-		sendingRef.current = true;
-		try {
-			vibrate(10);
-			// On failure the typed message stays in the box and the reason is
-			// shown in place, with a retry.
-			if (!(await ensureModel())) return false;
+	/**
+	 * Send one message. If no model can be made ready, the turn shows why;
+	 * a message typed in the box stays there, a queued one waits in the
+	 * failure screen (and goes back to the queue on Dismiss).
+	 */
+	const sendMessage = async (text: string, fromComposer: boolean): Promise<void> => {
+		vibrate(10);
+		// No await when a model is ready, so the turn is busy before anything else can run.
+		if (!live.current.activeModelId && !(await ensureModel({ kind: "send", text, fromComposer }))) return;
 
-			// Loading can take a while: anything typed meanwhile stays in the box.
-			if (fromComposer && textareaRef.current?.value.trim() === text) clearComposer();
-			const context = live.current.messages;
-			const sent = [...context, createMessage("user", text)];
-			show(sent);
-			// List a new chat in the sidebar right away, before the reply.
-			if (live.current.saveHistory && !live.current.conversationId) {
-				live.current.conversationId = crypto.randomUUID();
-				window.dispatchEvent(
-					new CustomEvent(CHAT_STARTED, {
-						detail: { id: live.current.conversationId, title: text.slice(0, 80) },
-					}),
-				);
-			}
-			// Saved now, so a stopped or failed reply can't lose the message.
-			persist(sent);
-			learnFrom(text);
-			setOpenActionsId(null);
-			await run({ prompt: text, context });
-			return true;
-		} finally {
-			sendingRef.current = false;
-			setSendsEnded((n) => n + 1);
+		// Loading can take a while: anything typed meanwhile stays in the box.
+		if (fromComposer && textareaRef.current?.value.trim() === text) clearComposer();
+		const context = live.current.messages;
+		const sent = [...context, createMessage("user", text)];
+		show(sent);
+		// List a new chat in the sidebar right away, before the reply.
+		if (live.current.saveHistory && !live.current.conversationId) {
+			live.current.conversationId = crypto.randomUUID();
+			window.dispatchEvent(
+				new CustomEvent(CHAT_STARTED, {
+					detail: { id: live.current.conversationId, title: text.slice(0, 80) },
+				}),
+			);
 		}
+		// Saved now, so a stopped or failed reply can't lose the message.
+		persist(sent);
+		learnFrom(text);
+		setOpenActionsId(null);
+		await run({ prompt: text, context });
 	};
 
 	/** The model is busy: this one waits its turn, and the box is free again. */
 	const queueMessage = (text: string) => {
-		setQueue((items) => [...items, { id: crypto.randomUUID(), text }]);
+		dispatchTurn({ type: "QUEUE_ADD", item: { id: crypto.randomUUID(), text } });
 		clearComposer();
 	};
 
 	const handleSend = () => {
 		const text = input.trim();
 		if (!text || isLoadingModel || loadingModelId) return;
-		if (isGenerating || sendingRef.current || queue.length > 0) queueMessage(text);
+		const now = chatRef.current;
+		if (isBusy(now.turn) || now.queue.length > 0) queueMessage(text);
 		else void sendMessage(text, true);
 	};
 
-	// Send what is waiting, one message each time the model comes free.
+	// Send what is waiting, one message each time the chat comes free.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: sendMessage is rebuilt each render and only runs on these changes
 	useEffect(() => {
-		if (isGenerating || isLoadingModel || loadingModelId || pausedRef.current || sendingRef.current) return;
-		const next = queue[0];
+		const next = nextQueued(chat, loadingModelId !== null);
 		if (!next) return;
-		setQueue((items) => items.slice(1));
-		void sendMessage(next.text, false).then((sent) => {
-			if (sent) return;
-			setQueue((items) => [next, ...items]);
-			pauseQueue("No model is ready, so the next message is waiting.");
-		});
-	}, [isGenerating, isLoadingModel, loadingModelId, queue, queuePaused, sendsEnded]);
+		dispatchTurn({ type: "QUEUE_REMOVE", id: next.id });
+		void sendMessage(next.text, false);
+	}, [chat, loadingModelId, dispatchTurn]);
 
 	const handleStop = () => {
 		vibrate(12);
-		if (queue.length > 0) pauseQueue("You stopped the reply, so the next message is waiting.");
-		chatService.stopInference().catch(() => {});
+		const before = chatRef.current.turn;
+		dispatchTurn({ type: "STOP" });
+		if (before.kind === "starting" || before.kind === "reading" || before.kind === "streaming") {
+			abortRef.current?.abort();
+			chatService.stopInference().catch(() => {});
+		}
 	};
 
 	/** The last AI reply and the user message it answers, if the chat ends with one. */
@@ -848,9 +888,14 @@ export function ChatPage() {
 
 	/** Re-answer the last prompt; with `extend`, keep the reply and continue it. */
 	const redoLast = async (extend: boolean) => {
-		if (isGenerating) return;
+		// Checked synchronously: a double tap must not start two turns.
+		if (isBusy(chatRef.current.turn) || !lastExchange()) return;
+		if (!live.current.activeModelId && !(await ensureModel({ kind: "redo", extend }))) return;
 		const ex = lastExchange();
-		if (!ex || !(await ensureModel())) return;
+		if (!ex) {
+			dispatchTurn({ type: "CANCEL_PREPARE" });
+			return;
+		}
 		const { msgs, userIdx, aiIdx } = ex;
 		show(msgs.slice(0, aiIdx));
 		setOpenActionsId(null);
@@ -859,8 +904,20 @@ export function ChatPage() {
 			context: msgs.slice(0, userIdx),
 			prefix: extend ? msgs[aiIdx].text : undefined,
 			used: extend ? msgs[aiIdx].sources : undefined,
+			restore: msgs,
 		});
 	};
+
+	/** "Try again" after a failed load: repeat exactly what was asked. */
+	const retryTurn = () => {
+		const turn = chatRef.current.turn;
+		if (turn.kind !== "load-failed") return;
+		const { request } = turn;
+		if (request.kind === "send") void sendMessage(request.text, request.fromComposer);
+		else void redoLast(request.extend);
+	};
+
+	const dismissLoadProblem = () => dispatchTurn({ type: "DISMISS", requeueId: crypto.randomUUID() });
 
 	const handleDeleteMessage = (id: string) => {
 		const before = live.current.messages;
@@ -878,7 +935,7 @@ export function ChatPage() {
 	 * reply that depended on it.
 	 */
 	const handleEditMessage = (id: string) => {
-		if (isGenerating) return;
+		if (isBusy(chatRef.current.turn)) return;
 		const msgs = live.current.messages;
 		const idx = msgs.findIndex((m) => m.id === id);
 		if (idx < 0 || msgs[idx].role !== "user") return;
@@ -915,15 +972,23 @@ export function ChatPage() {
 	// Leaving mid-generation: stop the model and keep what it wrote so far
 	// in the same conversation (if history is on).
 	useEffect(() => {
+		aliveRef.current = true;
 		return () => {
-			// Messages still waiting go back to the draft rather than vanish.
-			const waiting = queueRef.current.map((item) => item.text);
+			aliveRef.current = false;
+			const { turn, queue: waitingItems } = chatRef.current;
+			// Messages still waiting go back to the draft rather than vanish,
+			// including one held by a failed model load.
+			const held =
+				turn.kind === "load-failed" && turn.request.kind === "send" && !turn.request.fromComposer
+					? [turn.request.text]
+					: [];
+			const waiting = [...held, ...waitingItems.map((item) => item.text)];
 			if (waiting.length > 0) {
 				const draft = readDraft(live.current.conversationId);
 				writeDraft(live.current.conversationId, [draft, ...waiting].filter(Boolean).join("\n\n"));
 			}
-			if (!live.current.isGenerating) return;
-			runIdRef.current += 1;
+			if (!isGeneratingTurn(turn)) return;
+			abortRef.current?.abort();
 			chatService.stopInference().catch(() => {});
 			const s = streamRef.current;
 			const partial = cleanResponse(s.prefix + s.text);
@@ -1155,10 +1220,7 @@ export function ChatPage() {
 				>
 					<PrimaryCta
 						type="button"
-						onClick={() => {
-							setLoadProblem(null);
-							handleSend();
-						}}
+						onClick={retryTurn}
 					>
 						<Icon name="refresh" size={16} />
 						Try again
@@ -1166,7 +1228,7 @@ export function ChatPage() {
 					<SecondaryCta type="button" onClick={() => navigate("/models")}>
 						Choose another model
 					</SecondaryCta>
-					<SecondaryCta type="button" onClick={() => setLoadProblem(null)}>
+					<SecondaryCta type="button" onClick={dismissLoadProblem}>
 						Dismiss
 					</SecondaryCta>
 				</LoadingOverlay>
@@ -1181,7 +1243,7 @@ export function ChatPage() {
 						<Icon name="download" size={16} />
 						Browse models
 					</PrimaryCta>
-					<SecondaryCta type="button" onClick={() => setLoadProblem(null)}>
+					<SecondaryCta type="button" onClick={dismissLoadProblem}>
 						Not now
 					</SecondaryCta>
 				</LoadingOverlay>
@@ -1327,7 +1389,7 @@ export function ChatPage() {
 										)}
 									</Bubble>
 
-									{msg.role === "ai" && isLast && !isGenerating && wasCutShort(msg.stopReason) && (
+									{msg.role === "ai" && isLast && !busy && wasCutShort(msg.stopReason) && (
 										<CutShort>
 											<span>{cutShortLabel(msg.stopReason)}</span>
 											<ContinueBtn type="button" onClick={() => redoLast(true)}>
@@ -1337,7 +1399,7 @@ export function ChatPage() {
 										</CutShort>
 									)}
 
-									{!isGenerating && (
+									{!busy && (
 										<MessageActions $open={openActionsId === msg.id}>
 											{msg.role !== "error" && <CopyAction text={msg.text} />}
 											{msg.role === "ai" && !isMobile() && (
@@ -1433,11 +1495,11 @@ export function ChatPage() {
 							items={queue}
 							paused={queuePaused}
 							onEdit={(item) => {
-								setQueue((items) => items.filter((i) => i.id !== item.id));
+								dispatchTurn({ type: "QUEUE_REMOVE", id: item.id });
 								fillInput(item.text);
 							}}
-							onRemove={(id) => setQueue((items) => items.filter((i) => i.id !== id))}
-							onResume={() => pauseQueue(null)}
+							onRemove={(id) => dispatchTurn({ type: "QUEUE_REMOVE", id })}
+							onResume={() => dispatchTurn({ type: "QUEUE_RESUME" })}
 						/>
 						<ComposerBox ref={composerRef}>
 							{slashCommands.length > 0 && (
