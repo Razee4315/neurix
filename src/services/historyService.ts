@@ -18,11 +18,18 @@ export async function loadConversation(id: string): Promise<Conversation | null>
 export const HISTORY_CHANGED = "neurix:history-changed";
 /** Fired when a new chat gets its first message, before it is saved. */
 export const CHAT_STARTED = "neurix:chat-started";
+/** Fired when saving a conversation failed; `detail.id` names it. */
+export const CHAT_SAVE_FAILED = "neurix:chat-save-failed";
 
 const changed = () => window.dispatchEvent(new Event(HISTORY_CHANGED));
 
 export async function saveConversation(conversation: Conversation): Promise<void> {
-	await invoke("save_conversation", { conversation });
+	try {
+		await invoke("save_conversation", { conversation });
+	} catch (err) {
+		window.dispatchEvent(new CustomEvent(CHAT_SAVE_FAILED, { detail: { id: conversation.id } }));
+		throw err;
+	}
 	changed();
 }
 
