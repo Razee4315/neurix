@@ -5,8 +5,9 @@ use tauri::State;
 use tokio_util::sync::CancellationToken;
 
 use crate::inference::engine::{GenerationRequest, InferenceEvent, LoadedModel};
+use crate::model_slot::Ticket;
 use crate::settings::MAX_REPLY_TOKENS;
-use crate::state::{ActiveModel, SharedState};
+use crate::state::{ActiveModel, ModelOps, SharedState};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatHistoryEntry {
@@ -19,18 +20,20 @@ pub async fn get_active_model(
     state: State<'_, SharedState>,
 ) -> Result<Option<ActiveModel>, String> {
     let state = state.lock().await;
-    Ok(state.active_model.clone())
+    Ok(state.model.active().cloned())
 }
 
-/// Free the loaded model's memory without deleting it from disk.
+/// Free the loaded model's memory without deleting it from disk. Waits for
+/// a load in progress, so the unload is never undone by it finishing.
 #[tauri::command]
-pub async fn unload_model(state: State<'_, SharedState>) -> Result<(), String> {
-    let mut s = state.lock().await;
-    if let Some(token) = &s.inference_cancel {
-        token.cancel();
-    }
-    s.loaded_model = None;
-    s.active_model = None;
+pub async fn unload_model(
+    state: State<'_, SharedState>,
+    ops: State<'_, ModelOps>,
+) -> Result<(), String> {
+    let _op = ops.0.lock().await;
+    let freed = state.lock().await.model.clear();
+    // Free the weights outside the state lock.
+    drop(freed);
     info!("Model unloaded");
     Ok(())
 }
@@ -40,36 +43,24 @@ pub async fn unload_model(state: State<'_, SharedState>) -> Result<(), String> {
 async fn checkout_model(
     state: &State<'_, SharedState>,
     cancel: &CancellationToken,
-) -> Result<LoadedModel, String> {
+) -> Result<(LoadedModel, Ticket), String> {
     let mut s = state.lock().await;
-    let Some(model) = s.loaded_model.take() else {
-        return Err(if s.active_model.is_some() {
-            "The model is still busy with the previous reply.".to_string()
-        } else {
-            "No model loaded".to_string()
-        });
-    };
-    s.inference_cancel = Some(cancel.clone());
-    Ok(model)
+    let ticket = s.take_ticket();
+    let model = s.model.checkout(cancel.clone(), ticket).map_err(|e| e.message().to_string())?;
+    Ok((model, ticket))
 }
 
-/// Put a checked-out model back, unless the user switched or unloaded models
-/// while it was out — in that case it is simply dropped.
-async fn return_model(state: &State<'_, SharedState>, model: LoadedModel) {
-    let mut s = state.lock().await;
-    s.inference_cancel = None;
-    let still_active = s.active_model.as_ref().map(|m| m.id == model.id).unwrap_or(false);
-    if still_active && s.loaded_model.is_none() {
-        s.loaded_model = Some(model);
-    }
+/// Put a checked-out model back, unless the user switched, unloaded or
+/// reloaded models while it was out: then it is simply dropped.
+async fn return_model(state: &State<'_, SharedState>, ticket: Ticket, model: LoadedModel) {
+    let stale = state.lock().await.model.checkin(ticket, model);
+    drop(stale);
 }
 
 /// The blocking task panicked and took the model with it. Clear the active
 /// marker so the UI offers to load a model again.
-async fn model_lost(state: &State<'_, SharedState>) {
-    let mut s = state.lock().await;
-    s.inference_cancel = None;
-    s.active_model = None;
+async fn model_lost(state: &State<'_, SharedState>, ticket: Ticket) {
+    state.lock().await.model.lost(ticket);
 }
 
 #[tauri::command]
@@ -90,7 +81,7 @@ pub async fn run_inference(
     on_event: Channel<InferenceEvent>,
 ) -> Result<(), String> {
     let cancel_token = CancellationToken::new();
-    let mut model = checkout_model(&state, &cancel_token).await?;
+    let (mut model, ticket) = checkout_model(&state, &cancel_token).await?;
 
     let request = GenerationRequest {
         system_prompt,
@@ -118,11 +109,11 @@ pub async fn run_inference(
         Ok((model, result)) => {
             // The model goes back on every path, or the app is left with
             // "No model loaded" until the user reloads one by hand.
-            return_model(&state, model).await;
+            return_model(&state, ticket, model).await;
             result.map(|_| ())
         }
         Err(e) => {
-            model_lost(&state).await;
+            model_lost(&state, ticket).await;
             Err(format!("Inference task failed: {}", e))
         }
     }
@@ -130,10 +121,8 @@ pub async fn run_inference(
 
 #[tauri::command]
 pub async fn stop_inference(state: State<'_, SharedState>) -> Result<(), String> {
-    let s = state.lock().await;
-    if let Some(token) = &s.inference_cancel {
+    if state.lock().await.model.cancel_reply() {
         info!("Stopping inference");
-        token.cancel();
     }
     Ok(())
 }
@@ -165,7 +154,7 @@ fn per_second(tokens: usize, ms: u64) -> f32 {
 #[tauri::command]
 pub async fn benchmark_model(state: State<'_, SharedState>) -> Result<BenchmarkResult, String> {
     let cancel_token = CancellationToken::new();
-    let mut model = checkout_model(&state, &cancel_token).await?;
+    let (mut model, ticket) = checkout_model(&state, &cancel_token).await?;
 
     let request = GenerationRequest {
         system_prompt: "You are a helpful assistant.".to_string(),
@@ -191,13 +180,13 @@ pub async fn benchmark_model(state: State<'_, SharedState>) -> Result<BenchmarkR
     let (model, result) = match joined {
         Ok(pair) => pair,
         Err(e) => {
-            model_lost(&state).await;
+            model_lost(&state, ticket).await;
             return Err(format!("Speed test failed: {}", e));
         }
     };
     let threads = model.threads;
     let context_length = model.context_length;
-    return_model(&state, model).await;
+    return_model(&state, ticket, model).await;
     let stats = result?;
 
     Ok(BenchmarkResult {

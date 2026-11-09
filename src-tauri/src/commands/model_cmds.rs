@@ -13,7 +13,7 @@ use crate::models::catalog::{ModelInfo, Reasoning};
 use crate::models::download::{self, DownloadEvent};
 use crate::models::manager::{self, DownloadedModel, PartialDownload};
 use crate::settings;
-use crate::state::{ActiveModel, SharedState};
+use crate::state::{ActiveModel, ModelOps, SharedState};
 
 /// Below this much RAM a large context is a real risk of the system killing
 /// the app, so the automatic setting stays at 4,096 tokens.
@@ -156,22 +156,27 @@ pub async fn get_partial_downloads(app: AppHandle) -> Result<Vec<PartialDownload
 pub async fn delete_model(
     app: AppHandle,
     state: State<'_, SharedState>,
+    ops: State<'_, ModelOps>,
     model_id: String,
 ) -> Result<(), String> {
     manager::require_known_id(&models_dir(&app)?, &model_id)?;
 
+    // Waits for a load in progress: its file must not vanish mid-read, and
+    // a model that has just loaded must not stay "active" once deleted.
+    let _op = ops.0.lock().await;
+
     // Unload first: a deleted model must not stay "active", or the next
     // message fails when it tries to reopen a file that no longer exists.
-    {
+    let freed = {
         let mut s = state.lock().await;
-        if s.active_model.as_ref().map(|m| m.id == model_id).unwrap_or(false) {
-            if let Some(token) = &s.inference_cancel {
-                token.cancel();
-            }
-            s.loaded_model = None;
-            s.active_model = None;
+        if s.model.is_active(&model_id) {
+            s.model.clear()
+        } else {
+            None
         }
-    }
+    };
+    // Free the weights outside the state lock.
+    drop(freed);
 
     info!("Deleting model: {}", model_id);
     manager::delete_model(&models_dir(&app)?, &model_id).await
@@ -183,30 +188,37 @@ pub async fn get_active_downloads(state: State<'_, SharedState>) -> Result<Vec<S
     Ok(s.active_downloads.keys().cloned().collect())
 }
 
+/// Load a model, replacing the one in memory.
+///
+/// Loads are serialized (see `ModelOps`): a load asked for while another is
+/// reading its file waits for it, then replaces it. So two models are never
+/// in memory at once, and the model asked for last is the one that stays.
 #[tauri::command]
 pub async fn load_model(
     app: AppHandle,
     state: State<'_, SharedState>,
+    ops: State<'_, ModelOps>,
     model_id: String,
 ) -> Result<(), String> {
     let catalog_entry = added::find(&models_dir(&app)?, &model_id)
         .ok_or_else(|| format!("Model {} not found in catalog", model_id))?;
 
-    {
+    let _op = ops.0.lock().await;
+
+    let freed = {
         let mut s = state.lock().await;
         // Already selected (loaded, or checked out by a running reply):
-        // nothing to do. Avoids re-reading gigabytes for no reason.
-        if s.active_model.as_ref().map(|m| m.id == model_id).unwrap_or(false) {
+        // nothing to do. Avoids re-reading gigabytes for no reason. Checked
+        // after waiting, so asking again for the model a load in progress
+        // was reading does not read it twice.
+        if s.model.is_active(&model_id) {
             return Ok(());
         }
         // Free the previous model BEFORE reading the new one so two models
-        // are never held in memory at once.
-        if let Some(token) = &s.inference_cancel {
-            token.cancel();
-        }
-        s.loaded_model = None;
-        s.active_model = None;
-    }
+        // are never held in memory at once. Stops a reply that is using it.
+        s.model.clear()
+    };
+    drop(freed);
 
     let model_path = models_dir(&app)?.join(&model_id).join("model.gguf");
     if !model_path.exists() {
@@ -242,17 +254,16 @@ pub async fn load_model(
         (_, false) => Reasoning::None,
     };
 
-    {
-        let mut s = state.lock().await;
-        s.active_model = Some(ActiveModel {
-            id: model_id.clone(),
-            name: catalog_entry.name.clone(),
-            reasoning,
-            context_length: loaded.context_length,
-            threads: loaded.threads,
-        });
-        s.loaded_model = Some(loaded);
-    }
+    let active = ActiveModel {
+        id: model_id.clone(),
+        name: catalog_entry.name.clone(),
+        reasoning,
+        context_length: loaded.context_length,
+        threads: loaded.threads,
+    };
+    // Nothing else can have filled the slot while `ModelOps` was held.
+    let replaced = state.lock().await.model.set_ready(active, loaded);
+    drop(replaced);
     info!("Model loaded and ready");
 
     // Persist last used model. Goes through the shared patch path so it

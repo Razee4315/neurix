@@ -236,7 +236,7 @@ function withGreeting(character: Character | null | undefined, systemPrompt: str
 export function ChatPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const { activeModel, activeModelId, activeModelInfo, settings, loadModel, refreshActiveModel } =
+	const { activeModel, activeModelId, activeModelInfo, loadingModelId, settings, loadModel, refreshActiveModel } =
 		useAppContext();
 	const { activeCharacter, allCharacters, setActiveCharacter, saveCustom, loaded: charactersLoaded } = useCharacters();
 	const { showToast } = useToast();
@@ -306,12 +306,17 @@ export function ChatPage() {
 		modelInfo: activeModelInfo,
 		thinkOn,
 		createIn: null as string | null,
+		/** The model a chat is saved under: the loaded one, or the last one while switching. */
+		historyModel: activeModelId && activeModel ? { id: activeModelId, name: activeModel } : null,
+		loadingModelId,
 	});
 	live.current.modelInfo = activeModelInfo;
 	live.current.thinkOn = thinkOn;
 	live.current.createIn = createOn ? createFolder : null;
 	live.current.activeModel = activeModel;
 	live.current.activeModelId = activeModelId;
+	live.current.loadingModelId = loadingModelId;
+	if (activeModelId && activeModel) live.current.historyModel = { id: activeModelId, name: activeModel };
 	live.current.saveHistory = settings?.save_history ?? false;
 	live.current.character = activeCharacter;
 
@@ -341,12 +346,13 @@ export function ChatPage() {
 			if (id) historyService.deleteConversation(id).catch(() => showToast("Couldn't delete this conversation", "error"));
 			return;
 		}
-		if (!s.saveHistory || !s.activeModelId || !s.activeModel) return;
+		const model = s.historyModel;
+		if (!s.saveHistory || !model) return;
 		if (!s.conversationId) s.conversationId = crypto.randomUUID();
 		const conversation = toConversation(toSave, {
 			id: s.conversationId,
-			modelId: s.activeModelId,
-			modelName: s.activeModel,
+			modelId: model.id,
+			modelName: model.name,
 			characterId: s.character?.id,
 			characterName: s.character?.name,
 		});
@@ -696,6 +702,18 @@ export function ChatPage() {
 		setLoadProblem(null);
 		setIsLoadingModel(true);
 		try {
+			// A load already under way (a switch from the picker, say) is
+			// joined rather than started twice.
+			const pending = live.current.loadingModelId;
+			if (pending) {
+				await loadModel(pending);
+				const ready = await refreshActiveModel();
+				if (ready) {
+					live.current.activeModelId = ready.id;
+					live.current.activeModel = ready.name;
+					return true;
+				}
+			}
 			const installed = await modelService.getDownloadedModels();
 			if (installed.length === 0) {
 				setLoadProblem({ kind: "no-models" });
@@ -705,6 +723,7 @@ export function ChatPage() {
 			await loadModel(preferred.id);
 			live.current.activeModelId = preferred.id;
 			live.current.activeModel = preferred.name;
+			live.current.historyModel = { id: preferred.id, name: preferred.name };
 			return true;
 		} catch (err) {
 			setLoadProblem({ kind: "failed", message: err instanceof Error ? err.message : String(err) });
@@ -712,7 +731,7 @@ export function ChatPage() {
 		} finally {
 			setIsLoadingModel(false);
 		}
-	}, [loadModel, settings?.last_model_id]);
+	}, [loadModel, refreshActiveModel, settings?.last_model_id]);
 
 	/** Keep what a message says about the user, if a friend is listening. */
 	const learnFrom = (text: string) => {
@@ -791,7 +810,7 @@ export function ChatPage() {
 
 	const handleSend = () => {
 		const text = input.trim();
-		if (!text || isLoadingModel) return;
+		if (!text || isLoadingModel || loadingModelId) return;
 		if (isGenerating || sendingRef.current || queue.length > 0) queueMessage(text);
 		else void sendMessage(text, true);
 	};
@@ -799,7 +818,7 @@ export function ChatPage() {
 	// Send what is waiting, one message each time the model comes free.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: sendMessage is rebuilt each render and only runs on these changes
 	useEffect(() => {
-		if (isGenerating || isLoadingModel || pausedRef.current || sendingRef.current) return;
+		if (isGenerating || isLoadingModel || loadingModelId || pausedRef.current || sendingRef.current) return;
 		const next = queue[0];
 		if (!next) return;
 		setQueue((items) => items.slice(1));
@@ -808,7 +827,7 @@ export function ChatPage() {
 			setQueue((items) => [next, ...items]);
 			pauseQueue("No model is ready, so the next message is waiting.");
 		});
-	}, [isGenerating, isLoadingModel, queue, queuePaused, sendsEnded]);
+	}, [isGenerating, isLoadingModel, loadingModelId, queue, queuePaused, sendsEnded]);
 
 	const handleStop = () => {
 		vibrate(12);
@@ -1554,7 +1573,7 @@ export function ChatPage() {
 										type="button"
 										$variant={hasText ? "send" : "idle"}
 										onClick={handleSend}
-										disabled={!hasText || isLoadingModel}
+										disabled={!hasText || isLoadingModel || loadingModelId !== null}
 										aria-label={isGenerating ? "Queue message" : "Send message"}
 									>
 										<Icon name="arrow_upward" size={17} fill />
