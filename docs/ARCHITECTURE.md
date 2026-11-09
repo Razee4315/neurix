@@ -170,10 +170,12 @@ Currently flat JSON:
   text. Saves are written to a temp file and renamed, and keep the original
   `created_at`.
 
-The model selected for chat is tracked separately from the loaded weights
-(`AppState.active_model` vs `loaded_model`): the weights are checked out of
-the state for the duration of a reply, and the UI must still see the model
-as active then.
+The model in memory is one `ModelSlot` (`model_slot.rs`): `Empty`, `Ready`,
+or `InUse` while a reply has the weights checked out (the UI still sees the
+model as active then). Load, unload and delete are serialized by the
+`ModelOps` lock, so two models are never in memory at once. See
+[STATE_MACHINES.md](../STATE_MACHINES.md) for this and the app's other
+state machines.
 
 This is fine for the current scale. **Threshold to swap to SQLite
 (via tauri-plugin-sql with FTS5)**: once history search becomes the
