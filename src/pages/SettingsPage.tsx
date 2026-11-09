@@ -285,6 +285,7 @@ export function SettingsPage() {
 		activeModel,
 		activeModelId,
 		activeModelInfo,
+		loadingModelId,
 		loadModel,
 		unloadModel,
 	} = useAppContext();
@@ -294,7 +295,9 @@ export function SettingsPage() {
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const [busy, setBusy] = useState<"export" | "import" | null>(null);
 	const [autoThreads, setAutoThreads] = useState<number | null>(null);
-	const [reloading, setReloading] = useState(false);
+	const [reloadingHere, setReloading] = useState(false);
+	// The engine reload is unload + load; any load elsewhere counts too.
+	const reloading = reloadingHere || loadingModelId !== null;
 	const [testing, setTesting] = useState(false);
 	const [benchmark, setBenchmark] = useState<BenchmarkResult | null>(null);
 
@@ -339,7 +342,7 @@ export function SettingsPage() {
 		vibrate(5);
 		await save(patch);
 		setBenchmark(null);
-		if (!activeModelId) return;
+		if (!activeModelId || reloading) return;
 		setReloading(true);
 		try {
 			await unloadModel();
