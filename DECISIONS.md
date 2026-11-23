@@ -55,3 +55,38 @@ Architectural, operational, and product decisions made autonomously during the N
   | `gemini-4-neon` | `antigravity_antigravity_ani` | ~2m47s | 5/5 | 4.8/5 (clean, `.trim()`, 1 minor `as readonly string[]` widening) | 5/5 | **UI Implementer (Secondary) + Researcher (Track 4)** |
 - **Decision**: Assign roles as tabulated above. Every model scored 5/5 on factual accuracy with zero hallucinations and respected the read-only constraint, giving us full multi-account rotation capacity. Use `claude-opus-5-5` and `gpt-6.2-sol` for hard Rust/state/UI work, `gemini-4-argon` / `gemini-4-hydrogen` for standard/mechanical tasks, `gemini-4-neon` for design/UI work, and `codex exec` for Part 7 `image_gen`.
 - **Reasoning**: Maximizes throughput across all 4 accounts while keeping `antigravity_antigravity_viylsa` reserved for orchestration and final quality gate review.
+
+---
+
+## DEC-006: Visual Identity & Anti-Claude Redesign (`Karakoram Slate` + `Deodar` + `Paper` + `System`)
+- **Date**: 2026-11-23
+- **Context**: Baseline audit ([BEHAVIOR_NOTES.md](BEHAVIOR_NOTES.md)) and [DESIGN_RESEARCH.md](DESIGN_RESEARCH.md) showed default Graphite (`#262624` + `#d97757`), centered serif greeting, and bottom-left popover mirrored Claude Desktop too closely, while lacking OS theme auto-following.
+- **Decision**: Adopt **Direction 1 (`Karakoram Slate`, id `"karakoram"`)** (`#0f1317` recessed sidebar, `#151a20` canvas, `#2ec4b6` Glacial Teal, `#e0a458` Expedition Brass) as Neurix's flagship default theme, paired with upgraded **Paper (`paper`)** (Juniper Pine on archival stock), **Deodar (`deodar`)** (warm obsidian-ink + Juniper Pine + Apricot Gold), **Phosphor (`phosphor`)** (amber CRT), and top-level **`System` (`"system"`)** OS match mode, while mapping legacy theme IDs cleanly and keeping all 4 core themes passing every assertion in `src/theme/theme.test.ts` (including >= 4.5:1 WCAG AA).
+- **Reasoning**: Gives Neurix an unmistakable sovereign alpine-instrument look across Windows and Android with zero Claude visual echo.
+
+---
+
+## DEC-007: Non-Blocking Startup, Default `Q8_0` KV Cache Quantization, Flash Attention & Safe Fallback
+- **Date**: 2026-11-23
+- **Context**: Installed native `v1.0.0` blocked on `BootScreen` for **73.8 seconds** loading a 2.71 GB GGUF on startup, and [engine.rs](src-tauri/src/inference/engine.rs) left Flash Attention, KV quantization (`with_type_k`/`with_type_v`), GPU layers, and `state_save_file` unconfigured despite `llama-cpp-2 = "=0.1.159"` exposing them.
+- **Decision**:
+  1. Never block startup navigation on `loadModel` in [SplashScreen.tsx](src/pages/SplashScreen.tsx): navigate immediately to `/chat` while loading the last model asynchronously in the background via `AppContext`.
+  2. Default new inference settings to `kv_cache_quant = "q8_0"`, `flash_attention = true`, `gpu_layers = 0` (user-tunable up to `999`), and `strip_thinking_history = true`, with automatic one-shot fallback to safe F16/CPU if a GPU driver or exotic model architecture rejects quantized/offloaded context initialization.
+  3. Pilot bounded single-conversation KV prompt state persistence across restarts (`state_save_file` / `state_load_file`) keyed strictly by `(model_id, context_length, kv_cache_quant, flash_attention, tokens)`.
+- **Reasoning**: Cuts cold interactive launch from ~74s to `< 2s`, reduces 4K/8K KV cache RAM by ~47% on transformer layers, and improves repeat-turn responsiveness without breaking model compatibility.
+
+---
+
+## DEC-008: Persistent SQLite FTS5 Folder RAG Index & `quick-xml` DOCX + Strict Air-Gap Mode
+- **Date**: 2026-11-23
+- **Context**: `folder_search.rs` walks and re-reads folder trees linearly on every turn, `documents.rs` uses naive `<w:t>` tag string scanning, and offline privacy users demand a verifiable air-gap switch blocking all outbound sockets ([RESEARCH.md](RESEARCH.md)).
+- **Decision**: Add `rusqlite` (bundled SQLite + FTS5 `unicode61`, `bm25()`) incremental chunk index keyed by `(size, mtime)` with seamless fallback to `folder_search::best_excerpts`, upgrade DOCX extraction to namespace-aware `quick-xml` (Desktop) with `[Page N]` prefixes on PDF pages, and enforce `Settings.air_gap` inside Rust HF/download/Gmail/GitHub commands.
+- **Reasoning**: Eliminates repeated disk scans on connected folders, improves PDF/DOCX source provenance for inline citations, and delivers provable airplane-mode guarantees.
+
+---
+
+## DEC-009: Part 7 Custom Karakoram Artwork & Icon Pipeline (`codex exec` + `PIL`)
+- **Date**: 2026-11-23
+- **Context**: Baseline `MountainScene` SVG and terracotta `NeurixLogo` icon rely on basic shapes and Claude clay accents.
+- **Decision**: Generate bespoke Karakoram Slate hero camp, onboarding monolith, empty-state artwork, and 1024x1024 sovereign `N` app icon via `codex exec` into gitignored `raw-assets/`, inspect every raster image visually, compress optimized WebP assets into `public/assets/art/`, and regenerate all platform icons in `src-tauri/icons/`.
+- **Reasoning**: Delivers crisp, lightweight bespoke visuals aligned to `Karakoram Slate` while keeping repo bloat strictly bounded.

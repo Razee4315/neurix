@@ -3,7 +3,7 @@
 Single source of truth for resuming the Neurix autonomous mission.
 
 ## Status
-- **Current Phase**: Phase 1 Complete -> Ready for Phase 2 Planning (BACKLOG, UI_AUDIT, DESIGN_SYSTEM, MOTION)
+- **Current Phase**: Phase 2A — Wave 0 Complete -> Launching Wave 1 (Engine) & Wave 2 (Graphics)
 - **Active Branch**: `next`
 - **Safety Tag (`main`)**: `before-mission-2026-11-23` -> `a5b7f8667b50a135a25e280acfd6a253529b8b14` (v1.0.1)
 - **App Data Backup**: Complete (`C:\Users\Saqlain\AppData\Local\neurix-mission-backup-2026-11-23\`, `settings.json` 507 B + `models-manifest.txt`)
@@ -14,19 +14,20 @@ Single source of truth for resuming the Neurix autonomous mission.
 | INIT-01 | Tagged `main` as `before-mission-2026-11-23`, branched `next` from `main` | `a5b7f86` |
 | CAL-01 | Calibrated 5 models (`claude-opus-5-5`, `gpt-6.2-sol`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-4-neon`) and verified `npm ci`/lint/typecheck/test/build (`22` files, `272` tests, `792,450 B` dist) | `fd97419` |
 | BASE-01 | Captured installed `v1.0.0` native runtime baseline (`73.8s` BootScreen block, `3,290.55 MB` settled WS) + 19 Playwright Edge screenshots (`0` console/page errors) -> `PERFORMANCE.md`, `BEHAVIOR_NOTES.md`, `UX_BASELINE.md` | `eb8b544` |
-| RES-01 | Synthesized all 5 research tracks into `RESEARCH.md`, `DESIGN_RESEARCH.md` (38 refs, 5 anti-Claude moves, 3 directions), and `FEATURE_MATRIX.md` | *(this commit)* |
+| RES-01 | Synthesized all 5 research tracks into `RESEARCH.md`, `DESIGN_RESEARCH.md` (38 refs, 5 anti-Claude moves, 3 directions), and `FEATURE_MATRIX.md` | `5f10269` |
+| PLAN-01 | Locked Phase 2 architecture (`DEC-006`..`009`, `Karakoram Slate` default) and authored `BACKLOG.md`, `UI_AUDIT.md`, `DESIGN_SYSTEM.md`, `MOTION.md` | *(this commit)* |
 
 ## Item In Progress
-- **Phase 2 Planning Handoff**: All Phase 1 setup, baselines, and research deliverables are committed and pushed to `origin/next`.
-- **Exact Next Step**: Planning model review: select design direction and author Phase 2 master plan + `BACKLOG.md` / `UI_AUDIT.md` / `DESIGN_SYSTEM.md` / `MOTION.md`.
-- **Files Touched**: `RESEARCH.md`, `DESIGN_RESEARCH.md`, `FEATURE_MATRIX.md`, `MISSION_STATE.md`
+- **Phase 2A (Waves 1 & 2)**: Run Rust engine/non-blocking startup/SQLite FTS5/Air-Gap upgrade (`codex` / `gpt-6.2-sol`) in parallel with Part 7 custom Karakoram artwork generation (`codex exec` + `PIL`), then verify early on CI (`next`).
+- **Exact Next Step**: Delegate Wave 1 backend/boot work to `codex` (`gpt-6.2-sol`) and generate/inspect Wave 2 custom art + icons.
+- **Files Touched**: `BACKLOG.md`, `UI_AUDIT.md`, `DESIGN_SYSTEM.md`, `MOTION.md`, `DECISIONS.md`, `MISSION_STATE.md`
 
 ## Next 5 Items in Order
-1. **Step 1.5**: Synthesize 5 research tracks -> `RESEARCH.md`, `DESIGN_RESEARCH.md`, `FEATURE_MATRIX.md` + commit/push.
-2. **Step 1.6**: Hand back to planning model (`enter_plan_mode`) for Phase 2 (`BACKLOG.md`, `UI_AUDIT.md`, `DESIGN_SYSTEM.md`, `MOTION.md`, implementation plan).
-3. **Phase 2A**: Design system + anti-Claude visual/layout foundation + Part 7 custom graphics + theme/typography overhaul.
-4. **Phase 2B**: Rust engine upgrades (non-blocking load, KV cache quant, Flash Attention, GPU layers, SQLite FTS5 RAG, prompt state cache).
-5. **Phase 2C**: Feature completeness + Android/Desktop UX polish + CI artifacts (`next`) + local install verification + `FINAL_REPORT.md` + PR.
+1. **Wave 1**: Non-blocking startup (`< 2s`), `Q8_0`/`Q4_0` KV cache + Flash Attention + GPU offload + fallback, `<think>` history stripping, prompt KV state cache, Air-Gap lock, `rusqlite` FTS5 RAG + `quick-xml`, safe npm patches.
+2. **Wave 2**: Part 7 bespoke Karakoram illustrations (`public/assets/art/`) & refreshed app icon set (`src-tauri/icons/`).
+3. **Wave 2b (Early CI Gate)**: Run `gh workflow run ci.yml --ref next` and confirm Rust tests, Clippy, real-model E2E, Windows exe, and Android APK all build green.
+4. **Wave 3**: Full UI/UX redesign (`Karakoram Slate`, `Paper`, `Deodar`, `Phosphor`, `System`), Edit-as-Branch (`< 1/N >`), lazy KaTeX/Mermaid, Tavern Card V2 import, long-chat virtualization, mobile overlap fix.
+5. **Wave 4**: Post-redesign Playwright + real native CI artifact install verification + `FINAL_REPORT.md` + PR `next` -> `main`.
 
 ## Agent Roles (Part 1 — Calibrated 2026-11-23)
 | Role | Agent (`Provider / Model`) | Calibration Score & Notes |
