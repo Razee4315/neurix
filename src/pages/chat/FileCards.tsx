@@ -6,6 +6,7 @@ import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { type ProposedFile, extractFiles, isHtml } from "@/utils/fileBlocks";
 import { formatBytes } from "@/utils/format";
+import { copyText, isMobile } from "@/utils/platform";
 import { useEffect, useMemo, useState } from "react";
 import styled from "styled-components";
 import { HtmlPreview } from "./HtmlPreview";
@@ -187,5 +188,171 @@ export function FileCards({ text, folder }: { text: string; folder: string }) {
 				<FileCard key={file.name} file={file} folder={folder} />
 			))}
 		</List>
+	);
+}
+
+/* ── Sources ──
+   What a grounded reply looked at, as chips under it. A chip opens a quiet
+   note with the full location and, for a file on this computer, a way to
+   open it. "Looked at" rather than "used": the model may not have needed
+   all of it. */
+
+const SourceRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+
+  > small {
+    font-size: ${tokens.typography.fontSize.xs};
+    color: ${tokens.colors.onSurfaceVariant};
+  }
+`;
+
+const SourceChip = styled.button<{ $open: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  max-width: 16rem;
+  height: 26px;
+  padding: 0 0.5rem;
+  border: 1px solid ${({ $open }) => ($open ? alpha(tokens.colors.primary, "80") : alpha(tokens.colors.outlineVariant, "cc"))};
+  border-radius: ${tokens.borderRadius.md};
+  background: ${({ $open }) => ($open ? alpha(tokens.colors.primary, "14") : tokens.colors.surfaceContainer)};
+  color: ${({ $open }) => ($open ? tokens.colors.primary : tokens.colors.onSurfaceVariant)};
+  font-size: ${tokens.typography.fontSize.xs};
+  cursor: pointer;
+  transition: background ${tokens.transitions.fast}, color ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
+
+  &:hover { color: ${tokens.colors.onSurface}; }
+  &:focus-visible { outline: 2px solid ${tokens.colors.primary}; outline-offset: 2px; }
+
+  > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  > em {
+    font-style: normal;
+    font-family: ${tokens.typography.fontFamily.mono};
+    color: ${tokens.colors.secondary};
+    flex-shrink: 0;
+  }
+
+  @media (hover: none) { height: 32px; }
+`;
+
+const SourceNote = styled.div`
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.125rem;
+  padding: 0.5rem 0.625rem;
+  border-left: 2px solid ${alpha(tokens.colors.primary, "80")};
+  background: ${tokens.colors.surfaceContainerLow};
+  border-radius: 0 ${tokens.borderRadius.md} ${tokens.borderRadius.md} 0;
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+
+  > code {
+    flex: 1;
+    min-width: 10rem;
+    font-family: ${tokens.typography.fontFamily.mono};
+    color: ${tokens.colors.onSurface};
+    overflow-wrap: anywhere;
+  }
+`;
+
+const NoteBtn = styled.button`
+  height: 26px;
+  padding: 0 0.5rem;
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
+  border-radius: ${tokens.borderRadius.md};
+  background: transparent;
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.xs};
+  cursor: pointer;
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+`;
+
+interface Citation {
+	raw: string;
+	kind: "file" | "mail" | "repo";
+	label: string;
+	page: string | null;
+	location: string;
+}
+
+/** What a source string names, and where to find it. */
+export function describeSource(raw: string): Citation {
+	const pageMatch = raw.match(/(?:\[Page (\d{1,5})\]|#page=(\d{1,5}))\s*$/i);
+	const page = pageMatch ? (pageMatch[1] ?? pageMatch[2]) : null;
+	const location = pageMatch ? raw.slice(0, pageMatch.index).trim() : raw;
+	if (/^gmail\b/i.test(location)) return { raw, kind: "mail", label: "Gmail", page, location };
+	if (/^[\w.-]{1,100}\/[\w.-]{1,100}$/.test(location) && !/[\\:]/.test(location)) {
+		return { raw, kind: "repo", label: location.split("/")[1], page, location };
+	}
+	const label = location.split(/[\\/]/).filter(Boolean).pop() ?? location;
+	return { raw, kind: "file", label, page, location };
+}
+
+const KIND_ICON: Record<Citation["kind"], string> = { file: "description", mail: "mail", repo: "github" };
+const KIND_NAME: Record<Citation["kind"], string> = {
+	file: "File on this device",
+	mail: "Your newest emails",
+	repo: "GitHub repository",
+};
+
+/** Clickable citations for what a reply looked at. */
+export function SourceChips({ sources }: { sources: string[] }) {
+	const { showToast } = useToast();
+	const [open, setOpen] = useState<string | null>(null);
+	const citations = useMemo(() => sources.map(describeSource), [sources]);
+	const current = citations.find((c) => c.raw === open) ?? null;
+	const isPath = (c: Citation) => c.kind === "file" && /[\\/]/.test(c.location);
+
+	return (
+		<SourceRow aria-label="Sources this reply looked at">
+			<small>Looked at</small>
+			{citations.map((c) => (
+				<SourceChip
+					key={c.raw}
+					type="button"
+					$open={open === c.raw}
+					aria-expanded={open === c.raw}
+					title={c.raw}
+					onClick={() => setOpen((v) => (v === c.raw ? null : c.raw))}
+				>
+					<Icon name={KIND_ICON[c.kind]} size={12} />
+					<span>{c.label}</span>
+					{c.page && <em>p.{c.page}</em>}
+				</SourceChip>
+			))}
+			{current && (
+				<SourceNote role="region" aria-label={`About ${current.label}`}>
+					<span>
+						{KIND_NAME[current.kind]}
+						{current.page ? `, page ${current.page}` : ""}
+					</span>
+					<code>{current.location}</code>
+					<NoteBtn
+						type="button"
+						onClick={async () => {
+							if (await copyText(current.location)) showToast("Copied", "success");
+						}}
+					>
+						Copy
+					</NoteBtn>
+					{isPath(current) && !isMobile() && (
+						<NoteBtn
+							type="button"
+							onClick={() => openWorkspaceFile(current.location).catch((err) => showToast(message(err), "error"))}
+						>
+							Open
+						</NoteBtn>
+					)}
+				</SourceNote>
+			)}
+		</SourceRow>
 	);
 }

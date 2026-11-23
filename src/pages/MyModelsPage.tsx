@@ -1,17 +1,24 @@
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
+import { EmptyArt } from "@/components/ui/Illustrations";
 import { LoadingOverlay } from "@/components/ui/LoadingOverlay";
 import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
 import { chatService, modelService, settingsService } from "@/services";
-import type { BenchmarkResult, DownloadedModel, StorageInfo } from "@/services/types";
+import type {
+	BenchmarkResult,
+	DeviceInfo,
+	DownloadedModel,
+	StorageInfo,
+} from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { formatBytes, formatGB, formatSpeed } from "@/utils/format";
+import { nominalRamGb } from "@/utils/modelFit";
 import { vibrate } from "@/utils/platform";
-import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
@@ -19,9 +26,151 @@ import styled, { keyframes } from "styled-components";
 /* ── Styles ── */
 
 const Page = styled.div`
-  max-width: 44rem;
-  margin: 0 auto;
-  padding: 1.25rem;
+	max-width: 46rem;
+	margin: 0 auto;
+	padding: 1.25rem;
+`;
+
+/* ── Device & Engine Readiness Bento ── */
+
+const ReadinessBento = styled.section`
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+	margin-bottom: 1.25rem;
+	padding: 1rem 1.125rem;
+	border-radius: ${tokens.borderRadius.xl};
+	background: ${tokens.colors.surfaceContainerLow};
+	border: 1px solid ${tokens.colors.outlineVariant};
+`;
+
+const BentoHeader = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+`;
+
+const BentoTitleGroup = styled.div`
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+`;
+
+const BentoTitle = styled.h2`
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	font-size: 11px;
+	font-weight: ${tokens.typography.fontWeight.bold};
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const EngineStatusChip = styled.span<{ $active: boolean }>`
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-size: 11px;
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	padding: 0.175rem 0.5rem;
+	border-radius: ${tokens.borderRadius.sm};
+	background: ${({ $active }) =>
+		$active
+			? alpha(tokens.colors.primary, "1a")
+			: tokens.colors.surfaceContainerHigh};
+	color: ${({ $active }) =>
+		$active ? tokens.colors.primary : tokens.colors.onSurfaceVariant};
+`;
+
+const EngineControlsBtn = styled.button`
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	padding: 0.3rem 0.65rem;
+	border-radius: ${tokens.borderRadius.md};
+	border: 1px solid ${tokens.colors.outlineVariant};
+	background: ${tokens.colors.surfaceContainerHigh};
+	color: ${tokens.colors.onSurface};
+	font-size: ${tokens.typography.fontSize.xs};
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	cursor: pointer;
+	transition: background ${tokens.transitions.fast};
+
+	&:hover {
+		background: ${tokens.colors.surfaceContainerHighest};
+	}
+`;
+
+const BentoGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(5, minmax(0, 1fr));
+	gap: 0.5rem;
+
+	@media (max-width: 720px) {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+`;
+
+const BentoCell = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+	padding: 0.625rem 0.75rem;
+	border-radius: ${tokens.borderRadius.lg};
+	background: ${tokens.colors.surfaceContainer};
+	border: 1px solid ${alpha(tokens.colors.outlineVariant, "80")};
+`;
+
+const BentoCellLabel = styled.span`
+	font-size: 11px;
+	color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const BentoCellValue = styled.span<{ $accent?: "teal" | "brass" }>`
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-variant-numeric: tabular-nums;
+	font-size: ${tokens.typography.fontSize.sm};
+	font-weight: ${tokens.typography.fontWeight.bold};
+	color: ${({ $accent }) =>
+		$accent === "teal"
+			? tokens.colors.primary
+			: $accent === "brass"
+				? tokens.colors.secondary
+				: tokens.colors.onSurface};
+`;
+
+const EmptyModelsBox = styled.div`
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 2.5rem 1.5rem;
+	text-align: center;
+	border-radius: ${tokens.borderRadius.xl};
+	background: ${tokens.colors.surfaceContainerLow};
+	border: 1px solid ${tokens.colors.outlineVariant};
+	gap: 0.5rem;
+`;
+
+const EmptyModelsTitle = styled.p`
+	font-family: ${tokens.typography.fontFamily.headline};
+	font-size: ${tokens.typography.fontSize.md};
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	color: ${tokens.colors.onSurface};
+	margin-top: 0.5rem;
+`;
+
+const EmptyModelsSub = styled.p`
+	font-size: ${tokens.typography.fontSize.sm};
+	color: ${tokens.colors.onSurfaceVariant};
+	max-width: 280px;
+	line-height: ${tokens.typography.lineHeight.relaxed};
+	margin-bottom: 0.5rem;
 `;
 
 const SearchBox = styled.div`
@@ -453,31 +602,54 @@ const STATUS_LABEL = {
 
 export function MyModelsPage() {
 	const navigate = useNavigate();
-	const { activeModelId, loadingModelId, loadModel, unloadModel, refreshActiveModel } = useAppContext();
-	const { downloads, installedVersion, pauseDownload, resumeDownload, cancelDownload } = useDownloads();
+	const {
+		activeModelId,
+		activeModelInfo,
+		loadingModelId,
+		settings,
+		loadModel,
+		unloadModel,
+		refreshActiveModel,
+	} = useAppContext();
+	const {
+		downloads,
+		installedVersion,
+		pauseDownload,
+		resumeDownload,
+		cancelDownload,
+	} = useDownloads();
 	const { showConfirm, showAlert } = useConfirm();
 	const { showToast } = useToast();
 	const [measuring, setMeasuring] = useState(false);
 	const [speed, setSpeed] = useState<BenchmarkResult | null>(null);
 	const [search, setSearch] = useState("");
 	const [models, setModels] = useState<DownloadedModel[]>([]);
-	const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+	const [status, setStatus] = useState<"loading" | "ready" | "error">(
+		"loading",
+	);
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const pullStartRef = useRef(0);
 	const pageRef = useRef<HTMLDivElement>(null);
-	const [storage, setStorage] = useState<StorageInfo>({ used_bytes: 0, models_count: 0, partial_bytes: 0 });
+	const [storage, setStorage] = useState<StorageInfo>({
+		used_bytes: 0,
+		models_count: 0,
+		partial_bytes: 0,
+	});
 	const [availableSpace, setAvailableSpace] = useState<number | null>(null);
+	const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
 
 	const refresh = useCallback(async () => {
 		try {
-			const [downloaded, info, available] = await Promise.all([
+			const [downloaded, info, available, dev] = await Promise.all([
 				modelService.getDownloadedModels(),
 				settingsService.getStorageInfo(),
 				settingsService.getAvailableSpace().catch(() => null),
+				settingsService.getDeviceInfo().catch(() => null),
 			]);
 			setModels(downloaded);
 			setStorage(info);
 			setAvailableSpace(available);
+			setDeviceInfo(dev);
 			setStatus("ready");
 		} catch {
 			setStatus("error");
@@ -504,7 +676,8 @@ export function MyModelsPage() {
 	const handleTouchEnd = (e: React.TouchEvent) => {
 		const diff = e.changedTouches[0].clientY - pullStartRef.current;
 		const el = pageRef.current?.parentElement;
-		if (diff > 80 && el && el.scrollTop <= 0 && !isRefreshing) handlePullRefresh();
+		if (diff > 80 && el && el.scrollTop <= 0 && !isRefreshing)
+			handlePullRefresh();
 	};
 
 	const filtered = models.filter(
@@ -521,7 +694,10 @@ export function MyModelsPage() {
 			vibrate(15);
 			navigate("/chat", { state: { freshChat: true } });
 		} catch (err) {
-			showAlert("Couldn't load the model", err instanceof Error ? err.message : String(err));
+			showAlert(
+				"Couldn't load the model",
+				err instanceof Error ? err.message : String(err),
+			);
 		}
 	};
 
@@ -551,7 +727,10 @@ export function MyModelsPage() {
 			await modelService.deleteModel(model.id);
 			showToast(`${model.name} deleted`, "info");
 		} catch (err) {
-			showAlert("Couldn't delete the model", err instanceof Error ? err.message : String(err));
+			showAlert(
+				"Couldn't delete the model",
+				err instanceof Error ? err.message : String(err),
+			);
 		}
 		await Promise.all([refresh(), refreshActiveModel()]);
 	};
@@ -573,28 +752,119 @@ export function MyModelsPage() {
 		try {
 			setSpeed(await chatService.benchmarkModel());
 		} catch (err) {
-			showToast(typeof err === "string" ? err : "The speed test could not run", "error");
+			showToast(
+				typeof err === "string" ? err : "The speed test could not run",
+				"error",
+			);
 		} finally {
 			setMeasuring(false);
 		}
 	};
 
-	const pending = Object.values(downloads).filter((d) => d.status !== "finished");
+	const pending = Object.values(downloads).filter(
+		(d) => d.status !== "finished",
+	);
 	// Whatever started it, a load in progress covers the page: nothing here works until it ends.
-	const loadingName = loadingModelId ? (models.find((m) => m.id === loadingModelId)?.name ?? "model") : null;
+	const loadingName = loadingModelId
+		? (models.find((m) => m.id === loadingModelId)?.name ?? "model")
+		: null;
 	const storageKnown = availableSpace !== null;
 	const totalSpace = storageKnown ? storage.used_bytes + availableSpace : 0;
-	const usagePercent = storageKnown && totalSpace > 0 ? (storage.used_bytes / totalSpace) * 100 : 0;
+	const usagePercent =
+		storageKnown && totalSpace > 0
+			? (storage.used_bytes / totalSpace) * 100
+			: 0;
+
+	const kvQuant = (
+		activeModelInfo?.kv_cache_quant ??
+		settings?.kv_cache_quant ??
+		"q8_0"
+	).toUpperCase();
+	const flashAttn =
+		(activeModelInfo?.flash_attention ?? settings?.flash_attention ?? true)
+			? "On"
+			: "Off";
+	const gpuLayers = activeModelInfo?.gpu_layers ?? settings?.gpu_layers ?? 0;
+	const ramGb = nominalRamGb(deviceInfo?.total_memory_bytes ?? null);
+	const threads =
+		activeModelInfo?.threads ??
+		(settings?.threads && settings.threads > 0
+			? settings.threads
+			: deviceInfo?.inference_threads) ??
+		4;
 
 	return (
 		<AppLayout title="My Models">
 			{loadingName && (
-				<LoadingOverlay title={`Loading ${loadingName}`} subtitle="This can take a few seconds…" />
+				<LoadingOverlay
+					title={`Loading ${loadingName}`}
+					subtitle="This can take a few seconds…"
+				/>
 			)}
-			<Page ref={pageRef} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+			<Page
+				ref={pageRef}
+				onTouchStart={handleTouchStart}
+				onTouchEnd={handleTouchEnd}
+			>
 				<PullIndicator $visible={isRefreshing}>
 					<RefreshSpinner />
 				</PullIndicator>
+
+				<ReadinessBento aria-label="Device and Engine Readiness">
+					<BentoHeader>
+						<BentoTitleGroup>
+							<BentoTitle>
+								<Icon name="memory" size={14} color={tokens.colors.primary} />
+								Device & Engine Readiness
+							</BentoTitle>
+							<EngineStatusChip $active={Boolean(activeModelInfo)}>
+								<Icon
+									name={activeModelInfo ? "check_circle" : "deployed_code"}
+									size={12}
+								/>
+								{activeModelInfo
+									? `${activeModelInfo.name} · ${activeModelInfo.context_length.toLocaleString()} ctx`
+									: loadingModelId
+										? "Warming model…"
+										: "Engine standby"}
+							</EngineStatusChip>
+						</BentoTitleGroup>
+						<EngineControlsBtn
+							type="button"
+							onClick={() => navigate("/settings")}
+						>
+							<Icon name="settings" size={13} />
+							Engine controls
+						</EngineControlsBtn>
+					</BentoHeader>
+
+					<BentoGrid>
+						<BentoCell>
+							<BentoCellLabel>KV Cache Quant</BentoCellLabel>
+							<BentoCellValue $accent="teal">{kvQuant}</BentoCellValue>
+						</BentoCell>
+						<BentoCell>
+							<BentoCellLabel>Flash Attention</BentoCellLabel>
+							<BentoCellValue $accent={flashAttn === "On" ? "teal" : undefined}>
+								{flashAttn}
+							</BentoCellValue>
+						</BentoCell>
+						<BentoCell>
+							<BentoCellLabel>GPU Offload</BentoCellLabel>
+							<BentoCellValue $accent={gpuLayers > 0 ? "brass" : undefined}>
+								{gpuLayers > 0 ? `${gpuLayers} layers` : "0 (CPU)"}
+							</BentoCellValue>
+						</BentoCell>
+						<BentoCell>
+							<BentoCellLabel>System RAM</BentoCellLabel>
+							<BentoCellValue>{ramGb ? `${ramGb} GB` : "8 GB+"}</BentoCellValue>
+						</BentoCell>
+						<BentoCell>
+							<BentoCellLabel>CPU Threads</BentoCellLabel>
+							<BentoCellValue>{threads} threads</BentoCellValue>
+						</BentoCell>
+					</BentoGrid>
+				</ReadinessBento>
 
 				{models.length > 3 && (
 					<SearchBox>
@@ -605,7 +875,9 @@ export function MyModelsPage() {
 							type="search"
 							placeholder="Search downloaded models..."
 							value={search}
-							onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearch(e.target.value)}
+							onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+								setSearch(e.target.value)
+							}
 							aria-label="Search downloaded models"
 						/>
 					</SearchBox>
@@ -614,7 +886,8 @@ export function MyModelsPage() {
 				<StorageSection>
 					<StorageHeader>
 						<StorageLabel>
-							{storage.models_count} model{storage.models_count !== 1 ? "s" : ""}
+							{storage.models_count} model
+							{storage.models_count !== 1 ? "s" : ""}
 							{storageKnown ? ` · ${formatGB(availableSpace)} GB free` : ""}
 							{storage.partial_bytes > 0
 								? ` · ${formatBytes(storage.partial_bytes)} in unfinished downloads`
@@ -634,21 +907,34 @@ export function MyModelsPage() {
 				{pending.length > 0 && (
 					<DownloadSection>
 						<SectionTitle>
-							<Icon name="downloading" size={18} color={tokens.colors.tertiary} />
+							<Icon
+								name="downloading"
+								size={18}
+								color={tokens.colors.tertiary}
+							/>
 							Downloads
 						</SectionTitle>
 						{pending.map((dl) => {
-							const progress = dl.totalBytes > 0 ? (dl.downloadedBytes / dl.totalBytes) * 100 : 0;
+							const progress =
+								dl.totalBytes > 0
+									? (dl.downloadedBytes / dl.totalBytes) * 100
+									: 0;
 							return (
 								<DownloadCard key={dl.modelId}>
 									<DownloadCardTop>
 										<DownloadName>{dl.modelName}</DownloadName>
-										<DownloadStatus $status={dl.status}>{STATUS_LABEL[dl.status]}</DownloadStatus>
+										<DownloadStatus $status={dl.status}>
+											{STATUS_LABEL[dl.status]}
+										</DownloadStatus>
 									</DownloadCardTop>
 
 									{dl.error && (
 										<DownloadError role="alert">
-											<Icon name="error" size={14} color={tokens.colors.error} />
+											<Icon
+												name="error"
+												size={14}
+												color={tokens.colors.error}
+											/>
 											{dl.error}
 										</DownloadError>
 									)}
@@ -665,7 +951,8 @@ export function MyModelsPage() {
 
 									<DownloadMeta>
 										<span>
-											{formatBytes(dl.downloadedBytes)} / {dl.sizeLabel} · {Math.round(progress)}%
+											{formatBytes(dl.downloadedBytes)} / {dl.sizeLabel} ·{" "}
+											{Math.round(progress)}%
 										</span>
 										{dl.status === "downloading" && dl.speedBps > 0 && (
 											<DownloadSpeed>{formatSpeed(dl.speedBps)}</DownloadSpeed>
@@ -674,22 +961,37 @@ export function MyModelsPage() {
 
 									<DownloadActions>
 										{dl.status === "downloading" && (
-											<DownloadActionBtn type="button" onClick={() => pauseDownload(dl.modelId)}>
+											<DownloadActionBtn
+												type="button"
+												onClick={() => pauseDownload(dl.modelId)}
+											>
 												<Icon name="pause" size={16} />
 												Pause
 											</DownloadActionBtn>
 										)}
-										{(dl.status === "paused" || dl.status === "failed") && !dl.blockedByWifi && (
-											<DownloadActionBtn type="button" $primary onClick={() => resumeDownload(dl.model)}>
-												<Icon name={dl.status === "failed" ? "refresh" : "play_arrow"} size={16} />
-												{dl.status === "failed" ? "Retry" : "Resume"}
-											</DownloadActionBtn>
-										)}
+										{(dl.status === "paused" || dl.status === "failed") &&
+											!dl.blockedByWifi && (
+												<DownloadActionBtn
+													type="button"
+													$primary
+													onClick={() => resumeDownload(dl.model)}
+												>
+													<Icon
+														name={
+															dl.status === "failed" ? "refresh" : "play_arrow"
+														}
+														size={16}
+													/>
+													{dl.status === "failed" ? "Retry" : "Resume"}
+												</DownloadActionBtn>
+											)}
 										{dl.blockedByWifi && (
 											<DownloadActionBtn
 												type="button"
 												$primary
-												onClick={() => resumeDownload(dl.model, { allowMobileData: true })}
+												onClick={() =>
+													resumeDownload(dl.model, { allowMobileData: true })
+												}
 											>
 												<Icon name="download" size={16} />
 												Use this connection
@@ -698,7 +1000,9 @@ export function MyModelsPage() {
 										{dl.status !== "verifying" && (
 											<DownloadActionBtn
 												type="button"
-												onClick={() => handleCancelDownload(dl.modelId, dl.modelName)}
+												onClick={() =>
+													handleCancelDownload(dl.modelId, dl.modelName)
+												}
 											>
 												<Icon name="close" size={16} />
 												Cancel
@@ -733,16 +1037,18 @@ export function MyModelsPage() {
 						</PrimaryCta>
 					</EmptyState>
 				) : models.length === 0 ? (
-					<EmptyState
-						art="models"
-						message="No models yet"
-						subtitle="Download one over WiFi and it's yours to use offline, forever."
-					>
+					<EmptyModelsBox>
+						<EmptyArt kind="models" />
+						<EmptyModelsTitle>No models yet</EmptyModelsTitle>
+						<EmptyModelsSub>
+							Download one over WiFi and it&rsquo;s yours to use offline,
+							forever.
+						</EmptyModelsSub>
 						<PrimaryCta type="button" onClick={() => navigate("/store")}>
 							<Icon name="download" size={16} />
 							Browse models
 						</PrimaryCta>
-					</EmptyState>
+					</EmptyModelsBox>
 				) : filtered.length === 0 ? (
 					<EmptyState art="search" message="No models match your search" />
 				) : (
@@ -750,7 +1056,11 @@ export function MyModelsPage() {
 						{filtered.map((m, i) => {
 							const isActive = activeModelId === m.id;
 							return (
-								<Card key={m.id} $active={isActive} style={{ animationDelay: `${i * 50}ms` }}>
+								<Card
+									key={m.id}
+									$active={isActive}
+									style={{ animationDelay: `${i * 50}ms` }}
+								>
 									<CardTop>
 										<CardName>
 											<ModelName>{m.name}</ModelName>
@@ -759,17 +1069,20 @@ export function MyModelsPage() {
 									</CardTop>
 									<CardMeta>
 										<span>{m.size_label}</span>
-										<span>{m.tag === "Legacy"
+										<span>
+											{m.tag === "Legacy"
 												? "Earlier model · newer ones answer better"
 												: m.tag === "Added"
 													? "Added from Hugging Face"
-													: m.tag}</span>
+													: m.tag}
+										</span>
 									</CardMeta>
 									{isActive && speed && (
 										<CardMeta role="status">
 											<span>
 												{speed.tokens_per_second.toFixed(1)} tokens/s writing ·{" "}
-												{speed.prompt_tokens_per_second.toFixed(0)} reading · {speed.threads} threads
+												{speed.prompt_tokens_per_second.toFixed(0)} reading ·{" "}
+												{speed.threads} threads
 											</span>
 										</CardMeta>
 									)}
@@ -783,17 +1096,33 @@ export function MyModelsPage() {
 											{isActive ? "New chat" : "Use model"}
 										</UseBtn>
 										{isActive && (
-											<SecondaryBtn type="button" onClick={handleSpeedTest} disabled={measuring}>
+											<SecondaryBtn
+												type="button"
+												onClick={handleSpeedTest}
+												disabled={measuring}
+											>
 												{measuring ? "Measuring…" : "Speed test"}
 											</SecondaryBtn>
 										)}
 										{isActive && (
-											<SecondaryBtn type="button" onClick={handleUnload} disabled={measuring}>
+											<SecondaryBtn
+												type="button"
+												onClick={handleUnload}
+												disabled={measuring}
+											>
 												Unload
 											</SecondaryBtn>
 										)}
-										<DeleteBtn type="button" onClick={() => handleDelete(m)} aria-label={`Delete ${m.name}`}>
-											<Icon name="delete" size={18} color={tokens.colors.error} />
+										<DeleteBtn
+											type="button"
+											onClick={() => handleDelete(m)}
+											aria-label={`Delete ${m.name}`}
+										>
+											<Icon
+												name="delete"
+												size={18}
+												color={tokens.colors.error}
+											/>
 										</DeleteBtn>
 									</CardActions>
 								</Card>

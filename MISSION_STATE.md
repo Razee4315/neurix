@@ -3,7 +3,7 @@
 Single source of truth for resuming the Neurix autonomous mission.
 
 ## Status
-- **Current Phase**: Phase 2B — Wave 3 Anti-Claude UI/UX Redesign & Features
+- **Current Phase**: Phase 2C — Wave 3 Complete; Wave 4 Verification & Final CI Gate
 - **Active Branch**: `next`
 - **Safety Tag (`main`)**: `before-mission-2026-11-23` -> `a5b7f8667b50a135a25e280acfd6a253529b8b14` (v1.0.1)
 - **App Data Backup**: Complete (`C:\Users\Saqlain\AppData\Local\neurix-mission-backup-2026-11-23\`, `settings.json` 507 B + `models-manifest.txt`)
@@ -18,12 +18,13 @@ Single source of truth for resuming the Neurix autonomous mission.
 | PLAN-01 | Locked Phase 2 architecture (`DEC-006`..`009`, `Karakoram Slate` default) and authored `BACKLOG.md`, `UI_AUDIT.md`, `DESIGN_SYSTEM.md`, `MOTION.md` | `51e5f58` |
 | WAVE1-01 | Non-blocking startup, KV quant (`Q8_0`/`Q4_0`/`F16`) + Flash Attention + GPU offload fallback, prompt KV persistence, `<think>` history stripping, Air-Gap enforcement, SQLite FTS5 `FolderIndex` + `quick-xml` DOCX + PDF page hints | `e05f45a` |
 | WAVE2-01 | Generated & visually verified 5 Karakoram Slate WebP illustrations (`public/assets/art/`, 4–26 KB) and regenerated all Windows/iOS/Android icons + Android system bars | `ae71fad` |
-| WAVE3A-01 | Replaced Graphite/Dusk with `karakoram` default + `deodar` + upgraded `paper` + `system` matchMedia theme, bespoke WebP Illustrations, Sovereign Engine Pill + collapsible recessed Sidebar + Command Palette shortcuts | *(this commit)* |
+| WAVE3A-01 | Replaced Graphite/Dusk with `karakoram` default + `deodar` + upgraded `paper` + `system` matchMedia theme, bespoke WebP Illustrations, Sovereign Engine Pill + collapsible recessed Sidebar + Command Palette shortcuts | `532e380` |
+| WAVE3-01 | Completed Wave 3 page redesigns & features (`3B`/`3C-1`/`3C-2`): Chat Edit-as-Branch + `< 1 / N >` Rust/TS `MessageVariant` persistence, lazy KaTeX/Mermaid + 24 highlight langs, citations, virtualization, Store/Detail/Models/Connectors/Splash/Onboarding, 2-col Character + Memory Ledger Friend editors, Tavern V2 PNG/JSON, History pins/folders/export, Engine/Air-Gap/ChatGPT+Claude import Settings, About | *(this commit)* |
 
 ## Item In Progress
-- **Phase 2B (Waves 3B / 3C-1 / 3C-2)**: Running 3 parallel page-level delegates (`ChatPage`/Markdown/Branching/Virtualization via `claude-opus-5-5`; Store/Detail/Models/Connectors/Onboarding/Splash via `gemini-4-argon`; Friends/Characters/Tavern V2/History/Settings/About via `gemini-4-neon`).
-- **Exact Next Step**: Monitor completion of 3B, 3C-1, 3C-2, run local verification + build, commit/push Wave 3, and hand back for Wave 4.
-- **Files Touched**: `src/theme/**`, `src/context/AppContext.tsx`, `src/components/**`, `src-tauri/src/settings.rs`, `package.json`, `package-lock.json`, `MISSION_STATE.md`
+- **Phase 2C (Wave 4 Verification & Final CI Gate)**: Trigger final CI build (`ci.yml` on `next`) + run comprehensive post-redesign Playwright walkthrough (`docs/mission/after/*.png`) + native Windows `neurix-tauri.exe` benchmark against real local GGUF.
+- **Exact Next Step**: Push Wave 3 commit on `next`, run `gh workflow run ci.yml --ref next`, capture & visually inspect `docs/mission/after/*.png` via Playwright (`msedge`), download & benchmark CI Windows exe, restore settings backup, write `FINAL_REPORT.md` + open PR `next` -> `main`.
+- **Files Touched**: `src/pages/**`, `src/pages/chat/**`, `src/utils/**`, `src/services/types.ts`, `src-tauri/src/chat/storage.rs`, `MISSION_STATE.md`
 
 ## Next 5 Items in Order
 1. **Wave 1**: Non-blocking startup (`< 2s`), `Q8_0`/`Q4_0` KV cache + Flash Attention + GPU offload + fallback, `<think>` history stripping, prompt KV state cache, Air-Gap lock, `rusqlite` FTS5 RAG + `quick-xml`, safe npm patches.
@@ -51,11 +52,11 @@ Single source of truth for resuming the Neurix autonomous mission.
 | Timestamp (PKT) | Account / Provider | Model | Calls Used (Session) | Status / Estimate | Notes |
 |---|---|---|---|---|---|
 | 2026-11-23 13:37 | `antigravity_antigravity_viylsa` | `gemini-pro-orchestrator-neon` | Active | Unknown % (no API meter) | Healthy; zero rate-limit signals |
-| 2026-11-23 13:37 | `antigravity_antigravity_ani` | `gemini-4-argon` | 1 calibration + 1 research | Unknown % | Queued for Wave 3C-1 |
-| 2026-11-23 13:37 | `antigravity_antigravity_ani` | `gemini-4-hydrogen` | 1 calibration + 1 research | Unknown % | Available reserve |
-| 2026-11-23 13:37 | `antigravity_antigravity_ani` | `gemini-4-neon` | 1 calibration + 1 research | Unknown % | Queued for Wave 3C-2 |
-| 2026-11-23 13:37 | `claudeAgent` | `claude-opus-5-5` | +Sub-Wave 3A | Unknown % | Sub-Wave 3A complete (`272/272` tests, 0 lint/TS errors); queued for 3B |
-| 2026-11-23 13:37 | `codex` | `gpt-6.2-sol` / `codex exec` | +Wave 1 impl + 5x `image_gen` | Unknown % | CI run `45137177811` all 4 jobs PASSED |
+| 2026-11-23 13:37 | `antigravity_antigravity_ani` | `gemini-4-argon` | +Sub-Wave 3C-1 | Complete | Completed Store/Detail/Models/Connectors/Splash/Onboarding |
+| 2026-11-23 13:37 | `antigravity_antigravity_ani` | `gemini-4-hydrogen` | 1 calibration + 1 research | Available reserve | Unused in Wave 3 |
+| 2026-11-23 13:39 | `antigravity_antigravity_ani` | `gemini-4-neon` | +Sub-Wave 3C-2 (aborted) | Individual quota hit (`Resets in 19m54s`) | Failed cleanly on 3C-2; re-routed immediately to `codex` |
+| 2026-11-23 13:45 | `claudeAgent` | `claude-opus-5-5` | +Sub-Wave 3A + 3B | Healthy | Completed 3B ChatPage, branching, KaTeX/Mermaid, citations, virtualization |
+| 2026-11-23 13:55 | `codex` | `gpt-6.2-sol` / `codex exec` | +Wave 1 + 5x `image_gen` + 3C-2 re-route | Healthy | Completed re-routed 3C-2 (Editors, Tavern V2, History, Settings, About) |
 
 ## Key Decisions
 - **DEC-001**: Safety tag `before-mission-2026-11-23` on `main` (`a5b7f86`); all work on `next`. See [DECISIONS.md](DECISIONS.md#dec-001-git-safety-tag--working-branch-next).

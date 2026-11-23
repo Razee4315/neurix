@@ -182,17 +182,48 @@ export function QueueList({ items, paused, onEdit, onRemove, onResume }: QueueLi
 const RING_RADIUS = 7.5;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
+/* The ring, and beside it on a roomy screen a readout ("1.2k / 8k"). Under
+   480px only the ring shows; its label still says it in full. */
 const Ring = styled.span`
   display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
+  height: 26px;
+  padding: 0 0.4375rem 0 0.25rem;
   margin-right: 0.125rem;
+  border-radius: ${tokens.borderRadius.md};
+  background: ${tokens.colors.surfaceContainer};
+  cursor: default;
 
+  svg { flex-shrink: 0; }
   circle { fill: none; stroke-width: 2.5; }
   circle:first-child { stroke: ${tokens.colors.surfaceContainerHighest}; }
-  circle:last-child { transition: stroke-dashoffset 0.5s ease-out, stroke 0.2s; }
+  circle:last-child { transition: stroke-dashoffset 360ms ease-out, stroke 0.2s; }
+
+  @media (max-width: 480px) {
+    padding: 0;
+    background: transparent;
+    > span { display: none; }
+  }
 `;
+
+const RingText = styled.span<{ $color: string }>`
+  font-family: ${tokens.typography.fontFamily.mono};
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  color: ${({ $color }) => $color};
+`;
+
+/** 1234 -> "1.2k", 8192 -> "8k", 950 -> "950". */
+export function compactTokens(n: number): string {
+	if (n < 1000) return String(Math.round(n));
+	const k = n / 1000;
+	const text = k >= 100 ? Math.round(k).toString() : k.toFixed(1).replace(/\.0$/, "");
+	return `${text}k`;
+}
 
 /** Rough, for when the model hasn't reported a real count yet. */
 export function estimateTokens(texts: string[]): number {
@@ -204,10 +235,11 @@ export function MemoryRing({ used, total }: { used: number; total: number }) {
 	const share = Math.min(used / total, 1);
 	const color =
 		share >= 0.9 ? tokens.colors.error : share >= 0.7 ? tokens.colors.secondary : tokens.colors.onSurfaceVariant;
-	const label = `About ${used.toLocaleString()} of ${total.toLocaleString()} tokens of the model's memory used`;
+	const percent = Math.round(share * 100);
+	const label = `Model memory: about ${used.toLocaleString()} of ${total.toLocaleString()} tokens used (${percent}%)`;
 	return (
 		<Ring role="img" aria-label={label} title={label}>
-			<svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
+			<svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true">
 				<circle cx="10" cy="10" r={RING_RADIUS} />
 				<circle
 					cx="10"
@@ -220,6 +252,9 @@ export function MemoryRing({ used, total }: { used: number; total: number }) {
 					transform="rotate(-90 10 10)"
 				/>
 			</svg>
+			<RingText aria-hidden="true" $color={share >= 0.7 ? color : tokens.colors.onSurfaceVariant}>
+				{compactTokens(used)} / {compactTokens(total)}
+			</RingText>
 		</Ring>
 	);
 }

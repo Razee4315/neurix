@@ -32,11 +32,21 @@ import {
 	useConnectors,
 	withContext,
 } from "@/utils/connectors";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { NeurixMark } from "@/components/ui/NeurixLogo";
-import { MemoryRing, QueueList, SlashMenu, UserMessage, estimateTokens } from "./chat/ComposerExtras";
-import { FileCards } from "./chat/FileCards";
+import {
+	addReplyVariant,
+	activeIndexOf,
+	branchUserEdit,
+	replaceActiveVariant,
+	selectReplyVariant,
+	selectUserBranch,
+	stepVariant,
+	variantCount,
+} from "./chat/branching";
+import { MemoryRing, QueueList, SlashMenu, UserMessage, compactTokens, estimateTokens } from "./chat/ComposerExtras";
+import { FileCards, SourceChips } from "./chat/FileCards";
 import { FindBar } from "./chat/FindBar";
 import { Markdown } from "./chat/Markdown";
 import { ModelSelect } from "./chat/ModelSelect";
@@ -59,7 +69,6 @@ import {
 	ReadingTrack,
 	Reasoning,
 	ThinkChip,
-	ToolHint,
 	ToolLink,
 } from "./chat/Reasoning";
 import {
@@ -69,6 +78,7 @@ import {
 	createMessage,
 	cutShortLabel,
 	fromStored,
+	generateTitle,
 	persistable,
 	plainEarlierReplies,
 	spokenByAnother,
@@ -109,16 +119,29 @@ import {
 	PrimaryCta,
 	RoundBtn,
 	SecondaryCta,
-	SourcesLine,
 	SpeedBadge,
 	StarterChip,
 	StartersGrid,
 	TextInput,
 	TopBarBtn,
 	TypingDots,
+	EngineLine,
+	EngineTag,
+	PersonaPill,
+	TrustBadge,
+	TrustColumn,
+	VariantBtn,
+	VariantSwitch,
+	VirtualList,
+	VirtualRow,
+	WarmingTrack,
 	Welcome,
-	WelcomeText,
-	WelcomeTitle,
+	WorkspaceCard,
+	WorkspaceHead,
+	WorkspaceLede,
+	WorkspaceStarters,
+	WorkspaceTitle,
+	WorkspaceWelcome,
 } from "./chat/styles";
 
 // Soft cap on prompt length. Models choke well before this; it mainly guards
@@ -139,6 +162,17 @@ const FOLLOW_THRESHOLD = 96;
 const CHECKPOINT_MS = 8000;
 /** A reply this slow is worth a notification when the app is out of sight. */
 const NOTIFY_AFTER_MS = 10_000;
+/** Ways to begin when the character has none of its own. */
+const DEFAULT_STARTERS = [
+	"Summarize a document I paste in",
+	"Help me plan my week",
+	"Explain a concept simply",
+	"Review this code for bugs",
+];
+/** From this many messages on, only the rows near the view are drawn. */
+const VIRTUALIZE_AT = 40;
+/** First guess at a row's height, before it is measured. */
+const ROW_ESTIMATE = 140;
 
 /* ── Small pieces ── */
 
@@ -173,12 +207,11 @@ interface StarterListProps {
 	starters: string[];
 	accent: string;
 	onPick: (text: string) => void;
-	hero?: boolean;
 }
 
-function StarterList({ starters, accent, onPick, hero }: StarterListProps) {
+function StarterList({ starters, accent, onPick }: StarterListProps) {
 	return (
-		<StartersGrid $hero={hero}>
+		<StartersGrid>
 			{starters.map((starter) => (
 				<StarterChip key={starter} type="button" $accent={accent} onClick={() => onPick(starter)}>
 					<span>{starter}</span>
@@ -231,6 +264,11 @@ interface RunOptions {
 	used?: string[];
 	/** The messages to show again if the reply is stopped before the model is asked. */
 	restore?: Message[];
+	/**
+	 * The reply being answered again. "sibling" (Retry) keeps it beside the
+	 * new one, "replace" (Continue) swaps the active answer in place.
+	 */
+	branchFrom?: { message: Message; mode: "sibling" | "replace" };
 }
 
 /**
@@ -243,13 +281,31 @@ function withGreeting(character: Character | null | undefined, systemPrompt: str
 	return greeting ? `${systemPrompt}\nYou started this chat by saying: "${greeting}"` : systemPrompt;
 }
 
+/** The chat as Markdown, built from the messages (the branch showing), never the page. */
+function chatMarkdown(messages: Message[], title: string, characterName: string): string {
+	const lines = [`# ${title}`, ""];
+	for (const m of persistable(messages)) {
+		lines.push(`## ${m.role === "user" ? "You" : characterName}`, "", m.text.trim(), "");
+		if (m.role === "ai" && m.sources?.length) lines.push(`_Looked at: ${m.sources.join(", ")}_`, "");
+	}
+	return lines.join("\n");
+}
+
 /* ── Component ── */
 
 export function ChatPage() {
 	const navigate = useNavigate();
 	const location = useLocation();
-	const { activeModel, activeModelId, activeModelInfo, loadingModelId, settings, loadModel, refreshActiveModel } =
-		useAppContext();
+	const {
+		activeModel,
+		activeModelId,
+		activeModelInfo,
+		loadingModelId,
+		modelStatus,
+		settings,
+		loadModel,
+		refreshActiveModel,
+	} = useAppContext();
 	const { activeCharacter, allCharacters, setActiveCharacter, saveCustom, loaded: charactersLoaded } = useCharacters();
 	const { showToast } = useToast();
 	const prefs = usePrefs();
@@ -309,6 +365,12 @@ export function ChatPage() {
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const followingRef = useRef(true);
+	/** A user message being edited: its old wording and replies become a branch on send. */
+	const editBranchRef = useRef<{ index: number; original: Message; tail: Message[]; chat: string | null } | null>(
+		null,
+	);
+	/** Puts the reply being written in its place among its siblings (see branching.ts). */
+	const placeRef = useRef<(reply: Message) => Message>((reply) => reply);
 
 	// Long-lived callbacks (inference events, unmount cleanup) outlive the
 	// render that created them. Everything they need is read through this
@@ -395,6 +457,9 @@ export function ChatPage() {
 
 	/* ── Scrolling ── */
 
+	/** Bumped when a virtualized list's measured height changes. */
+	const [followTick, setFollowTick] = useState(0);
+
 	const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
 		const el = scrollRef.current;
 		if (el) el.scrollTo({ top: el.scrollHeight, behavior });
@@ -413,7 +478,7 @@ export function ChatPage() {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: must re-run whenever the rendered content grows
 	useEffect(() => {
 		if (followingRef.current) scrollToBottom();
-	}, [messages.length, streamedText, streamedReasoning, isGenerating, scrollToBottom]);
+	}, [messages.length, streamedText, streamedReasoning, isGenerating, scrollToBottom, followTick]);
 
 	// Keep the latest message visible when the on-screen keyboard opens.
 	useEffect(() => {
@@ -438,6 +503,12 @@ export function ChatPage() {
 		autoResize();
 	}, [autoResize]);
 
+	// Ready to type on arrival, even while the model is still warming up.
+	// Not on touch screens, where focus would throw up the keyboard.
+	useEffect(() => {
+		if (!isTouchPrimary()) textareaRef.current?.focus({ preventScroll: true });
+	}, []);
+
 	/* ── First-run coachmark ── */
 
 	useEffect(() => {
@@ -458,12 +529,6 @@ export function ChatPage() {
 			// Not persisted: the tip shows again next launch, which is harmless.
 		}
 	}, []);
-
-	useEffect(() => {
-		if (!showCoach) return;
-		const t = setTimeout(dismissCoach, 6000);
-		return () => clearTimeout(t);
-	}, [showCoach, dismissCoach]);
 
 	/* ── Character change notice ── */
 
@@ -544,7 +609,7 @@ export function ChatPage() {
 		setStreamedReasoning("");
 	}, []);
 
-	const run = useCallback(async ({ prompt, context, prefix = "", used = [], restore }: RunOptions) => {
+	const run = useCallback(async ({ prompt, context, prefix = "", used = [], restore, branchFrom }: RunOptions) => {
 		const character = live.current.character;
 		let lookedAt = used;
 		let thinkingFrom = 0;
@@ -559,6 +624,16 @@ export function ChatPage() {
 		if (runIdOf(dispatchTurn({ type: "RUN_STARTED", runId }).turn) !== runId) return;
 		const abort = new AbortController();
 		abortRef.current = abort;
+		// Where the reply lands: beside the answer it replaces, or on its own.
+		const place = (reply: Message): Message =>
+			!branchFrom
+				? reply
+				: branchFrom.mode === "sibling"
+					? addReplyVariant(branchFrom.message, reply)
+					: replaceActiveVariant(branchFrom.message, reply);
+		placeRef.current = place;
+		/** What to keep when no new answer came: the one being replaced. */
+		const kept: Message[] = branchFrom ? [branchFrom.message] : [];
 
 		resetStream();
 		streamRef.current.prefix = prefix;
@@ -573,6 +648,7 @@ export function ChatPage() {
 		const finish = (extra: Message[], failed = false) => {
 			if (finished) return;
 			finished = true;
+			placeRef.current = (reply) => reply;
 			resetStream();
 			dispatchTurn({ type: "RUN_ENDED", runId, failed });
 			if (extra.length > 0) commit([...live.current.messages, ...extra]);
@@ -620,7 +696,7 @@ export function ChatPage() {
 							sources: lookedAt,
 							thoughtMs,
 						});
-						persist([...live.current.messages, checkpoint]);
+						persist([...live.current.messages, place(checkpoint)]);
 					}
 					break;
 				}
@@ -632,14 +708,16 @@ export function ChatPage() {
 
 					if (cleaned) {
 						const createIn = live.current.createIn ?? undefined;
-						const reply = createMessage("ai", createIn ? fenceBareFiles(cleaned, stop_reason === "eos") : cleaned, {
-							stopReason: stop_reason,
-							reasoning: reasoning || undefined,
-							createIn,
-							sources: lookedAt,
-							characterId: character?.id,
-							thoughtMs,
-						});
+						const reply = place(
+							createMessage("ai", createIn ? fenceBareFiles(cleaned, stop_reason === "eos") : cleaned, {
+								stopReason: stop_reason,
+								reasoning: reasoning || undefined,
+								createIn,
+								sources: lookedAt,
+								characterId: character?.id,
+								thoughtMs,
+							}),
+						);
 						if (speed > 0) {
 							setReplyStats({ messageId: reply.id, tokensPerSecond: speed, tokens: total_tokens });
 						}
@@ -652,13 +730,14 @@ export function ChatPage() {
 					} else if (reasoning && stop_reason !== "cancelled") {
 						// The whole reply budget went on thinking.
 						finish([
+							...kept,
 							createMessage(
 								"error",
 								"The model ran out of room while thinking and never reached an answer. Try again, or ask a narrower question.",
 							),
 						]);
 					} else {
-						finish([]);
+						finish(kept);
 					}
 
 					setReportedTokens(prompt_tokens + total_tokens);
@@ -680,7 +759,7 @@ export function ChatPage() {
 					break;
 				}
 				case "Error":
-					finish([createMessage("error", event.data.message)], true);
+					finish([...kept, createMessage("error", event.data.message)], true);
 					break;
 			}
 		};
@@ -730,11 +809,11 @@ export function ChatPage() {
 			const partial = cleanResponse(streamRef.current.prefix + streamRef.current.text);
 			if (err instanceof InferenceAborted) {
 				// Stopped while waiting for the model to come free: nothing ran.
-				finish(partial ? [createMessage("ai", partial, { stopReason: "cancelled" })] : []);
+				finish(partial ? [place(createMessage("ai", partial, { stopReason: "cancelled" }))] : kept);
 				return;
 			}
 			const message = err instanceof Error ? err.message : String(err);
-			finish([...(partial ? [createMessage("ai", partial)] : []), createMessage("error", message)], true);
+			finish([...(partial ? [place(createMessage("ai", partial))] : kept), createMessage("error", message)], true);
 			// A failed run can leave the backend without a model; resync so the
 			// header and the next send reflect that.
 			refreshActiveModel();
@@ -841,7 +920,16 @@ export function ChatPage() {
 		// Loading can take a while: anything typed meanwhile stays in the box.
 		if (fromComposer && textareaRef.current?.value.trim() === text) clearComposer();
 		const context = live.current.messages;
-		const sent = [...context, createMessage("user", text)];
+		// Sending an edited message keeps the old wording (and its replies)
+		// as a branch beside it, so nothing written before is lost.
+		const editing = editBranchRef.current;
+		editBranchRef.current = null;
+		const fresh = createMessage("user", text);
+		const asBranch =
+			editing && fromComposer && editing.index === context.length && editing.chat === live.current.conversationId;
+		const userMessage = asBranch ? branchUserEdit(editing.original, editing.tail, fresh) : fresh;
+		const sent = [...context, userMessage];
+		dismissCoach();
 		show(sent);
 		// List a new chat in the sidebar right away, before the reply.
 		if (live.current.saveHistory && !live.current.conversationId) {
@@ -922,6 +1010,7 @@ export function ChatPage() {
 			prefix: extend ? msgs[aiIdx].text : undefined,
 			used: extend ? msgs[aiIdx].sources : undefined,
 			restore: msgs,
+			branchFrom: { message: msgs[aiIdx], mode: extend ? "replace" : "sibling" },
 		});
 	};
 
@@ -957,11 +1046,52 @@ export function ChatPage() {
 		const idx = msgs.findIndex((m) => m.id === id);
 		if (idx < 0 || msgs[idx].role !== "user") return;
 		setOpenActionsId(null);
+		editBranchRef.current = {
+			index: idx,
+			original: msgs[idx],
+			tail: msgs.slice(idx + 1),
+			chat: live.current.conversationId,
+		};
 		// Editing the first message empties the view but keeps the saved chat
 		// until the new text is sent, so changing your mind loses nothing.
 		if (idx === 0) show([]);
 		else commit(msgs.slice(0, idx));
 		fillInput(msgs[idx].text);
+	};
+
+	/** Show another answer of a reply (the < 1 / N > under it). */
+	const switchReply = (id: string, index: number) => {
+		if (isBusy(chatRef.current.turn)) return;
+		const msgs = live.current.messages;
+		const at = msgs.findIndex((m) => m.id === id);
+		if (at < 0) return;
+		const next = selectReplyVariant(msgs[at], index);
+		if (next === msgs[at]) return;
+		commit([...msgs.slice(0, at), next, ...msgs.slice(at + 1)]);
+	};
+
+	/** Show another wording of a user message, with the replies it had. */
+	const switchBranch = (id: string, index: number) => {
+		if (isBusy(chatRef.current.turn)) return;
+		const msgs = live.current.messages;
+		const at = msgs.findIndex((m) => m.id === id);
+		const next = selectUserBranch(msgs, at, index);
+		if (next === msgs) return;
+		setOpenActionsId(null);
+		commit(next);
+	};
+
+	const handleExportChat = async () => {
+		const msgs = live.current.messages;
+		if (persistable(msgs).length === 0) return;
+		const title = generateTitle(msgs);
+		const name = `${title.replace(/[\\/:*?"<>|.]+/g, " ").trim().slice(0, 60) || "chat"}.md`;
+		try {
+			const path = await saveFileAs(name, chatMarkdown(msgs, title, characterName));
+			if (path) showToast(`Saved to ${path}`, "success");
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : String(err), "error");
+		}
 	};
 
 	const handleShareChat = async () => {
@@ -1009,7 +1139,7 @@ export function ChatPage() {
 			chatService.stopInference().catch(() => {});
 			const s = streamRef.current;
 			const partial = cleanResponse(s.prefix + s.text);
-			if (partial) persist([...live.current.messages, createMessage("ai", partial)]);
+			if (partial) persist([...live.current.messages, placeRef.current(createMessage("ai", partial))]);
 		};
 	}, [persist]);
 
@@ -1203,11 +1333,160 @@ export function ChatPage() {
 	const lastId = messages[messages.length - 1]?.id;
 	const hasText = input.trim().length > 0;
 	const showStream = isGenerating || streamedText.length > 0 || streamedReasoning.length > 0;
-	const starters = prefs.showStarters ? (activeCharacter?.conversation_starters?.slice(0, 4) ?? []) : [];
+	const ownStarters = activeCharacter?.conversation_starters?.slice(0, 4) ?? [];
+	const starters = !prefs.showStarters
+		? []
+		: ownStarters.length > 0 || activeCharacter?.persona
+			? ownStarters
+			: DEFAULT_STARTERS;
 	// An empty chat on a computer: the message box sits in the middle, with the
 	// greeting above it. Phones keep it at the bottom, by the keyboard.
 	const hero = roomy && messages.length === 0 && !showStream;
+	// Find reads the page, so while it is open every message is drawn.
+	const virtual = messages.length >= VIRTUALIZE_AT && !findOpen;
+	const virtualizer = useVirtualizer({
+		count: virtual ? messages.length : 0,
+		getScrollElement: () => scrollRef.current,
+		estimateSize: () => ROW_ESTIMATE,
+		overscan: 6,
+		getItemKey: (index) => messages[index]?.id ?? index,
+	});
+	const virtualHeight = virtual ? virtualizer.getTotalSize() : 0;
+	useEffect(() => {
+		if (virtualHeight > 0) setFollowTick((n) => n + 1);
+	}, [virtualHeight]);
 	const memoryUsed = reportedTokens || estimateTokens(messages.map((m) => m.text));
+
+	/** The < 1 / N > switcher under a message that has branches. */
+	const renderVariants = (msg: Message) => {
+		const count = variantCount(msg);
+		if (count < 2 || msg.role === "error") return null;
+		const active = activeIndexOf(msg);
+		const pick = (index: number | null) => {
+			if (index === null) return;
+			if (msg.role === "ai") switchReply(msg.id, index);
+			else switchBranch(msg.id, index);
+		};
+		const what = msg.role === "ai" ? "answer" : "version";
+		return (
+			<VariantSwitch role="group" aria-label={`${what[0].toUpperCase()}${what.slice(1)}s of this message`}>
+				<VariantBtn
+					type="button"
+					data-dir="back"
+					disabled={busy || stepVariant(msg, -1) === null}
+					onClick={() => pick(stepVariant(msg, -1))}
+					aria-label={`Previous ${what}`}
+					title={`Previous ${what}`}
+				>
+					<Icon name="chevron_right" size={14} />
+				</VariantBtn>
+				<span aria-live="polite">
+					{active + 1} / {count}
+				</span>
+				<VariantBtn
+					type="button"
+					disabled={busy || stepVariant(msg, 1) === null}
+					onClick={() => pick(stepVariant(msg, 1))}
+					aria-label={`Next ${what}`}
+					title={`Next ${what}`}
+				>
+					<Icon name="chevron_right" size={14} />
+				</VariantBtn>
+			</VariantSwitch>
+		);
+	};
+
+	const renderMessage = (msg: Message, still: boolean) => {
+		const isLast = msg.id === lastId;
+		const labelColor =
+			msg.role === "ai" ? accent : msg.role === "error" ? tokens.colors.error : tokens.colors.onSurfaceVariant;
+		const label = msg.role === "ai" ? characterName : msg.role === "error" ? "Something went wrong" : "You";
+		return (
+			<BubbleWrap key={msg.id} $role={msg.role} data-last={isLast} data-still={still}>
+				<Bubble
+					$role={msg.role}
+					onTouchStart={() => handleLongPressStart(msg.id)}
+					onTouchEnd={handleLongPressEnd}
+					onTouchMove={handleLongPressEnd}
+					onTouchCancel={handleLongPressEnd}
+				>
+					{msg.role === "error" && (
+						<BubbleLabel $color={labelColor}>
+							<Icon name="error_outline" size={12} />
+							{label}
+						</BubbleLabel>
+					)}
+					<BubbleBody>
+						{msg.role === "ai" && msg.reasoning && <Reasoning text={msg.reasoning} durationMs={msg.thoughtMs} />}
+						{msg.role === "ai" ? <Markdown text={msg.text} /> : <UserMessage text={msg.text} expanded={findOpen} />}
+						{msg.role === "ai" && msg.createIn && <FileCards text={msg.text} folder={msg.createIn} />}
+						{msg.role === "ai" && msg.sources && msg.sources.length > 0 && <SourceChips sources={msg.sources} />}
+					</BubbleBody>
+					{settings?.show_speed && replyStats?.messageId === msg.id && (
+						<SpeedBadge>
+							{replyStats.tokensPerSecond.toFixed(1)} tok/s · {replyStats.tokens} tokens
+						</SpeedBadge>
+					)}
+				</Bubble>
+
+				{renderVariants(msg)}
+
+				{msg.role === "ai" && isLast && !busy && wasCutShort(msg.stopReason) && (
+					<CutShort>
+						<span>{cutShortLabel(msg.stopReason)}</span>
+						<ContinueBtn type="button" onClick={() => redoLast(true)}>
+							<Icon name="play_arrow" size={12} />
+							Continue
+						</ContinueBtn>
+					</CutShort>
+				)}
+
+				{!busy && (
+					<MessageActions $open={openActionsId === msg.id}>
+						{msg.role !== "error" && <CopyAction text={msg.text} />}
+						{msg.role === "ai" && !isMobile() && (
+							<MsgActionBtn
+								type="button"
+								onClick={() => saveReply(msg.text)}
+								title="Save as file"
+								aria-label="Save reply as a file"
+							>
+								<Icon name="download" size={15} />
+							</MsgActionBtn>
+						)}
+						{msg.role === "user" && (
+							<MsgActionBtn
+								type="button"
+								onClick={() => handleEditMessage(msg.id)}
+								title="Edit (keeps this version)"
+								aria-label="Edit"
+							>
+								<Icon name="edit" size={15} />
+							</MsgActionBtn>
+						)}
+						{msg.role === "ai" && isLast && (
+							<MsgActionBtn
+								type="button"
+								onClick={() => redoLast(false)}
+								title="Retry (keeps this answer)"
+								aria-label="Retry"
+							>
+								<Icon name="restart_alt" size={15} />
+							</MsgActionBtn>
+						)}
+						<MsgActionBtn
+							type="button"
+							onClick={() => handleDeleteMessage(msg.id)}
+							title={msg.role === "error" ? "Dismiss" : "Delete"}
+							aria-label={msg.role === "error" ? "Dismiss" : "Delete"}
+						>
+							<Icon name="delete" size={15} />
+						</MsgActionBtn>
+					</MessageActions>
+				)}
+			</BubbleWrap>
+		);
+	};
 
 	// The box glides down to its place when the first message goes out.
 	const composerTop = useRef<number | null>(null);
@@ -1290,12 +1569,17 @@ export function ChatPage() {
 				}
 				rightActions={
 					<>
+						{messages.length > 0 && !isMobile() && (
+							<TopBarBtn type="button" onClick={handleExportChat} aria-label="Export chat as Markdown" title="Export chat">
+								<Icon name="download" size={18} />
+							</TopBarBtn>
+						)}
 						{messages.length > 0 && (
 							<TopBarBtn type="button" onClick={handleShareChat} aria-label="Share chat">
 								<Icon name="share" size={18} />
 							</TopBarBtn>
 						)}
-						<TopBarBtn type="button" onClick={handleNewChat} aria-label="New chat">
+						<TopBarBtn type="button" onClick={handleNewChat} aria-label="New chat" data-sidebar-dup="true">
 							<Icon name="edit_square" size={18} />
 						</TopBarBtn>
 						<TopBarBtn type="button" onClick={() => navigate("/chat/history")} aria-label="Chat history">
@@ -1315,6 +1599,18 @@ export function ChatPage() {
 							}}
 						/>
 					)}
+					{showCoach && !pickerOpen && (
+						<Coachmark role="status">
+							<Icon name="touch_app" size={14} color={tokens.colors.primary} />
+							<span>
+								{isTouchPrimary() ? "Tap" : "Click"} the name above to switch character. Pick the model next to
+								Send.
+							</span>
+							<CoachClose type="button" onClick={dismissCoach} aria-label="Dismiss tip">
+								<Icon name="close" size={14} />
+							</CoachClose>
+						</Coachmark>
+					)}
 					<MessagesArea ref={scrollRef} onScroll={handleScroll} $wide={prefs.chatWidth === "wide"} $hero={hero}>
 						{messages.length === 0 && !showStream && activeCharacter?.persona && (
 							<Welcome $hero={hero}>
@@ -1331,27 +1627,94 @@ export function ChatPage() {
 								{activeCharacter.greeting && (
 									<FriendGreeting $accent={accent}>{activeCharacter.greeting}</FriendGreeting>
 								)}
-								{!hero && starters.length > 0 && (
-									<StarterList starters={starters} accent={accent} onPick={fillInput} />
-								)}
+								{starters.length > 0 && <StarterList starters={starters} accent={accent} onPick={fillInput} />}
 							</Welcome>
 						)}
 
 						{messages.length === 0 && !showStream && !activeCharacter?.persona && (
-							<Welcome $hero={hero}>
-								<WelcomeTitle>
-									<NeurixMark size={30} />
-									<span>{activeCharacter?.greeting || `Chat with ${characterName}`}</span>
-								</WelcomeTitle>
-								<WelcomeText>
-									{activeCharacter?.description
-										? `${activeCharacter.description}. Everything stays on this device.`
-										: "Ask anything. Everything stays on this device."}
-								</WelcomeText>
-								{!hero && starters.length > 0 && (
-									<StarterList starters={starters} accent={accent} onPick={fillInput} />
-								)}
-							</Welcome>
+							<WorkspaceWelcome $hero={hero} aria-label="New chat">
+								<WorkspaceCard>
+									<WorkspaceHead>
+										<PersonaPill
+											type="button"
+											$accent={accent}
+											onClick={() => {
+												dismissCoach();
+												setPickerOpen(true);
+											}}
+											aria-label={`Answering as ${characterName}. Change character or model.`}
+										>
+											<i>
+												<Icon name={activeCharacter?.icon || "smart_toy"} size={12} />
+											</i>
+											<span>{characterName}</span>
+											<Icon name="expand_more" size={12} />
+										</PersonaPill>
+										<WorkspaceTitle>{activeCharacter?.greeting || "What are we working on?"}</WorkspaceTitle>
+										<WorkspaceLede>
+											{activeCharacter?.description
+												? `${activeCharacter.description}.`
+												: "Ask, draft, or think something through. Replies are written by the model on this device."}
+										</WorkspaceLede>
+									</WorkspaceHead>
+									<TrustColumn>
+										{settings?.air_gap ? (
+											<TrustBadge $strict title="Air-Gap is on: Neurix makes no network requests.">
+												<Icon name="shield" size={12} />
+												Air-Gapped
+											</TrustBadge>
+										) : (
+											<TrustBadge title="Replies are written on this device. Nothing you type is sent anywhere.">
+												<Icon name="cloud_off" size={12} />
+												100% Local · Offline
+											</TrustBadge>
+										)}
+									</TrustColumn>
+									<EngineLine role="status" aria-live="polite">
+										{modelStatus.kind === "loading" ? (
+											<>
+												<Icon name="memory" size={13} />
+												<span>Warming up {modelStatus.id}… You can type now.</span>
+												<WarmingTrack aria-hidden="true" />
+											</>
+										) : modelStatus.kind === "ready" ? (
+											<>
+												<Icon name="memory" size={13} />
+												<strong title={modelStatus.model.name}>{modelStatus.model.name}</strong>
+												{modelStatus.model.kv_cache_quant && (
+													<EngineTag title="Memory cache precision">
+														KV {modelStatus.model.kv_cache_quant.toUpperCase()}
+													</EngineTag>
+												)}
+												{modelStatus.model.flash_attention && <EngineTag>Flash Attn</EngineTag>}
+												{(modelStatus.model.gpu_layers ?? 0) > 0 && (
+													<EngineTag>GPU {modelStatus.model.gpu_layers}</EngineTag>
+												)}
+												{modelStatus.model.context_length > 0 && (
+													<EngineTag title="How much of the chat the model can hold">
+														{compactTokens(modelStatus.model.context_length)} ctx
+													</EngineTag>
+												)}
+											</>
+										) : (
+											<>
+												<Icon name="memory" size={13} />
+												<span>No model in memory yet. Your last one loads when you send.</span>
+											</>
+										)}
+									</EngineLine>
+									{starters.length > 0 && (
+										<WorkspaceStarters>
+											{starters.map((starter) => (
+												<StarterChip key={starter} type="button" $accent={accent} onClick={() => fillInput(starter)}>
+													<span>{starter}</span>
+													<Icon name="arrow_outward" size={14} />
+												</StarterChip>
+											))}
+										</WorkspaceStarters>
+									)}
+								</WorkspaceCard>
+							</WorkspaceWelcome>
 						)}
 
 						{contextNotice && (
@@ -1361,107 +1724,26 @@ export function ChatPage() {
 							</ContextNotice>
 						)}
 
-						{messages.map((msg) => {
-							const isLast = msg.id === lastId;
-							const labelColor =
-								msg.role === "ai"
-									? accent
-									: msg.role === "error"
-										? tokens.colors.error
-										: tokens.colors.onSurfaceVariant;
-							const label =
-								msg.role === "ai" ? characterName : msg.role === "error" ? "Something went wrong" : "You";
-							return (
-								<BubbleWrap key={msg.id} $role={msg.role}>
-									<Bubble
-										$role={msg.role}
-										onTouchStart={() => handleLongPressStart(msg.id)}
-										onTouchEnd={handleLongPressEnd}
-										onTouchMove={handleLongPressEnd}
-										onTouchCancel={handleLongPressEnd}
-									>
-										{msg.role === "error" && (
-											<BubbleLabel $color={labelColor}>
-												<Icon name="error_outline" size={12} />
-												{label}
-											</BubbleLabel>
-										)}
-										<BubbleBody>
-											{msg.role === "ai" && msg.reasoning && (
-												<Reasoning text={msg.reasoning} durationMs={msg.thoughtMs} />
-											)}
-											{msg.role === "ai" ? <Markdown text={msg.text} /> : <UserMessage text={msg.text} expanded={findOpen} />}
-											{msg.role === "ai" && msg.createIn && <FileCards text={msg.text} folder={msg.createIn} />}
-											{msg.role === "ai" && msg.sources && (
-												<SourcesLine>
-													<Icon name="description" size={13} />
-													<span>Looked at {msg.sources.join(", ")}</span>
-												</SourcesLine>
-											)}
-										</BubbleBody>
-										{settings?.show_speed && replyStats?.messageId === msg.id && (
-											<SpeedBadge>
-												{replyStats.tokensPerSecond.toFixed(1)} tok/s · {replyStats.tokens} tokens
-											</SpeedBadge>
-										)}
-									</Bubble>
-
-									{msg.role === "ai" && isLast && !busy && wasCutShort(msg.stopReason) && (
-										<CutShort>
-											<span>{cutShortLabel(msg.stopReason)}</span>
-											<ContinueBtn type="button" onClick={() => redoLast(true)}>
-												<Icon name="play_arrow" size={12} />
-												Continue
-											</ContinueBtn>
-										</CutShort>
-									)}
-
-									{!busy && (
-										<MessageActions $open={openActionsId === msg.id}>
-											{msg.role !== "error" && <CopyAction text={msg.text} />}
-											{msg.role === "ai" && !isMobile() && (
-												<MsgActionBtn
-													type="button"
-													onClick={() => saveReply(msg.text)}
-													title="Save as file"
-													aria-label="Save reply as a file"
-												>
-													<Icon name="download" size={15} />
-												</MsgActionBtn>
-											)}
-											{msg.role === "user" && (
-												<MsgActionBtn
-													type="button"
-													onClick={() => handleEditMessage(msg.id)}
-													title="Edit"
-													aria-label="Edit"
-												>
-													<Icon name="edit" size={15} />
-												</MsgActionBtn>
-											)}
-											{msg.role === "ai" && isLast && (
-												<MsgActionBtn
-													type="button"
-													onClick={() => redoLast(false)}
-													title="Retry"
-													aria-label="Retry"
-												>
-													<Icon name="restart_alt" size={15} />
-												</MsgActionBtn>
-											)}
-											<MsgActionBtn
-												type="button"
-												onClick={() => handleDeleteMessage(msg.id)}
-												title={msg.role === "error" ? "Dismiss" : "Delete"}
-												aria-label={msg.role === "error" ? "Dismiss" : "Delete"}
-											>
-												<Icon name="delete" size={15} />
-											</MsgActionBtn>
-										</MessageActions>
-									)}
-								</BubbleWrap>
-							);
-						})}
+						{virtual ? (
+							<VirtualList style={{ height: virtualHeight }}>
+								{virtualizer.getVirtualItems().map((item) => {
+									const msg = messages[item.index];
+									if (!msg) return null;
+									return (
+										<VirtualRow
+											key={item.key}
+											data-index={item.index}
+											ref={virtualizer.measureElement}
+											style={{ transform: `translateY(${item.start}px)` }}
+										>
+											{renderMessage(msg, true)}
+										</VirtualRow>
+									);
+								})}
+							</VirtualList>
+						) : (
+							messages.map((msg) => renderMessage(msg, false))
+						)}
 
 						{showStream && (
 							<BubbleWrap $role="ai">
@@ -1556,12 +1838,16 @@ export function ChatPage() {
 											$on={thinkOn}
 											aria-pressed={thinkOn}
 											onClick={toggleThink}
-											title="Let the model reason step by step before it answers. More careful, but a reply can take a minute or two."
+											aria-label={thinkOn ? "Think: on. Reasons first, so a reply can take a minute or two" : "Think"}
+											title={
+												thinkOn
+													? "Reasons first: a reply can take a minute or two. Click to turn off."
+													: "Let the model reason step by step before it answers. More careful, but a reply can take a minute or two."
+											}
 										>
 											<Icon name="psychology" size={15} />
 											Think
 										</ThinkChip>
-										{thinkOn && <ToolHint>Reasons first: can take a minute or two</ToolHint>}
 									</ComposerTools>
 								)}
 								{!isMobile() && (
@@ -1667,21 +1953,11 @@ export function ChatPage() {
 							</ComposerNote>
 						)}
 					</InputBar>
-					{hero && starters.length > 0 && <StarterList hero starters={starters} accent={accent} onPick={fillInput} />}
 				</ChatContainer>
 			</AppLayout>
 
 			<CharacterPicker open={pickerOpen} onClose={() => setPickerOpen(false)} showModels />
 
-			{showCoach && !pickerOpen && (
-				<Coachmark role="status">
-					<Icon name="touch_app" size={14} color={tokens.colors.primary} />
-					<span>{isTouchPrimary() ? "Tap" : "Click"} the name above to switch character. Pick the model next to Send.</span>
-					<CoachClose type="button" onClick={dismissCoach} aria-label="Dismiss tip">
-						<Icon name="close" size={14} />
-					</CoachClose>
-				</Coachmark>
-			)}
 		</>
 	);
 }

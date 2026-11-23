@@ -6,6 +6,15 @@ import { historyService } from "@/services";
 import type { ConversationMeta } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
+import {
+	type ChatMetadata,
+	assignChatFolder,
+	clearChatAssignments,
+	conversationMarkdown,
+	readChatMeta,
+	writeChatMeta,
+} from "@/utils/chatMeta";
+import { shortId } from "@/utils/format";
 import { accentOf } from "@/utils/characterAccent";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast";
@@ -17,7 +26,7 @@ import styled, { keyframes } from "styled-components";
 /* ── Styles ── */
 
 const Page = styled.div`
-  max-width: 44rem;
+  max-width: 64rem;
   margin: 0 auto;
   padding: 1.25rem;
 `;
@@ -103,7 +112,7 @@ const FilterChip = styled.button<{ $active: boolean; $accent: string }>`
 
 /* ── Groups ── */
 
-const GroupLabel = styled.div`
+const GroupLabel = styled.h2`
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -145,9 +154,9 @@ const ChatItem = styled.div`
   gap: 0.75rem;
   padding: 0.75rem;
   background: ${tokens.colors.surfaceContainerLow};
-  border: none;
+  border: 1px solid ${tokens.colors.outlineVariant};
   border-radius: ${tokens.borderRadius.lg};
-  cursor: pointer;
+  flex-wrap: wrap;
   transition: background ${tokens.transitions.fast};
   animation: ${slideIn} 0.3s ease-out both;
 
@@ -292,6 +301,48 @@ const ActionGroup = styled.div`
   display: flex;
   gap: 0.25rem;
   flex-shrink: 0;
+  margin-left: auto;
+`;
+
+const RowTools = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  flex-basis: 100%;
+  justify-content: flex-end;
+
+  @media (pointer: coarse) { button, select { min-height: 44px; } }
+`;
+
+const Toolbar = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+`;
+
+const FolderCreator = styled.details`
+  flex-basis: 100%;
+
+  summary { display: inline-flex; }
+  form { display: flex; gap: 0.375rem; margin-top: 0.375rem; max-width: 24rem; }
+  input { min-width: 0; }
+`;
+
+const ToolControl = styled.button`
+  min-height: 32px;
+  max-width: 100%;
+  padding: 0.25rem 0.5rem;
+  border-radius: ${tokens.borderRadius.md};
+  border: 1px solid ${tokens.colors.outlineVariant};
+  background: ${tokens.colors.surfaceContainer};
+  color: ${tokens.colors.onSurface};
+  font: inherit;
+  font-size: ${tokens.typography.fontSize.xs};
+  cursor: pointer;
+
+  &:hover { border-color: ${tokens.colors.primary}; }
+  &:disabled { opacity: 0.55; cursor: default; }
 `;
 
 /* ── Component ── */
@@ -360,12 +411,17 @@ function formatTime(dateStr: string): string {
 	return new Date(dateStr).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
+type HistoryFilter = "all" | "pinned" | `folder:${string}`;
+
 export function ChatHistoryPage() {
 	const navigate = useNavigate();
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
 	const { allCharacters } = useCharacters();
 	const [search, setSearch] = useState("");
+	const [metadata, setMetadata] = useState(() => readChatMeta({ getItem: (key) => window.localStorage.getItem(key) }));
+	const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
+	const [folderName, setFolderName] = useState("");
 	const [conversations, setConversations] = useState<ConversationMeta[]>([]);
 	const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 	const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -399,7 +455,10 @@ export function ChatHistoryPage() {
 	// pause in typing so each keystroke doesn't scan every conversation.
 	useEffect(() => {
 		const t = setTimeout(() => load(query), query ? 250 : 0);
-		return () => clearTimeout(t);
+	return () => {
+			clearTimeout(t);
+			requestRef.current += 1;
+		};
 	}, [query, load]);
 
 	/**
@@ -425,6 +484,68 @@ export function ChatHistoryPage() {
 		() => new Map(allCharacters.map((c) => [c.id, c])),
 		[allCharacters],
 	);
+
+	const changeMetadata = (change: (current: ChatMetadata) => ChatMetadata): boolean => {
+		try {
+			const current = readChatMeta(window.localStorage);
+			const next = change(current);
+			writeChatMeta(window.localStorage, current, next);
+			setMetadata(next);
+			return true;
+		} catch {
+			showToast("Couldn't save chat organization on this device.", "error");
+			return false;
+		}
+	};
+
+	const addFolder = (event: React.FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		const name = folderName.trim();
+		if (!name) return;
+		if (metadata.folders.some((folder) => folder.name.toLowerCase() === name.toLowerCase())) {
+			showToast("A folder already uses that name.", "info");
+			return;
+		}
+		const folder = { id: shortId(), name, chats: [] };
+		if (changeMetadata((current) => ({ ...current, folders: [...current.folders, folder] }))) {
+			setFolderName("");
+			const details = event.currentTarget.closest("details");
+			if (details) {
+				details.open = false;
+				details.querySelector("summary")?.focus();
+			}
+		}
+	};
+
+	const togglePin = (id: string) => {
+		changeMetadata((current) => ({
+			...current,
+			pins: current.pins.includes(id) ? current.pins.filter((pin) => pin !== id) : [...current.pins, id],
+		}));
+	};
+
+	const exportChat = async (id: string, format: "md" | "json") => {
+		try {
+			const chat = await historyService.loadConversation(id);
+			if (!chat) {
+				showToast("This conversation is no longer available.", "info");
+				return;
+			}
+			const body = format === "json" ? JSON.stringify(chat, null, 2) : conversationMarkdown(chat);
+			const mime = format === "json" ? "application/json" : "text/markdown";
+			const url = URL.createObjectURL(new Blob([body], { type: `${mime};charset=utf-8` }));
+			const link = document.createElement("a");
+			link.href = url;
+			const title = chat.title.replace(/[<>:"/\\|?*]/g, "-").trim().slice(0, 70) || "conversation";
+			link.download = `${title}.${format}`;
+			document.body.append(link);
+			link.click();
+			link.remove();
+			setTimeout(() => URL.revokeObjectURL(url), 1000);
+		} catch {
+			showToast("Couldn't export the conversation.", "error");
+		}
+	};
 
 	const handleDeleteOne = async (id: string, title: string) => {
 		try {
@@ -480,17 +601,31 @@ export function ChatHistoryPage() {
 		if (!ok) return;
 		try {
 			await historyService.clearAllConversations();
+			requestRef.current += 1;
 			setConversations([]);
 			showToast("Chat history cleared", "info");
 		} catch {
 			showToast("Couldn't clear chat history", "error");
+			return;
+		}
+		try {
+			setMetadata(clearChatAssignments(window.localStorage));
+		} catch {
+			showToast("Couldn't clear the saved pins and folder assignments.", "error");
 		}
 	};
 
-	const filtered = characterFilter
-		? conversations.filter((c) => c.character_id === characterFilter)
-		: conversations;
-	const groups = groupByDate(filtered);
+	const activeFolder = metadata.folders.find((folder) => historyFilter === `folder:${folder.id}`);
+	const pinned = new Set(metadata.pins);
+	const folderChats = activeFolder ? new Set(activeFolder.chats) : null;
+	const filtered = conversations.filter((chat) =>
+		(!characterFilter || chat.character_id === characterFilter) &&
+		(historyFilter !== "pinned" || pinned.has(chat.id)) &&
+		(!folderChats || folderChats.has(chat.id)),
+	);
+	const pinnedChats = filtered.filter((chat) => pinned.has(chat.id));
+	const groups = groupByDate(filtered.filter((chat) => !pinned.has(chat.id)));
+	if (pinnedChats.length) groups.unshift(["Pinned", pinnedChats]);
 	const isEmpty = status === "ready" && conversations.length === 0 && !query;
 
 	return (
@@ -506,20 +641,48 @@ export function ChatHistoryPage() {
 			}
 		>
 			<Page>
-				{!isEmpty && (
-					<SearchBox>
-						<SearchIconWrap>
-							<Icon name="search" size={18} />
-						</SearchIconWrap>
-						<SearchInput
-							type="search"
-							placeholder="Search titles and messages..."
-							value={search}
-							onChange={(e) => setSearch(e.target.value)}
-							aria-label="Search conversations"
-						/>
-					</SearchBox>
-				)}
+				<SearchBox>
+					<SearchIconWrap>
+						<Icon name="search" size={18} />
+					</SearchIconWrap>
+					<SearchInput
+						type="search"
+						placeholder="Search titles and messages..."
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+						aria-label="Search conversations"
+					/>
+				</SearchBox>
+
+				<Toolbar role="group" aria-label="Filter conversation collections">
+					<FilterChip type="button" $active={historyFilter === "all"} $accent={tokens.colors.primary}
+						aria-pressed={historyFilter === "all"} onClick={() => setHistoryFilter("all")}>
+						All
+					</FilterChip>
+					<FilterChip type="button" $active={historyFilter === "pinned"} $accent={tokens.colors.primary}
+						aria-pressed={historyFilter === "pinned"} onClick={() => setHistoryFilter("pinned")}>
+						<Icon name="push_pin" size={13} />
+						Pinned
+					</FilterChip>
+					{metadata.folders.map((folder) => {
+						const filter = `folder:${folder.id}` as const;
+						return (
+							<FilterChip key={folder.id} type="button" $active={historyFilter === filter} $accent={tokens.colors.primary}
+								aria-pressed={historyFilter === filter} onClick={() => setHistoryFilter(filter)}>
+								<Icon name="folder_open" size={13} />
+								{folder.name}
+							</FilterChip>
+						);
+					})}
+					<FolderCreator>
+						<ToolControl as="summary">+ New folder</ToolControl>
+						<form onSubmit={addFolder}>
+							<RenameInput value={folderName} maxLength={40} aria-label="Folder name"
+								placeholder="Folder name" onChange={(event) => setFolderName(event.target.value)} />
+							<ToolControl type="submit" disabled={!folderName.trim()}>Create folder</ToolControl>
+						</form>
+					</FolderCreator>
+				</Toolbar>
 
 				{filterChips.length > 1 && (
 					<FilterRail role="group" aria-label="Filter by character">
@@ -596,7 +759,7 @@ export function ChatHistoryPage() {
 						<EmptyState
 							art="search"
 							message="Nothing found"
-							subtitle={query ? `No chat mentions "${query}".` : "No chats with this character."}
+							subtitle={query ? "No matches in this view." : "No conversations match these filters."}
 						/>
 					</EmptyWrap>
 				) : (
@@ -611,6 +774,8 @@ export function ChatHistoryPage() {
 									const ch = entry.character_id ? characterById.get(entry.character_id) : undefined;
 									const accent = ch ? accentOf(ch) : undefined;
 									const isRenaming = renamingId === entry.id;
+									const isPinned = pinned.has(entry.id);
+									const folder = metadata.folders.find((f) => f.chats.includes(entry.id));
 									const body = (
 										<>
 											<ChatIcon $accent={accent}>
@@ -658,6 +823,11 @@ export function ChatHistoryPage() {
 											)}
 											{!isRenaming && (
 												<ActionGroup>
+													<ActionBtn type="button" aria-label={isPinned ? `Unpin ${entry.title}` : `Pin ${entry.title}`}
+														title={isPinned ? "Unpin" : "Pin"} aria-pressed={isPinned}
+														onClick={() => togglePin(entry.id)}>
+														<Icon name="push_pin" size={17} color={isPinned ? tokens.colors.primary : undefined} />
+													</ActionBtn>
 													<ActionBtn
 														type="button"
 														onClick={() => {
@@ -678,6 +848,25 @@ export function ChatHistoryPage() {
 													</ActionBtn>
 												</ActionGroup>
 											)}
+											{!isRenaming && (
+												<RowTools>
+													<ToolControl as="select" aria-label={`Folder for ${entry.title}`} value={folder?.id ?? ""}
+														disabled={!metadata.folders.length}
+														onChange={(event) => {
+															const id = event.target.value;
+															changeMetadata((current) => ({
+																...current,
+																folders: assignChatFolder(current.folders, entry.id, id),
+															}));
+														}}>
+														<option value="">No folder</option>
+														{metadata.folders.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+													</ToolControl>
+													<ToolControl type="button" onClick={() => void exportChat(entry.id, "md")}>Export .md</ToolControl>
+													<ToolControl type="button" onClick={() => void exportChat(entry.id, "json")}>Export .json</ToolControl>
+												</RowTools>
+											)}
+
 										</ChatItem>
 									);
 								})}

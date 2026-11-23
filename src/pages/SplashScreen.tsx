@@ -13,176 +13,203 @@ import styled, { keyframes } from "styled-components";
 /* ── Animations ── */
 
 const fadeUp = keyframes`
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-`;
-
-const subtleFloat = keyframes`
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-6px); }
+	from { opacity: 0; transform: translateY(12px); }
+	to { opacity: 1; transform: translateY(0); }
 `;
 
 /* ── Layout ── */
 
 const Container = styled.div`
-  height: 100vh;
-  height: 100dvh;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  overflow: hidden;
-  padding: clamp(1.5rem, 4vh, 3rem) 1.5rem clamp(1rem, 2vh, 1.5rem);
-  background: ${tokens.surfaces.page};
-  position: relative;
+	height: 100vh;
+	height: 100dvh;
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: space-between;
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: clamp(1.25rem, 3.5vh, 2.5rem) 1.5rem clamp(1rem, 2.5vh, 1.75rem);
+	background: ${tokens.surfaces.page};
+	position: relative;
 
-  /* Subtle ambient light from top */
-  &::before {
-    content: "";
-    position: absolute;
-    top: -30%;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 120%;
-    height: 60%;
-    background: radial-gradient(
-      ellipse at center,
-      ${alpha(tokens.colors.primary, "0a")} 0%,
-      transparent 70%
-    );
-    pointer-events: none;
-  }
+	/* Subtle Karakoram zenith glow from top */
+	&::before {
+		content: "";
+		position: absolute;
+		top: -25%;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 110%;
+		height: 55%;
+		background: radial-gradient(
+			ellipse at center,
+			${alpha(tokens.colors.primary, "12")} 0%,
+			transparent 70%
+		);
+		pointer-events: none;
+	}
 `;
 
-/* ── Hero Section (Logo + Text) ── */
+/* ── Hero Section (Logo + Artwork + Copy) ── */
 
 const HeroSection = styled.main`
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  max-width: 24rem;
-  text-align: center;
-  min-height: 0;
-  gap: clamp(1.25rem, 3.5vh, 2.5rem);
-  position: relative;
-  z-index: 1;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	max-width: 26rem;
+	text-align: center;
+	min-height: 0;
+	gap: clamp(1rem, 2.5vh, 1.75rem);
+	position: relative;
+	z-index: 1;
 `;
 
 const LogoBlock = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: clamp(0.75rem, 2vh, 1.25rem);
-  animation: ${fadeUp} 0.7s ease-out both;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.625rem;
+	animation: ${fadeUp} 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 `;
 
-const LogoWrapper = styled.div`
-  position: relative;
-  animation: ${subtleFloat} 4s ease-in-out infinite;
-
+const LogoRow = styled.div`
+	display: inline-flex;
+	align-items: center;
+	gap: 0.75rem;
 `;
 
 const BrandName = styled.h1`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: clamp(2.25rem, 8vw, 3.25rem);
-  font-weight: ${tokens.typography.fontWeight.bold};
-  letter-spacing: ${tokens.typography.letterSpacing.tighter};
-  color: ${tokens.colors.onSurface};
-  line-height: 1;
+	font-family: ${tokens.typography.fontFamily.headline};
+	font-size: clamp(1.75rem, 6vw, 2.375rem);
+	font-weight: ${tokens.typography.fontWeight.bold};
+	letter-spacing: ${tokens.typography.letterSpacing.tight};
+	color: ${tokens.colors.onSurface};
+	line-height: 1;
 
-  span {
-    color: ${tokens.colors.primary};
-  }
+	span {
+		color: ${tokens.colors.primary};
+	}
+`;
+
+const Eyebrow = styled.span`
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-size: 11px;
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: ${tokens.colors.onSurfaceVariant};
 `;
 
 const TextBlock = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: clamp(0.5rem, 1.5vh, 1rem);
-  animation: ${fadeUp} 0.7s ease-out 0.15s both;
+	display: flex;
+	flex-direction: column;
+	gap: 0.625rem;
+	animation: ${fadeUp} 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
 `;
 
 const Headline = styled.h2`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: clamp(1.5rem, 5.5vw, 2.25rem);
-  font-weight: ${tokens.typography.fontWeight.bold};
-  line-height: ${tokens.typography.lineHeight.snug};
-  letter-spacing: ${tokens.typography.letterSpacing.tight};
-  color: ${tokens.colors.onSurface};
-  text-wrap: balance;
+	font-family: ${tokens.typography.fontFamily.headline};
+	font-size: clamp(1.5rem, 5.2vw, 2.125rem);
+	font-weight: ${tokens.typography.fontWeight.bold};
+	line-height: ${tokens.typography.lineHeight.snug};
+	letter-spacing: ${tokens.typography.letterSpacing.tight};
+	color: ${tokens.colors.onSurface};
+	text-wrap: balance;
 `;
 
 const AccentText = styled.span`
-  color: ${tokens.colors.primaryDim};
+	color: ${tokens.colors.primary};
 `;
 
 const Subtitle = styled.p`
-  color: ${tokens.colors.onSurfaceVariant};
-  font-size: ${tokens.typography.fontSize.base};
-  max-width: 280px;
-  margin: 0 auto;
-  line-height: ${tokens.typography.lineHeight.relaxed};
+	color: ${tokens.colors.onSurfaceVariant};
+	font-size: ${tokens.typography.fontSize.base};
+	max-width: 23rem;
+	margin: 0 auto;
+	line-height: ${tokens.typography.lineHeight.relaxed};
 `;
 
 /* ── Footer ── */
 
 const Footer = styled.footer`
-  width: 100%;
-  max-width: 22rem;
-  display: flex;
-  flex-direction: column;
-  gap: clamp(0.75rem, 2vh, 1.25rem);
-  flex-shrink: 0;
-  animation: ${fadeUp} 0.7s ease-out 0.3s both;
+	width: 100%;
+	max-width: 24rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.625rem;
+	flex-shrink: 0;
+	position: relative;
+	z-index: 1;
+	animation: ${fadeUp} 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both;
 `;
 
 const GetStartedButton = styled.button`
-  width: 100%;
-  padding: 0.875rem;
-  border-radius: ${tokens.borderRadius.xl};
-  background: ${tokens.colors.primary};
-  color: ${tokens.colors.onPrimaryFixed};
-  font-family: ${tokens.typography.fontFamily.label};
-  font-size: ${tokens.typography.fontSize.md};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  border: none;
-  cursor: pointer;
-  transition: transform ${tokens.transitions.normal};
+	width: 100%;
+	min-height: 48px;
+	padding: 0.875rem 1.25rem;
+	border-radius: ${tokens.borderRadius.lg};
+	background: ${tokens.colors.primary};
+	color: ${tokens.colors.onPrimaryFixed};
+	font-family: ${tokens.typography.fontFamily.label};
+	font-size: ${tokens.typography.fontSize.md};
+	font-weight: ${tokens.typography.fontWeight.bold};
+	border: none;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	transition:
+		transform ${tokens.transitions.fast},
+		filter ${tokens.transitions.fast};
 
-  &:hover {
-    transform: scale(0.98);
-  }
-  &:active {
-    transform: scale(0.95);
-  }
+	&:hover {
+		filter: brightness(1.06);
+	}
+	&:active {
+		transform: scale(0.98);
+	}
+	&:focus-visible {
+		outline: 2px solid ${tokens.colors.onSurface};
+		outline-offset: 2px;
+	}
 `;
 
 const SecurityBadge = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	align-self: center;
+	gap: 0.4rem;
+	padding: 0.3rem 0.75rem;
+	border-radius: ${tokens.borderRadius.circle};
+	background: ${tokens.colors.surfaceContainerLow};
+	border: 1px solid ${tokens.colors.outlineVariant};
 `;
 
 const BadgeLabel = styled.span`
-  font-family: ${tokens.typography.fontFamily.label};
-  font-size: ${tokens.typography.fontSize.sm};
-  text-transform: uppercase;
-  letter-spacing: ${tokens.typography.letterSpacing.widest};
-  color: ${tokens.colors.secondary};
-  font-weight: ${tokens.typography.fontWeight.semibold};
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: ${tokens.colors.secondary};
+	font-weight: ${tokens.typography.fontWeight.semibold};
 `;
 
-
 const SceneWrap = styled.div`
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  animation: ${fadeUp} 0.8s ease-out 0.1s both;
+	width: 100%;
+	display: flex;
+	justify-content: center;
+	animation: ${fadeUp} 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s both;
+`;
+
+const HeroArt = styled(MountainScene)`
+	max-width: 24rem;
+	box-shadow: 0 1px 0 ${alpha(tokens.colors.primary, "22")};
 `;
 
 /* ── Component ── */
@@ -235,16 +262,17 @@ export function SplashScreen() {
 		<Container data-testid="splash-screen" data-tauri-drag-region>
 			<HeroSection>
 				<LogoBlock>
-					<LogoWrapper>
-						<NeurixLogo size={72} />
-					</LogoWrapper>
-					<BrandName>
-						NEU<span>RIX</span>
-					</BrandName>
+					<LogoRow>
+						<NeurixLogo size={44} />
+						<BrandName>
+							NEU<span>RIX</span>
+						</BrandName>
+					</LogoRow>
+					<Eyebrow>Sovereign Local Intelligence</Eyebrow>
 				</LogoBlock>
 
 				<SceneWrap>
-					<MountainScene />
+					<HeroArt />
 				</SceneWrap>
 
 				<TextBlock>
@@ -252,8 +280,8 @@ export function SplashScreen() {
 						Your AI. Your device. <AccentText>No cloud.</AccentText>
 					</Headline>
 					<Subtitle>
-						Download a model once, then chat anywhere: on a mountain road, on a
-						flight, with no signal at all.
+						Download a GGUF model once, then reason, write, and code anywhere —
+						at high altitude, in flight, or completely off-grid.
 					</Subtitle>
 				</TextBlock>
 			</HeroSection>
@@ -265,6 +293,7 @@ export function SplashScreen() {
 					data-testid="get-started-button"
 				>
 					Get started
+					<Icon name="arrow_forward" size={18} />
 				</GetStartedButton>
 				<SkipLink
 					type="button"
@@ -276,8 +305,13 @@ export function SplashScreen() {
 					Browse all models
 				</SkipLink>
 				<SecurityBadge>
-					<Icon name="verified_user" size={14} fill color={tokens.colors.secondary} />
-					<BadgeLabel>100% private · works offline</BadgeLabel>
+					<Icon
+						name="verified_user"
+						size={13}
+						fill
+						color={tokens.colors.secondary}
+					/>
+					<BadgeLabel>100% Private · Zero Account · Offline</BadgeLabel>
 				</SecurityBadge>
 			</Footer>
 		</Container>

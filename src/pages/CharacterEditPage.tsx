@@ -11,6 +11,7 @@ import { ACCENT_PALETTE, DEFAULT_ACCENT, accentOf, isAccentHex } from "@/utils/c
 import { LIMITS } from "@/utils/characterLimits";
 import { shortId } from "@/utils/format";
 import { vibrate } from "@/utils/platform";
+import { parseTavernCard, serializeTavernCard } from "@/utils/tavernCard";
 import { useTestRun } from "@/utils/useTestRun";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
@@ -60,12 +61,108 @@ const ICON_CHOICES = [
 /* ── Styles ── */
 
 const Page = styled.div`
-  max-width: 44rem;
+  max-width: 64rem;
   margin: 0 auto;
-  padding: 1rem 1.25rem 2rem;
+  padding: 1rem;
+`;
+
+const Editor = styled.div`
+  display: grid;
+  grid-template-areas: "form" "preview" "advanced";
+  gap: 1rem;
+
+  @media (min-width: 1100px) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+    grid-template-areas: "form preview" "advanced preview";
+    gap: 1.5rem;
+  }
+`;
+
+const Form = styled.div`
+  grid-area: form;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 0.875rem;
+`;
+
+const Advanced = styled(Form)`
+  grid-area: advanced;
+`;
+
+const Aside = styled.aside`
+  grid-area: preview;
+  min-width: 0;
+  align-self: start;
+  display: grid;
+  gap: 0.75rem;
+
+  @media (min-width: 1100px) {
+    position: sticky;
+    top: 1rem;
+  }
+`;
+
+const Preview = styled.section`
+  display: grid;
+  gap: 0.875rem;
+  padding: 1rem;
+  border: 1px solid ${tokens.colors.outlineVariant};
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.surfaceContainer};
+
+  h2 { font-size: ${tokens.typography.fontSize.sm}; }
+  p { overflow-wrap: anywhere; }
+`;
+
+const PreviewIdentity = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  overflow-wrap: anywhere;
+
+  p { color: ${tokens.colors.onSurfaceVariant}; }
+`;
+
+const PreviewIcon = styled.span<{ $accent: string }>`
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: ${tokens.borderRadius.md};
+  color: ${({ $accent }) => $accent};
+  background: ${({ $accent }) => alpha($accent, "1f")};
+`;
+
+const AppearanceStrip = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+`;
+
+const IconPicker = styled.details`
+  position: relative;
+
+  summary {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 40px;
+    padding: 0.25rem 0.625rem;
+    border-radius: ${tokens.borderRadius.md};
+    border: 1px solid ${tokens.colors.outlineVariant};
+    cursor: pointer;
+  }
+`;
+
+const CardActions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+
+  > a { text-decoration: none; }
 `;
 
 const Field = styled.div`
@@ -141,12 +238,21 @@ const Tip = styled.div`
 
 const IconGrid = styled.div`
   display: grid;
+  position: absolute;
+  z-index: 2;
+  top: calc(100% + 0.375rem);
+  left: 0;
   grid-template-columns: repeat(6, 1fr);
-  gap: 0.5rem;
+  gap: 0.25rem;
+  padding: 0.375rem;
+  background: ${tokens.colors.surfaceContainer};
+  border: 1px solid ${tokens.colors.outlineVariant};
+  border-radius: ${tokens.borderRadius.lg};
 `;
 
 const IconCell = styled.button<{ $active?: boolean; $accent: string }>`
-  aspect-ratio: 1;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -164,13 +270,19 @@ const IconCell = styled.button<{ $active?: boolean; $accent: string }>`
 
 const ColorRow = styled.div`
   display: flex;
+  align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+
+  > span {
+    font-size: ${tokens.typography.fontSize.xs};
+    color: ${tokens.colors.onSurfaceVariant};
+  }
 `;
 
 const ColorSwatch = styled.button<{ $color: string; $active: boolean }>`
-  width: 36px;
-  height: 36px;
+  width: 24px;
+  height: 24px;
   border-radius: ${tokens.borderRadius.circle};
   background: ${({ $color }) => $color};
   border: 2px solid ${({ $active, $color }) =>
@@ -225,6 +337,7 @@ const StarterRow = styled.div`
 `;
 
 const StarterInput = styled(Input)`
+  min-width: 0;
   flex: 1;
 `;
 
@@ -313,13 +426,20 @@ const BandLabel = styled.div`
 `;
 
 const Actions = styled.div`
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
   display: flex;
-  gap: 0.625rem;
-  margin-top: 0.5rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.625rem 0 calc(0.625rem + env(safe-area-inset-bottom, 0px));
+  background: ${tokens.colors.background};
+  border-top: 1px solid ${tokens.colors.outlineVariant};
 `;
 
 const PrimaryBtn = styled.button`
-  flex: 1;
   padding: 0.875rem;
   border-radius: ${tokens.borderRadius.lg};
   background: ${tokens.colors.primary};
@@ -401,7 +521,9 @@ const TestPanel = styled.div<{ $accent: string }>`
   color: ${tokens.colors.onSurface};
   line-height: ${tokens.typography.lineHeight.relaxed};
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
+  max-height: 12rem;
+  overflow: auto;
 `;
 
 const TestEmpty = styled.span`
@@ -464,6 +586,7 @@ const SecondaryBtn = styled.button`
   cursor: pointer;
 
   &:active { transform: scale(0.97); }
+  &:disabled { opacity: 0.5; cursor: default; }
 `;
 
 interface Draft {
@@ -485,7 +608,7 @@ function padStarters(list: string[] | undefined): string[] {
 	return padded.slice(0, STARTER_COUNT);
 }
 
-function draftFrom(seed: Character | undefined, name: string): Draft {
+function draftFrom(seed: Omit<Character, "id"> | undefined, name: string): Draft {
 	const accent = seed?.accent_color;
 	return {
 		name,
@@ -572,6 +695,13 @@ export function CharacterEditPage() {
 	/* ── Try it (live test) ── */
 
 	const test = useTestRun();
+	const [testPrompt, setTestPrompt] = useState(TEST_PROMPT);
+	const cardInput = useRef<HTMLInputElement>(null);
+	const cardRequest = useRef(0);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: a new editor location invalidates in-flight card reads.
+	useEffect(() => () => {
+		cardRequest.current += 1;
+	}, [location.key]);
 	const testing = test.running;
 	const testOutput = test.text;
 	const testError = test.error;
@@ -589,7 +719,7 @@ export function CharacterEditPage() {
 		}
 		vibrate(8);
 		void test.start({
-			prompt: TEST_PROMPT,
+			prompt: testPrompt.trim(),
 			systemPrompt: instructions,
 			history: [],
 			temperature: draft.temperature,
@@ -617,11 +747,10 @@ export function CharacterEditPage() {
 	const canSave = trimmedName.length > 0 && trimmedPrompt.length > 0;
 	const [saving, setSaving] = useState(false);
 
-	const handleSave = async () => {
-		if (!canSave || saving) return;
+	const characterFromDraft = (id: string): Character => {
 		const trimmedGreeting = draft.greeting.trim().slice(0, GREETING_MAX);
-		const character: Character = {
-			id: existing?.id ?? `custom:${shortId()}`,
+		return {
+			id,
 			name: trimmedName.slice(0, NAME_MAX),
 			description: draft.description.trim().slice(0, DESC_MAX),
 			icon: draft.icon,
@@ -639,6 +768,30 @@ export function CharacterEditPage() {
 			created_at: existing?.created_at ?? new Date().toISOString(),
 			...(existing?.last_used_at ? { last_used_at: existing.last_used_at } : {}),
 		};
+	};
+
+	const handleImportCard = async (file: File) => {
+		const request = ++cardRequest.current;
+		try {
+			const result = parseTavernCard(file.name.toLowerCase().endsWith(".png")
+				? new Uint8Array(await file.arrayBuffer()) : await file.text());
+			if (request !== cardRequest.current) return;
+			if (!result.ok) {
+				showToast(result.error, "error");
+				return;
+			}
+			test.reset();
+			setDraft(draftFrom(result.draft, result.draft.name));
+			showToast("Card loaded. Review it before saving.", "success");
+		} catch {
+			if (request === cardRequest.current) showToast("Couldn't read the card file.", "error");
+		}
+	};
+
+	const handleSave = async () => {
+		if (!canSave || saving) return;
+		cardRequest.current += 1;
+		const character = characterFromDraft(existing?.id ?? `custom:${shortId()}`);
 		setSaving(true);
 		try {
 			await saveCustom(character);
@@ -682,281 +835,331 @@ export function CharacterEditPage() {
 	return (
 		<AppLayout title={isEditing ? "Edit character" : "New character"} back={leave}>
 			<Page>
-				<Field>
-					<Label id="icon-label">Icon</Label>
-					<IconGrid role="radiogroup" aria-labelledby="icon-label">
-						{ICON_CHOICES.map((choice) => (
-							<IconCell
-								key={choice}
-								type="button"
-								role="radio"
-								$active={icon === choice}
-								$accent={shownAccent}
-								onClick={() => set("icon", choice)}
-								aria-label={choice.replace(/_/g, " ")}
-								aria-checked={icon === choice}
-							>
-								<Icon name={choice} size={22} />
-							</IconCell>
-						))}
-					</IconGrid>
-				</Field>
+				<Editor>
+					<Form>
+						<AppearanceStrip>
+							<IconPicker>
+								<summary>
+									<Icon name={icon} size={18} color={shownAccent} />
+									Icon
+									<Icon name="expand_more" size={14} />
+								</summary>
+								<IconGrid role="radiogroup" aria-label="Character icon">
+									{ICON_CHOICES.map((choice) => (
+										<IconCell
+											key={choice}
+											type="button"
+											role="radio"
+											$active={icon === choice}
+											$accent={shownAccent}
+											onClick={(event) => {
+												set("icon", choice);
+												const picker = event.currentTarget.closest("details");
+												if (picker) {
+													picker.open = false;
+													picker.querySelector("summary")?.focus();
+												}
+											}}
+											aria-label={choice.replace(/_/g, " ")}
+											aria-checked={icon === choice}
+										>
+											<Icon name={choice} size={22} />
+										</IconCell>
+									))}
+								</IconGrid>
+							</IconPicker>
+							<ColorRow role="radiogroup" aria-label="Accent color">
+								<span aria-hidden="true">Accent</span>
+								{ACCENT_PALETTE.map((c) => (
+									<ColorSwatch
+										key={c.value}
+										type="button"
+										$color={accentOf({ accent_color: c.value } as Character)}
+										$active={accentColor === c.value}
+										onClick={() => set("accentColor", c.value)}
+										role="radio"
+										aria-checked={accentColor === c.value}
+										aria-label={c.label}
+									/>
+								))}
+							</ColorRow>
+						</AppearanceStrip>
 
-				<Field>
-					<Label>Color</Label>
-					<ColorRow role="radiogroup" aria-label="Accent color">
-						{ACCENT_PALETTE.map((c) => (
-							<ColorSwatch
-								key={c.value}
-								type="button"
-								$color={accentOf({ accent_color: c.value } as Character)}
-								$active={accentColor === c.value}
-								onClick={() => set("accentColor", c.value)}
-								role="radio"
-								aria-checked={accentColor === c.value}
-								aria-label={c.label}
+						<Field>
+							<Label htmlFor="char-name">Name</Label>
+							<Input
+								id="char-name"
+								value={name}
+								maxLength={NAME_MAX}
+								placeholder="e.g. Brainstorm Buddy"
+								onChange={(e) => set("name", e.target.value)}
+								required
 							/>
-						))}
-					</ColorRow>
-				</Field>
+							<HelperRow>
+								<span>Shown in the picker.</span>
+								<Counter $over={name.length >= NAME_MAX}>
+									{name.length}/{NAME_MAX}
+								</Counter>
+							</HelperRow>
+						</Field>
 
-				<Field>
-					<Label htmlFor="char-name">Name</Label>
-					<Input
-						id="char-name"
-						value={name}
-						maxLength={NAME_MAX}
-						placeholder="e.g. Brainstorm Buddy"
-						onChange={(e) => set("name", e.target.value)}
-						required
-					/>
-					<HelperRow>
-						<span>Shown in the picker.</span>
-						<Counter $over={name.length >= NAME_MAX}>
-							{name.length}/{NAME_MAX}
-						</Counter>
-					</HelperRow>
-				</Field>
+						<Field>
+							<Label htmlFor="char-desc">Description (optional)</Label>
+							<Input
+								id="char-desc"
+								value={description}
+								maxLength={DESC_MAX}
+								placeholder="Brief tagline"
+								onChange={(e) => set("description", e.target.value)}
+							/>
+							<HelperRow>
+								<span>One short line under the name.</span>
+								<Counter $over={description.length >= DESC_MAX}>
+									{description.length}/{DESC_MAX}
+								</Counter>
+							</HelperRow>
+						</Field>
 
-				<Field>
-					<Label htmlFor="char-desc">Description (optional)</Label>
-					<Input
-						id="char-desc"
-						value={description}
-						maxLength={DESC_MAX}
-						placeholder="Brief tagline"
-						onChange={(e) => set("description", e.target.value)}
-					/>
-					<HelperRow>
-						<span>One short line under the name.</span>
-						<Counter $over={description.length >= DESC_MAX}>
-							{description.length}/{DESC_MAX}
-						</Counter>
-					</HelperRow>
-				</Field>
+						<Field>
+							<Label htmlFor="char-prompt">Personality / instructions</Label>
+							<TextArea
+								id="char-prompt"
+								value={prompt}
+								maxLength={PROMPT_HARD_CAP}
+								placeholder='e.g. "Reply in a warm, casual tone. Use plain language and contractions."'
+								onChange={(e) => set("prompt", e.target.value)}
+								required
+							/>
+							<HelperRow>
+								<span>Describe tone and style. Short is better.</span>
+								<Counter
+									$warn={prompt.length > PROMPT_SOFT_CAP && prompt.length < PROMPT_HARD_CAP}
+									$over={prompt.length >= PROMPT_HARD_CAP}
+								>
+									{prompt.length}/{PROMPT_HARD_CAP}
+								</Counter>
+							</HelperRow>
+							{prompt.length > PROMPT_SOFT_CAP && (
+								<SoftCapWarning role="status">
+									<Icon name="info" size={14} color={tokens.colors.tertiary} />
+									<span>
+										Long prompts can confuse small models. Try splitting this into
+										shorter rules, or remove parts you don't need.
+									</span>
+								</SoftCapWarning>
+							)}
+						</Field>
 
-				<Field>
-					<Label htmlFor="char-greeting">Greeting (optional)</Label>
-					<Input
-						id="char-greeting"
-						value={greeting}
-						maxLength={GREETING_MAX}
-						placeholder='e.g. "Hi! What can I help you with?"'
-						onChange={(e) => set("greeting", e.target.value)}
-					/>
-					<HelperRow>
-						<span>Shown at the top of a fresh chat.</span>
-						<Counter $over={greeting.length >= GREETING_MAX}>
-							{greeting.length}/{GREETING_MAX}
-						</Counter>
-					</HelperRow>
-				</Field>
+						<Field>
+							<Label>Conversation starters (optional)</Label>
+							{starters.map((value, idx) => (
+								// biome-ignore lint/suspicious/noArrayIndexKey: fixed-length list of slots, never reordered
+								<StarterRow key={idx}>
+									<StarterInput
+										value={value}
+										maxLength={STARTER_MAX}
+										placeholder={
+											idx === 0
+												? "e.g. Help me draft a polite email"
+												: idx === 1
+													? "e.g. Quiz me on what I just learned"
+													: "Optional"
+										}
+										onChange={(e) =>
+											set(
+												"starters",
+												starters.map((s, i) => (i === idx ? e.target.value.slice(0, STARTER_MAX) : s)),
+											)
+										}
+										aria-label={`Starter ${idx + 1}`}
+									/>
+									<StarterClearBtn
+										type="button"
+										disabled={value.length === 0}
+										aria-label={`Clear starter ${idx + 1}`}
+										onClick={() => set("starters", starters.map((s, i) => (i === idx ? "" : s)))}
+									>
+										<Icon name="close" size={16} />
+									</StarterClearBtn>
+								</StarterRow>
+							))}
+							<HelperRow>
+								<span>Shown as tappable chips on a fresh chat.</span>
+							</HelperRow>
+						</Field>
 
-				<Field>
-					<Label htmlFor="char-prompt">Personality / instructions</Label>
-					<TextArea
-						id="char-prompt"
-						value={prompt}
-						maxLength={PROMPT_HARD_CAP}
-						placeholder='e.g. "Reply in a warm, casual tone. Use plain language and contractions."'
-						onChange={(e) => set("prompt", e.target.value)}
-						required
-					/>
-					<HelperRow>
-						<span>Describe tone and style. Short is better.</span>
-						<Counter
-							$warn={prompt.length > PROMPT_SOFT_CAP && prompt.length < PROMPT_HARD_CAP}
-							$over={prompt.length >= PROMPT_HARD_CAP}
-						>
-							{prompt.length}/{PROMPT_HARD_CAP}
-						</Counter>
-					</HelperRow>
-					{prompt.length > PROMPT_SOFT_CAP && (
-						<SoftCapWarning role="status">
-							<Icon name="info" size={14} color={tokens.colors.tertiary} />
+						<Field>
+							<Label htmlFor="char-greeting">Greeting (optional)</Label>
+							<Input
+								id="char-greeting"
+								value={greeting}
+								maxLength={GREETING_MAX}
+								placeholder='e.g. "Hi! What can I help you with?"'
+								onChange={(e) => set("greeting", e.target.value)}
+							/>
+							<HelperRow>
+								<span>Shown at the top of a fresh chat.</span>
+								<Counter $over={greeting.length >= GREETING_MAX}>
+									{greeting.length}/{GREETING_MAX}
+								</Counter>
+							</HelperRow>
+						</Field>
+
+						<Field>
+							<Label>Add a rule</Label>
+							<ExampleChips>
+								{PROMPT_EXAMPLES.map((ex) => (
+									<ExampleChip
+										key={ex.short}
+										type="button"
+										onClick={() => appendToPrompt(ex.full)}
+										title={ex.full}
+										aria-label={`Add rule: ${ex.full}`}
+									>
+										+ {ex.short}
+									</ExampleChip>
+								))}
+							</ExampleChips>
+						</Field>
+
+						<Tip>
+							<Icon name="lightbulb" size={16} color={tokens.colors.tertiary} />
 							<span>
-								Long prompts can confuse small models. Try splitting this into
-								shorter rules, or remove parts you don't need.
+								Small models work best with brief, plain-language instructions
+								about tone and style. Long roleplay personas can make replies
+								less accurate.
 							</span>
-						</SoftCapWarning>
-					)}
-				</Field>
+						</Tip>
+					</Form>
+					<Aside>
+						<Preview aria-label="Live character card preview">
+							<h2>Live preview</h2>
+							<PreviewIdentity>
+								<PreviewIcon $accent={shownAccent}><Icon name={icon} size={24} /></PreviewIcon>
+								<div>
+									<strong>{trimmedName || "Your character"}</strong>
+									{description.trim() && <p>{description.trim()}</p>}
+								</div>
+							</PreviewIdentity>
+							{greeting.trim() && <TestPanel $accent={shownAccent}>{greeting.trim()}</TestPanel>}
+						</Preview>
+						<Preview aria-label="Test reply and card sharing">
+							<Field>
+								<Label htmlFor="character-test">Test reply</Label>
+								<Input id="character-test" value={testPrompt} maxLength={500}
+									onChange={(event) => setTestPrompt(event.target.value)} />
+								<TestRow>
+									{testing ? (
+										<TestStop type="button" onClick={handleStopTest}>
+											<Icon name="stop_circle" size={16} color={tokens.colors.error} />
+											Stop
+										</TestStop>
+									) : (
+										<TestBtn type="button" onClick={handleTry} disabled={!prompt.trim() || !testPrompt.trim()} $accent={shownAccent}>
+											<Icon name="play_arrow" size={16} color={shownAccent} />
+											Test sample reply
+										</TestBtn>
+									)}
+								</TestRow>
+								{(testing || test.state.kind === "done" || testError) &&
+									(testError ? (
+										<TestErrorBox role="alert">{testError}</TestErrorBox>
+									) : (
+										<TestPanel $accent={shownAccent} aria-live="polite">
+											{testOutput || <TestEmpty>{testing ? "Generating…" : "No reply"}</TestEmpty>}
+										</TestPanel>
+									))}
+							</Field>
+							<CardActions>
+								<input hidden ref={cardInput} type="file" accept=".png,.json,image/png,application/json"
+									onChange={(event) => {
+										const file = event.currentTarget.files?.[0];
+										event.currentTarget.value = "";
+										if (file) void handleImportCard(file);
+									}} />
+								<SecondaryBtn type="button" disabled={saving} onClick={() => cardInput.current?.click()}>
+									Import Card (.png / .json)
+								</SecondaryBtn>
+								{canSave ? (
+									<SecondaryBtn as="a" download="character-card.json"
+										href={`data:application/json;charset=utf-8,${encodeURIComponent(serializeTavernCard(characterFromDraft("")))}`}>
+										Export Card
+									</SecondaryBtn>
+								) : (
+									<SecondaryBtn type="button" disabled>Export Card</SecondaryBtn>
+								)}
+							</CardActions>
+						</Preview>
+					</Aside>
+					<Advanced>
+						<SectionDivider>
+							<SectionLabel>Advanced</SectionLabel>
+						</SectionDivider>
 
-				<Tip>
-					<Icon name="lightbulb" size={16} color={tokens.colors.tertiary} />
-					<span>
-						Small models work best with brief, plain-language instructions
-						about tone and style. Long roleplay personas can make replies
-						less accurate.
-					</span>
-				</Tip>
-
-				<Field>
-					<Label>Try it</Label>
-					<TestRow>
-						{testing ? (
-							<TestStop type="button" onClick={handleStopTest}>
-								<Icon name="stop_circle" size={16} color={tokens.colors.error} />
-								Stop
-							</TestStop>
-						) : (
-							<TestBtn type="button" onClick={handleTry} disabled={!prompt.trim()} $accent={shownAccent}>
-								<Icon name="play_arrow" size={16} color={shownAccent} />
-								Test sample reply
-							</TestBtn>
-						)}
-					</TestRow>
-					{(testing || testOutput || testError) &&
-						(testError ? (
-							<TestErrorBox role="alert">{testError}</TestErrorBox>
-						) : (
-							<TestPanel $accent={shownAccent} aria-live="polite">
-								{testOutput || <TestEmpty>Generating…</TestEmpty>}
-							</TestPanel>
-						))}
-				</Field>
-
-				<Field>
-					<Label>Add a rule</Label>
-					<ExampleChips>
-						{PROMPT_EXAMPLES.map((ex) => (
-							<ExampleChip
-								key={ex.short}
-								type="button"
-								onClick={() => appendToPrompt(ex.full)}
-								title={ex.full}
-								aria-label={`Add rule: ${ex.full}`}
-							>
-								+ {ex.short}
-							</ExampleChip>
-						))}
-					</ExampleChips>
-				</Field>
-
-				<Field>
-					<Label>Conversation starters (optional)</Label>
-					{starters.map((value, idx) => (
-						// biome-ignore lint/suspicious/noArrayIndexKey: fixed-length list of slots, never reordered
-						<StarterRow key={idx}>
-							<StarterInput
-								value={value}
-								maxLength={STARTER_MAX}
-								placeholder={
-									idx === 0
-										? "e.g. Help me draft a polite email"
-										: idx === 1
-											? "e.g. Quiz me on what I just learned"
-											: "Optional"
-								}
-								onChange={(e) =>
-									set(
-										"starters",
-										starters.map((s, i) => (i === idx ? e.target.value.slice(0, STARTER_MAX) : s)),
-									)
-								}
-								aria-label={`Starter ${idx + 1}`}
+						<SliderRow>
+							<SliderHeader>
+								<SliderTitle>Creativity</SliderTitle>
+								<SliderValue>{temperature.toFixed(2)}</SliderValue>
+							</SliderHeader>
+							<Slider
+								type="range"
+								min="0"
+								max="2"
+								step="0.05"
+								value={temperature}
+								onChange={(e) => set("temperature", Number.parseFloat(e.target.value))}
+								aria-label="Creativity (temperature)"
+								aria-valuetext={`${temperatureBand(temperature)} (${temperature.toFixed(2)})`}
 							/>
-							<StarterClearBtn
-								type="button"
-								disabled={value.length === 0}
-								aria-label={`Clear starter ${idx + 1}`}
-								onClick={() => set("starters", starters.map((s, i) => (i === idx ? "" : s)))}
-							>
-								<Icon name="close" size={16} />
-							</StarterClearBtn>
-						</StarterRow>
-					))}
-					<HelperRow>
-						<span>Shown as tappable chips on a fresh chat.</span>
-					</HelperRow>
-				</Field>
+							<BandLabel>
+								<span>How varied responses are</span>
+								<span>{temperatureBand(temperature)}</span>
+							</BandLabel>
+						</SliderRow>
 
-				<SectionDivider>
-					<SectionLabel>Advanced</SectionLabel>
-				</SectionDivider>
+						<SliderRow>
+							<SliderHeader>
+								<SliderTitle>Word variety</SliderTitle>
+								<SliderValue>{topP.toFixed(2)}</SliderValue>
+							</SliderHeader>
+							<Slider
+								type="range"
+								min="0.05"
+								max="1"
+								step="0.05"
+								value={topP}
+								onChange={(e) => set("topP", Number.parseFloat(e.target.value))}
+								aria-label="Word variety (top-p)"
+								aria-valuetext={`${topPBand(topP)} (${topP.toFixed(2)})`}
+							/>
+							<BandLabel>
+								<span>Vocabulary range</span>
+								<span>{topPBand(topP)}</span>
+							</BandLabel>
+						</SliderRow>
 
-				<SliderRow>
-					<SliderHeader>
-						<SliderTitle>Creativity</SliderTitle>
-						<SliderValue>{temperature.toFixed(2)}</SliderValue>
-					</SliderHeader>
-					<Slider
-						type="range"
-						min="0"
-						max="2"
-						step="0.05"
-						value={temperature}
-						onChange={(e) => set("temperature", Number.parseFloat(e.target.value))}
-						aria-label="Creativity (temperature)"
-						aria-valuetext={`${temperatureBand(temperature)} (${temperature.toFixed(2)})`}
-					/>
-					<BandLabel>
-						<span>How varied responses are</span>
-						<span>{temperatureBand(temperature)}</span>
-					</BandLabel>
-				</SliderRow>
-
-				<SliderRow>
-					<SliderHeader>
-						<SliderTitle>Word variety</SliderTitle>
-						<SliderValue>{topP.toFixed(2)}</SliderValue>
-					</SliderHeader>
-					<Slider
-						type="range"
-						min="0.05"
-						max="1"
-						step="0.05"
-						value={topP}
-						onChange={(e) => set("topP", Number.parseFloat(e.target.value))}
-						aria-label="Word variety (top-p)"
-						aria-valuetext={`${topPBand(topP)} (${topP.toFixed(2)})`}
-					/>
-					<BandLabel>
-						<span>Vocabulary range</span>
-						<span>{topPBand(topP)}</span>
-					</BandLabel>
-				</SliderRow>
-
-				<SliderRow>
-					<SliderHeader>
-						<SliderTitle>Reply length</SliderTitle>
-						<SliderValue>{maxTokens}</SliderValue>
-					</SliderHeader>
-					<Slider
-						type="range"
-						min={LIMITS.maxTokensMin}
-						max={LIMITS.maxTokensMax}
-						step="32"
-						value={maxTokens}
-						onChange={(e) => set("maxTokens", Number.parseInt(e.target.value, 10))}
-						aria-label="Reply length (max tokens)"
-						aria-valuetext={`${maxTokens} tokens, ${maxTokensBand(maxTokens)}`}
-					/>
-					<BandLabel>
-						<span>Maximum tokens</span>
-						<span>{maxTokensBand(maxTokens)}</span>
-					</BandLabel>
-				</SliderRow>
+						<SliderRow>
+							<SliderHeader>
+								<SliderTitle>Reply length</SliderTitle>
+								<SliderValue>{maxTokens}</SliderValue>
+							</SliderHeader>
+							<Slider
+								type="range"
+								min={LIMITS.maxTokensMin}
+								max={LIMITS.maxTokensMax}
+								step="32"
+								value={maxTokens}
+								onChange={(e) => set("maxTokens", Number.parseInt(e.target.value, 10))}
+								aria-label="Reply length (max tokens)"
+								aria-valuetext={`${maxTokens} tokens, ${maxTokensBand(maxTokens)}`}
+							/>
+							<BandLabel>
+								<span>Maximum tokens</span>
+								<span>{maxTokensBand(maxTokens)}</span>
+							</BandLabel>
+						</SliderRow>
+					</Advanced>
+				</Editor>
 
 				<Actions>
 					{isEditing && existing && (
@@ -968,7 +1171,7 @@ export function CharacterEditPage() {
 						Cancel
 					</SecondaryBtn>
 					<PrimaryBtn type="button" onClick={handleSave} disabled={!canSave || saving}>
-						{saving ? "Saving…" : isEditing ? "Save changes" : "Create character"}
+						{saving ? "Saving…" : "Save Character"}
 					</PrimaryBtn>
 				</Actions>
 			</Page>

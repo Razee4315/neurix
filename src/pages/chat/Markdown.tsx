@@ -9,6 +9,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Fragment, type ReactNode, memo, useEffect, useState } from "react";
 import styled from "styled-components";
 import { HtmlPreview } from "./HtmlPreview";
+import { MathView, MermaidView } from "./RichBlocks";
 import { INLINE, MAX_INLINE_LINE, isTableDivider } from "./markdownPatterns";
 import { splitStableBlocks } from "./streamBlocks";
 
@@ -198,6 +199,11 @@ interface CodeViewProps {
 }
 
 function CodeView({ code, language, finished }: CodeViewProps) {
+	if (finished && language.trim().toLowerCase() === "mermaid" && code.trim()) return <MermaidView code={code} />;
+	return <PlainCodeView code={code} language={language} finished={finished} />;
+}
+
+function PlainCodeView({ code, language, finished }: CodeViewProps) {
 	const [html, setHtml] = useState<string | null>(null);
 	const [wrap, setWrap] = useState(false);
 
@@ -205,7 +211,8 @@ function CodeView({ code, language, finished }: CodeViewProps) {
 		if (!finished) return;
 		let alive = true;
 		import("./highlight")
-			.then(({ highlightCode }) => alive && setHtml(highlightCode(code, language)))
+			.then(({ highlightCode }) => highlightCode(code, language))
+			.then((result) => alive && setHtml(result))
 			.catch(() => {
 				// Plain text is a fine result: the code is still all there.
 			});
@@ -282,6 +289,36 @@ function handleLinkClick(e: React.MouseEvent, url: string) {
 	openUrl(url).catch(() => {});
 }
 
+/**
+ * Inline math: `$x^2$`. Money ("$5 and $10") stays text: the formula can't
+ * start or end with a space, and a digit can't follow the closing `$`.
+ * Bounded like the patterns in markdownPatterns.ts.
+ */
+const INLINE_MATH = /\$([^\s$][^$\n]{0,998}?[^\s\\$]|[^\s\\$])\$/g;
+
+/** Text around a `$...$` that makes it money or an escape, not a formula. */
+const NOT_MATH_BEFORE = /[\\$\w]/;
+const NOT_MATH_AFTER = /[\d$]/;
+
+/** Plain text with any finished inline formulas drawn. */
+function withMath(text: string, keyBase: string): ReactNode[] {
+	if (!text.includes("$")) return [text];
+	const nodes: ReactNode[] = [];
+	let last = 0;
+	let n = 0;
+	for (const match of text.matchAll(INLINE_MATH)) {
+		const index = match.index ?? 0;
+		const end = index + match[0].length;
+		if (NOT_MATH_BEFORE.test(text[index - 1] ?? "") || NOT_MATH_AFTER.test(text[end] ?? "")) continue;
+		if (index > last) nodes.push(text.slice(last, index));
+		nodes.push(<MathView key={`${keyBase}m${n++}`} tex={match[1]} display={false} />);
+		last = end;
+	}
+	if (n === 0) return [text];
+	if (last < text.length) nodes.push(text.slice(last));
+	return nodes;
+}
+
 export function renderInline(text: string): ReactNode[] {
 	if (text.length > MAX_INLINE_LINE) return [text];
 	const nodes: ReactNode[] = [];
@@ -290,7 +327,7 @@ export function renderInline(text: string): ReactNode[] {
 
 	for (const match of text.matchAll(INLINE)) {
 		const index = match.index ?? 0;
-		if (index > lastIndex) nodes.push(text.slice(lastIndex, index));
+		if (index > lastIndex) nodes.push(...withMath(text.slice(lastIndex, index), `t${key++}`));
 		if (match[2]) nodes.push(<Bold key={key++}>{match[2]}</Bold>);
 		else if (match[3]) nodes.push(<em key={key++}>{match[3]}</em>);
 		else if (match[4]) nodes.push(<InlineCode key={key++}>{match[4]}</InlineCode>);
@@ -304,7 +341,7 @@ export function renderInline(text: string): ReactNode[] {
 		}
 		lastIndex = index + match[0].length;
 	}
-	if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+	if (lastIndex < text.length) nodes.push(...withMath(text.slice(lastIndex), `t${key++}`));
 	return nodes;
 }
 
@@ -339,6 +376,24 @@ function renderBlocks(text: string): ReactNode[] {
 			i++; // skip the closing fence
 			parts.push(<CodeView key={key++} code={codeLines.join("\n")} language={lang} finished={finished} />);
 			continue;
+		}
+
+		// Display math: $$ on its own line up to the next $$, or $$...$$ on
+		// one line. Unfinished (still streaming), it stays as text.
+		const oneLine = line.trim().match(/^\$\$(.{1,4000})\$\$$/);
+		if (oneLine) {
+			parts.push(<MathView key={key++} tex={oneLine[1].trim()} display />);
+			i++;
+			continue;
+		}
+		if (line.trim() === "$$") {
+			let end = i + 1;
+			while (end < lines.length && end - i <= 200 && lines[end].trim() !== "$$") end++;
+			if (end < lines.length && lines[end].trim() === "$$") {
+				parts.push(<MathView key={key++} tex={lines.slice(i + 1, end).join("\n").trim()} display />);
+				i = end + 1;
+				continue;
+			}
 		}
 
 		// Table: a header row followed by a |---|---| divider.

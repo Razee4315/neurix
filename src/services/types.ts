@@ -277,6 +277,14 @@ export interface Conversation {
 	messages: ChatMessage[];
 }
 
+export interface StoredMessageVariant {
+	content: string;
+	reasoning?: string;
+	sources?: string[];
+	stop_reason?: StopReason;
+	thought_ms?: number;
+}
+
 export interface ChatMessage {
 	role: "user" | "assistant";
 	content: string;
@@ -289,6 +297,10 @@ export interface ChatMessage {
 	stop_reason?: StopReason;
 	/** How long the model thought before answering. */
 	thought_ms?: number;
+	/** Regenerated alternative replies for `< 1 / N >` branch switching. */
+	variants?: StoredMessageVariant[];
+	/** Index of the active entry in `variants`. */
+	active_variant?: number;
 }
 
 export interface ConversationMeta {
