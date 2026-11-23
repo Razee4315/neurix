@@ -3,7 +3,7 @@
 Single source of truth for resuming the Neurix autonomous mission.
 
 ## Status
-- **Current Phase**: Phase 1 — Research Synthesis (Step 1.5)
+- **Current Phase**: Phase 1 Complete -> Ready for Phase 2 Planning (BACKLOG, UI_AUDIT, DESIGN_SYSTEM, MOTION)
 - **Active Branch**: `next`
 - **Safety Tag (`main`)**: `before-mission-2026-11-23` -> `a5b7f8667b50a135a25e280acfd6a253529b8b14` (v1.0.1)
 - **App Data Backup**: Complete (`C:\Users\Saqlain\AppData\Local\neurix-mission-backup-2026-11-23\`, `settings.json` 507 B + `models-manifest.txt`)
@@ -13,12 +13,13 @@ Single source of truth for resuming the Neurix autonomous mission.
 |----|-------------|--------|
 | INIT-01 | Tagged `main` as `before-mission-2026-11-23`, branched `next` from `main` | `a5b7f86` |
 | CAL-01 | Calibrated 5 models (`claude-opus-5-5`, `gpt-6.2-sol`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-4-neon`) and verified `npm ci`/lint/typecheck/test/build (`22` files, `272` tests, `792,450 B` dist) | `fd97419` |
-| BASE-01 | Captured installed `v1.0.0` native runtime baseline (`73.8s` BootScreen block, `3,290.55 MB` settled WS) + 19 Playwright Edge screenshots (`0` console/page errors) -> `PERFORMANCE.md`, `BEHAVIOR_NOTES.md`, `UX_BASELINE.md` | *(pending commit)* |
+| BASE-01 | Captured installed `v1.0.0` native runtime baseline (`73.8s` BootScreen block, `3,290.55 MB` settled WS) + 19 Playwright Edge screenshots (`0` console/page errors) -> `PERFORMANCE.md`, `BEHAVIOR_NOTES.md`, `UX_BASELINE.md` | `eb8b544` |
+| RES-01 | Synthesized all 5 research tracks into `RESEARCH.md`, `DESIGN_RESEARCH.md` (38 refs, 5 anti-Claude moves, 3 directions), and `FEATURE_MATRIX.md` | *(this commit)* |
 
 ## Item In Progress
-- **Step 1.5**: Synthesize all 5 completed research tracks into `RESEARCH.md`, `DESIGN_RESEARCH.md`, and `FEATURE_MATRIX.md`, then hand back via `enter_plan_mode` for Phase 2 planning.
-- **Exact Next Step**: Author `RESEARCH.md`, `DESIGN_RESEARCH.md`, and `FEATURE_MATRIX.md` from `scratch/track1.md`–`track5.md`, commit & push to `origin next`, and call `enter_plan_mode`.
-- **Files Touched**: `PERFORMANCE.md`, `BEHAVIOR_NOTES.md`, `UX_BASELINE.md`, `docs/mission/baseline/*.png`, `MISSION_STATE.md`
+- **Phase 2 Planning Handoff**: All Phase 1 setup, baselines, and research deliverables are committed and pushed to `origin/next`.
+- **Exact Next Step**: Planning model review: select design direction and author Phase 2 master plan + `BACKLOG.md` / `UI_AUDIT.md` / `DESIGN_SYSTEM.md` / `MOTION.md`.
+- **Files Touched**: `RESEARCH.md`, `DESIGN_RESEARCH.md`, `FEATURE_MATRIX.md`, `MISSION_STATE.md`
 
 ## Next 5 Items in Order
 1. **Step 1.5**: Synthesize 5 research tracks -> `RESEARCH.md`, `DESIGN_RESEARCH.md`, `FEATURE_MATRIX.md` + commit/push.
