@@ -56,6 +56,22 @@ export function persistable(messages: Message[]): Message[] {
 	return messages.filter((m) => m.role !== "error");
 }
 
+export function stripThinkingTags(text: string): string {
+	let visible = "";
+	let start = 0;
+	let depth = 0;
+	for (const { 0: tag, index } of text.matchAll(/<\/?think>/gi)) {
+		if (tag[1] !== "/") {
+			if (depth === 0) visible += text.slice(start, index);
+			depth += 1;
+		} else if (depth > 0) {
+			depth -= 1;
+			if (depth === 0) start = index + tag.length;
+		}
+	}
+	return depth === 0 ? visible + text.slice(start) : visible;
+}
+
 /**
  * Build the (user, assistant) pairs sent to the model as context.
  *
@@ -64,14 +80,14 @@ export function persistable(messages: Message[]): Message[] {
  * and silently drop everything after it. A user message with no reply is
  * skipped.
  */
-export function buildHistory(messages: Message[]): ChatHistoryEntry[] {
+export function buildHistory(messages: Message[], stripThinking = true): ChatHistoryEntry[] {
 	const pairs: ChatHistoryEntry[] = [];
 	let pendingUser: string | null = null;
 	for (const m of messages) {
 		if (m.role === "user") {
 			pendingUser = m.text;
 		} else if (m.role === "ai" && pendingUser !== null) {
-			pairs.push({ user: pendingUser, assistant: m.text });
+			pairs.push({ user: pendingUser, assistant: stripThinking ? stripThinkingTags(m.text) : m.text });
 			pendingUser = null;
 		}
 	}

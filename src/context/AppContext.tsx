@@ -79,9 +79,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const refreshActiveModel = useCallback(async () => {
+		const ticket = ticketRef.current;
+		const inflight = inflightRef.current;
 		try {
 			const active = await modelService.getActiveModel();
-			dispatch({ type: "SYNCED", model: active });
+			if (!inflight && ticket === ticketRef.current) dispatch({ type: "SYNCED", model: active });
 			return active;
 		} catch {
 			return null;
@@ -95,10 +97,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 	}, []);
 
 	const loadModel = useCallback((modelId: string): Promise<void> => {
-		const { status } = modelRef.current;
-		if (status.kind === "ready" && status.model.id === modelId) return Promise.resolve();
+		const { status, ticket: renderedTicket } = modelRef.current;
 		const inflight = inflightRef.current;
 		if (inflight?.id === modelId) return inflight.promise;
+		if (
+			!inflight &&
+			renderedTicket === ticketRef.current &&
+			status.kind === "ready" &&
+			status.model.id === modelId
+		) {
+			return Promise.resolve();
+		}
 
 		const ticket = ++ticketRef.current;
 		dispatch({ type: "LOAD_STARTED", id: modelId, ticket });

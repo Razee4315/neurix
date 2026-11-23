@@ -711,7 +711,10 @@ export function ChatPage() {
 						withGreeting(character, character?.system_prompt ?? settings?.system_prompt ?? ""),
 						...(live.current.createIn ? [CREATE_INSTRUCTIONS] : []),
 					].join("\n"),
-					history: buildHistory(plainEarlierReplies(context, character?.id)),
+					history: buildHistory(
+						plainEarlierReplies(context, character?.id),
+						settings?.strip_thinking_history !== false,
+					),
 					temperature: character?.temperature ?? settings?.temperature ?? 0.7,
 					topP: character?.top_p ?? settings?.top_p ?? 0.9,
 					maxTokens: Math.max(replyLimit, live.current.createIn ? CREATE_MAX_TOKENS : 0),
@@ -738,7 +741,21 @@ export function ChatPage() {
 		} finally {
 			if (abortRef.current === abort) abortRef.current = null;
 		}
-	}, [commit, persist, show, flushStream, resetStream, dispatchTurn, refreshActiveModel, showToast, settings?.system_prompt, settings?.temperature, settings?.top_p, settings?.max_tokens]);
+	}, [
+		commit,
+		persist,
+		show,
+		flushStream,
+		resetStream,
+		dispatchTurn,
+		refreshActiveModel,
+		showToast,
+		settings?.system_prompt,
+		settings?.temperature,
+		settings?.top_p,
+		settings?.max_tokens,
+		settings?.strip_thinking_history,
+	]);
 
 	/**
 	 * Make sure a model is loaded, loading the last-used one if needed. While

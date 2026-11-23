@@ -9,7 +9,7 @@ use serde::Serialize;
 /// Size of the passages a file is cut into.
 const CHUNK_CHARS: usize = 800;
 /// Passages sent per question: enough to answer, few enough to read quickly.
-const MAX_EXCERPTS: usize = 3;
+pub const MAX_EXCERPTS: usize = 3;
 /// Passages scoring below this share of the best one are noise.
 const KEEP_RATIO: f64 = 0.4;
 
@@ -34,6 +34,8 @@ pub struct Doc {
 pub struct Excerpt {
     pub path: String,
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_hint: Option<u32>,
 }
 
 /// Decode a text file. Windows tools still save UTF-16 and ANSI, so anything
@@ -125,6 +127,29 @@ fn chunks(text: &str) -> Vec<String> {
     out
 }
 
+pub fn passages(path: &str, text: &str) -> Vec<(String, Option<u32>)> {
+    if !std::path::Path::new(path).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("pdf")) {
+        return chunks(text).into_iter().map(|text| (text, None)).collect();
+    }
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut offset = 0;
+    let mut page = None;
+    for line in text.split_inclusive('\n') {
+        if let Some(number) = line.trim_end().strip_prefix("[Page ")
+            .and_then(|line| line.strip_suffix(']'))
+            .and_then(|number| number.parse().ok())
+        {
+            out.extend(chunks(&text[start..offset]).into_iter().map(|text| (text, page)));
+            page = Some(number);
+            start = offset;
+        }
+        offset += line.len();
+    }
+    out.extend(chunks(&text[start..]).into_iter().map(|text| (text, page)));
+    out
+}
+
 /// The passages that best match `terms`, best first, within `max_chars`.
 /// A word found in few passages counts for more than one found everywhere,
 /// and a word in the file's name counts a little even if the text lacks it.
@@ -134,16 +159,18 @@ pub fn best_excerpts(docs: &[Doc], terms: &[String], max_chars: usize) -> Vec<Ex
     if terms.is_empty() {
         return Vec::new();
     }
-    let passages: Vec<(usize, String, String)> = docs
+    let passages: Vec<_> = docs
         .iter()
         .enumerate()
-        .flat_map(|(i, doc)| chunks(&doc.text).into_iter().map(move |c| (i, c.to_lowercase(), c)))
+        .flat_map(|(i, doc)| {
+            passages(&doc.path, &doc.text).into_iter().map(move |(text, page)| (i, text.to_lowercase(), text, page))
+        })
         .collect();
     let total = passages.len() as f64;
     let weights: Vec<f64> = terms
         .iter()
         .map(|t| {
-            let found = passages.iter().filter(|(_, lower, _)| lower.contains(t.as_str())).count();
+            let found = passages.iter().filter(|(_, lower, _, _)| lower.contains(t.as_str())).count();
             (1.0 + total / (1.0 + found as f64)).ln()
         })
         .collect();
@@ -153,11 +180,11 @@ pub fn best_excerpts(docs: &[Doc], terms: &[String], max_chars: usize) -> Vec<Ex
     let mut scored: Vec<(f64, usize)> = passages
         .iter()
         .enumerate()
-        .filter(|(_, (doc, lower, _))| {
+        .filter(|(_, (doc, lower, _, _))| {
             let hits = terms.iter().filter(|t| lower.contains(t.as_str()) || paths[*doc].contains(t.as_str())).count();
             hits >= needed
         })
-        .map(|(index, (doc, lower, _))| {
+        .map(|(index, (doc, lower, _, _))| {
             let score: f64 = terms
                 .iter()
                 .zip(&weights)
@@ -180,13 +207,13 @@ pub fn best_excerpts(docs: &[Doc], terms: &[String], max_chars: usize) -> Vec<Ex
         if score < top * KEEP_RATIO || out.len() == MAX_EXCERPTS {
             break;
         }
-        let (doc, _, text) = &passages[index];
+        let (doc, _, text, page_hint) = &passages[index];
         let length = text.chars().count();
         if used + length > max_chars {
             continue;
         }
         used += length;
-        out.push(Excerpt { path: docs[*doc].path.clone(), text: text.trim().to_string() });
+        out.push(Excerpt { path: docs[*doc].path.clone(), text: text.trim().to_string(), page_hint: *page_hint });
     }
     out
 }

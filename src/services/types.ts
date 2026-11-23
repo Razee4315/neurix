@@ -95,7 +95,12 @@ export interface ActiveModel {
 	/** Context window allocated for this model, in tokens. */
 	context_length: number;
 	threads: number;
+	kv_cache_quant?: KvCacheQuant;
+	flash_attention?: boolean;
+	gpu_layers?: number;
 }
+
+export type KvCacheQuant = "q8_0" | "f16" | "q4_0";
 
 /** Why the backend stopped generating. */
 export type StopReason = "eos" | "length" | "cancelled" | "repetition";
@@ -220,6 +225,11 @@ export interface Settings {
 	context_size?: number;
 	/** Inference threads; 0 lets the app use the device's fast cores. */
 	threads?: number;
+	kv_cache_quant?: KvCacheQuant;
+	flash_attention?: boolean;
+	gpu_layers?: number;
+	air_gap?: boolean;
+	strip_thinking_history?: boolean;
 }
 
 export interface StorageInfo {

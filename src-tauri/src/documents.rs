@@ -9,9 +9,14 @@ use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
+
+use quick_xml::escape::resolve_xml_entity;
+use quick_xml::events::Event;
+use quick_xml::name::ResolveResult;
+use quick_xml::NsReader;
 
 /// Starts this program as the extractor rather than the app.
 pub const HELPER_FLAG: &str = "--neurix-read-document";
@@ -57,7 +62,11 @@ fn pdf_text(bytes: &[u8]) -> Result<String, String> {
     let pages: Vec<String> = doc
         .get_pages()
         .keys()
-        .filter_map(|&page| doc.extract_text(&[page]).ok())
+        .filter_map(|&page| {
+            let text = doc.extract_text(&[page]).ok()?;
+            let text = text.trim();
+            (!text.is_empty()).then(|| format!("[Page {page}]\n{text}"))
+        })
         .collect();
     Ok(pages.join("\n"))
 }
@@ -72,38 +81,44 @@ fn docx_text(bytes: &[u8]) -> Result<String, String> {
 
 /// The text runs of a Word body, with a line for each paragraph.
 fn wordml_text(xml: &str) -> String {
+    const WORDML: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const STRICT_WORDML: &str = "http://purl.oclc.org/ooxml/wordprocessingml/main";
+    let mut reader = NsReader::from_str(xml);
     let mut out = String::new();
-    let mut rest = xml;
-    while let Some(start) = rest.find('<') {
-        let Some(end) = rest[start..].find('>') else { break };
-        let tag = &rest[start + 1..start + end];
-        rest = &rest[start + end + 1..];
-        let name = tag.split_whitespace().next().unwrap_or("").trim_end_matches('/');
-        match name {
-            "w:t" if !tag.ends_with('/') => {
-                let Some(close) = rest.find("</w:t>") else { break };
-                out.push_str(&unescape(&rest[..close]));
-                rest = &rest[close + "</w:t>".len()..];
+    let mut in_run = false;
+    while let Ok((namespace, event)) = reader.read_resolved_event() {
+        let is_word = match namespace {
+            ResolveResult::Bound(uri) => matches!(uri.0, WORDML | STRICT_WORDML),
+            // Older exports and fragments can omit the conventional binding.
+            ResolveResult::Unknown(prefix) => prefix == "w",
+            ResolveResult::Unbound => false,
+        };
+        match event {
+            Event::Start(tag) if is_word && tag.local_name().as_ref() == "t" => in_run = true,
+            Event::End(tag) if is_word => match tag.local_name().as_ref() {
+                "t" => in_run = false,
+                "p" | "tr" => out.push('\n'),
+                _ => {}
+            },
+            Event::Start(tag) | Event::Empty(tag) if is_word => match tag.local_name().as_ref() {
+                "tab" => out.push('\t'),
+                "br" | "cr" => out.push('\n'),
+                _ => {}
+            },
+            Event::Text(text) if in_run => out.push_str(&text.xml10_content()),
+            Event::CData(text) if in_run => out.push_str(&text.xml10_content()),
+            Event::GeneralRef(reference) if in_run => {
+                if let Ok(Some(c)) = reference.resolve_char_ref() {
+                    out.push(c);
+                } else if let Some(value) = resolve_xml_entity(&reference.xml10_content()) {
+                    out.push_str(value);
+                }
             }
-            "w:tab" => out.push('\t'),
-            "w:br" | "/w:p" | "/w:tr" => out.push('\n'),
+            Event::Eof => break,
             _ => {}
         }
     }
     out
-}
-
-fn unescape(text: &str) -> String {
-    if !text.contains('&') {
-        return text.to_string();
-    }
-    // &amp; last, so "&amp;lt;" comes out as the literal text "&lt;".
-    text.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&#39;", "'")
-        .replace("&amp;", "&")
 }
 
 /// Entry point of the helper process: print the file's text and exit.
@@ -153,10 +168,11 @@ fn extract_isolated(path: &Path) -> Option<String> {
 }
 
 type Stamp = (SystemTime, u64);
+type DocumentCache = Mutex<HashMap<PathBuf, (Stamp, Option<String>)>>;
 
 /// Extracted text by file, so a question doesn't re-read every PDF. An entry
 /// of `None` remembers a file that can't be read.
-static CACHE: LazyLock<Mutex<HashMap<PathBuf, (Stamp, Option<String>)>>> = LazyLock::new(Default::default);
+static CACHE: OnceLock<DocumentCache> = OnceLock::new();
 
 pub enum Reading {
     Text(String),
@@ -171,8 +187,9 @@ pub fn read_cached(path: &Path, may_extract: bool) -> Reading {
     let Ok(meta) = std::fs::metadata(path) else { return Reading::Unreadable };
     let stamp = (meta.modified().unwrap_or(SystemTime::UNIX_EPOCH), meta.len());
     let reading = |text: Option<String>| text.map_or(Reading::Unreadable, Reading::Text);
+    let cache = CACHE.get_or_init(Default::default);
 
-    if let Ok(cache) = CACHE.lock() {
+    if let Ok(cache) = cache.lock() {
         if let Some((seen, text)) = cache.get(path) {
             if *seen == stamp {
                 return reading(text.clone());
@@ -183,7 +200,7 @@ pub fn read_cached(path: &Path, may_extract: bool) -> Reading {
         return Reading::NotReached;
     }
     let text = extract_isolated(path);
-    if let Ok(mut cache) = CACHE.lock() {
+    if let Ok(mut cache) = cache.lock() {
         cache.insert(path.to_path_buf(), (stamp, text.clone()));
     }
     reading(text)

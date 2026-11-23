@@ -78,6 +78,11 @@ pub struct Settings {
     pub context_size: u32,
     /// Inference threads; 0 picks the device's fast cores.
     pub threads: u32,
+    pub kv_cache_quant: String,
+    pub flash_attention: bool,
+    pub gpu_layers: u32,
+    pub air_gap: bool,
+    pub strip_thinking_history: bool,
 }
 
 impl Default for Settings {
@@ -100,6 +105,11 @@ impl Default for Settings {
             custom_characters: Vec::new(),
             context_size: 0,
             threads: 0,
+            kv_cache_quant: "q8_0".into(),
+            flash_attention: true,
+            gpu_layers: 0,
+            air_gap: false,
+            strip_thinking_history: true,
         }
     }
 }
@@ -133,9 +143,18 @@ impl Settings {
             self.context_size = self.context_size.clamp(MIN_CONTEXT_SIZE, MAX_CONTEXT_SIZE);
         }
         self.threads = self.threads.min(MAX_THREADS);
+        self.gpu_layers = self.gpu_layers.min(999);
+        if !matches!(self.kv_cache_quant.as_str(), "q8_0" | "f16" | "q4_0") {
+            self.kv_cache_quant = "q8_0".into();
+        }
         truncate_in_place(&mut self.system_prompt, MAX_CHAR_SYSTEM_PROMPT);
         truncate_in_place(&mut self.font_size, 16);
-        truncate_in_place(&mut self.theme, 32);
+        if !matches!(
+            self.theme.as_str(),
+            "obsidian" | "paper" | "phosphor" | "dusk" | "deodar" | "karakoram" | "system"
+        ) {
+            self.theme = "obsidian".into();
+        }
 
         for id in [&mut self.last_model_id, &mut self.active_character_id] {
             if id.as_ref().is_some_and(|v| v.len() > MAX_REF_ID) {
@@ -221,6 +240,13 @@ pub fn load(app: &AppHandle) -> Result<Settings, String> {
             Ok(defaults)
         }
     }
+}
+
+pub fn require_network(app: &AppHandle) -> Result<(), String> {
+    if load(app)?.air_gap {
+        return Err("Air-Gap mode is enabled. Turn it off in Settings to allow network access.".into());
+    }
+    Ok(())
 }
 
 fn write(app: &AppHandle, settings: &Settings) -> Result<(), String> {

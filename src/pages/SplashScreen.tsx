@@ -205,15 +205,9 @@ export function SplashScreen() {
 				if (cancelled) return;
 
 				if (models.length > 0) {
-					// Returning user: load the last-used model (through the app
-					// context, so the rest of the UI knows it is loaded), then chat.
 					const target = models.find((m) => m.id === settings.last_model_id) ?? models[0];
-					try {
-						await loadModel(target.id);
-						if (!cancelled) navigate("/chat", { replace: true });
-					} catch {
-						if (!cancelled) navigate("/models", { replace: true });
-					}
+					void loadModel(target.id).catch(() => {});
+					navigate("/chat", { replace: true });
 					return;
 				}
 

@@ -4,12 +4,13 @@
 
 #[cfg(desktop)]
 use crate::documents::{self, Reading};
+use crate::folder_index::{self, FolderIndex, Stamp};
 use crate::folder_search::{best_excerpts, decode_text, search_terms, Doc, Excerpt};
+use crate::settings;
 use serde::Serialize;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-#[cfg(desktop)]
 use tauri::{AppHandle, Manager};
 #[cfg(desktop)]
 use tauri_plugin_dialog::DialogExt;
@@ -25,9 +26,9 @@ const SKIP_DIRS: &[&str] = &["node_modules", "target", "dist", "build", ".git", 
 const MAX_DEPTH: usize = 3;
 const MAX_FILES: usize = 400;
 /// Read from each file, so one huge log can't eat the whole scan.
-const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_FILE_BYTES: u32 = 4 * 1024 * 1024;
 /// Read per search, which runs on every question.
-const MAX_SCAN_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_SCAN_BYTES: u32 = 64 * 1024 * 1024;
 /// Spent reading new PDF and Word files per search. Text is kept once read,
 /// so a folder of many documents fills in over a few questions.
 #[cfg(desktop)]
@@ -119,16 +120,23 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
 
 /// Read a file's text, or `None` when it isn't text. Only the start of a
 /// very long file is read; the second value says that happened.
-fn read_text(path: &Path, limit: u64) -> Option<(String, bool)> {
+fn read_text(path: &Path, limit: u32) -> Option<(String, bool)> {
     let mut bytes = Vec::new();
-    fs::File::open(path).ok()?.take(limit + 1).read_to_end(&mut bytes).ok()?;
-    let cut = bytes.len() as u64 > limit;
+    fs::File::open(path).ok()?.take(u64::from(limit) + 1).read_to_end(&mut bytes).ok()?;
+    let cut = bytes.len() > limit as usize;
     bytes.truncate(limit as usize);
     decode_text(&bytes).map(|text| (text, cut))
 }
 
 /// Walk a connected folder and read every text file in it.
 fn scan_folder(path: &str) -> Result<(FolderSnapshot, Vec<Doc>), String> {
+    scan_with_index(path, None)
+}
+
+fn scan_with_index(
+    path: &str,
+    mut index: Option<&mut FolderIndex<'_>>,
+) -> Result<(FolderSnapshot, Vec<Doc>), String> {
     let root = PathBuf::from(path);
     if !root.is_dir() {
         return Err(format!("The folder {path} is no longer there."));
@@ -139,33 +147,89 @@ fn scan_folder(path: &str) -> Result<(FolderSnapshot, Vec<Doc>), String> {
     let mut partial = paths.len() >= MAX_FILES;
     let mut budget = MAX_SCAN_BYTES;
     let mut docs = Vec::new();
+    let mut text_files = Vec::new();
     let mut unreadable = Vec::new();
     #[cfg(desktop)]
     let document_deadline = std::time::Instant::now() + DOCUMENT_SCAN_TIME;
     for p in &paths {
         let rel = p.strip_prefix(&root).unwrap_or(p).to_string_lossy().into_owned();
-        #[cfg(desktop)]
-        if documents::is_document(p) {
-            match documents::read_cached(p, std::time::Instant::now() < document_deadline) {
-                Reading::Text(text) => docs.push(Doc { path: rel, text }),
-                Reading::Unreadable => unreadable.push(rel),
-                Reading::NotReached => partial = true,
+        let read_limit = if is_text(p) {
+            if budget == 0 {
+                partial = true;
+                continue;
             }
-            continue;
+            Some(MAX_FILE_BYTES.min(budget))
+        } else {
+            #[cfg(desktop)]
+            let is_document = documents::is_document(p);
+            #[cfg(mobile)]
+            let is_document = false;
+            if !is_document {
+                unreadable.push(rel);
+                continue;
+            }
+            None
+        };
+        let stamp = if index.is_some() {
+            let Ok(meta) = fs::symlink_metadata(p) else {
+                unreadable.push(rel);
+                continue;
+            };
+            if !meta.is_file() {
+                unreadable.push(rel);
+                continue;
+            }
+            Some(Stamp::new(&meta))
+        } else {
+            None
+        };
+        if let (Some(index), Some(stamp)) = (index.as_deref_mut(), stamp) {
+            if let Some(entry) = index.keep(&rel, stamp, read_limit) {
+                partial |= entry.cut;
+                if let Some(bytes) = entry.text_bytes {
+                    if read_limit.is_some() {
+                        budget = budget.saturating_sub(bytes);
+                    }
+                    text_files.push(rel);
+                } else {
+                    unreadable.push(rel);
+                }
+                continue;
+            }
         }
-        if !is_text(p) {
-            unreadable.push(rel);
-            continue;
+        let read = match read_limit {
+            Some(limit) => read_text(p, limit),
+            #[cfg(desktop)]
+            None => match documents::read_cached(p, std::time::Instant::now() < document_deadline) {
+                Reading::Text(text) => Some((text, false)),
+                Reading::Unreadable => None,
+                Reading::NotReached => {
+                    partial = true;
+                    continue;
+                }
+            },
+            #[cfg(mobile)]
+            None => unreachable!("mobile folder scans only read plain text"),
+        };
+        if let (Some(index), Some(stamp)) = (index.as_deref_mut(), stamp) {
+            index.replace(
+                &rel,
+                stamp,
+                read_limit,
+                read.as_ref().map(|(text, _)| text.as_str()),
+                read.as_ref().is_some_and(|(_, cut)| *cut),
+            ).map_err(|err| err.to_string())?;
         }
-        if budget == 0 {
-            partial = true;
-            continue;
-        }
-        match read_text(p, MAX_FILE_BYTES.min(budget)) {
+        match read {
             Some((text, cut)) => {
                 partial |= cut;
-                budget = budget.saturating_sub(text.len() as u64);
-                docs.push(Doc { path: rel, text });
+                if read_limit.is_some() {
+                    budget = budget.saturating_sub(text.len() as u32);
+                }
+                if index.is_none() {
+                    docs.push(Doc { path: rel.clone(), text });
+                }
+                text_files.push(rel);
             }
             None => unreadable.push(rel),
         }
@@ -178,7 +242,7 @@ fn scan_folder(path: &str) -> Result<(FolderSnapshot, Vec<Doc>), String> {
             .unwrap_or_else(|| path.to_string()),
         path: path.to_string(),
         total_files: paths.len(),
-        text_files: docs.iter().map(|d| d.path.clone()).collect(),
+        text_files,
         unreadable,
         partial,
     };
@@ -196,11 +260,47 @@ pub async fn read_folder(path: String) -> Result<FolderSnapshot, String> {
 /// Search every text file in a folder for what bears on `question`, keeping
 /// up to `max_chars` of the best passages.
 #[tauri::command]
-pub async fn search_folder(path: String, question: String, max_chars: usize) -> Result<FolderSearch, String> {
+pub async fn search_folder(app: AppHandle, path: String, question: String, max_chars: usize) -> Result<FolderSearch, String> {
+    search_folder_in(app.path().app_cache_dir().ok(), path, question, max_chars).await
+}
+
+async fn search_folder_in(
+    cache_dir: Option<PathBuf>,
+    path: String,
+    question: String,
+    max_chars: usize,
+) -> Result<FolderSearch, String> {
     tauri::async_runtime::spawn_blocking(move || -> Result<FolderSearch, String> {
-        let (folder, docs) = scan_folder(&path)?;
         let terms = search_terms(&question);
-        let excerpts = best_excerpts(&docs, &terms, max_chars);
+        let indexed = cache_dir.as_ref().map(|cache_dir| {
+            let mut conn = folder_index::open(cache_dir)?;
+            let root = fs::canonicalize(&path).map_err(|err| err.to_string())?;
+            let root = root.to_string_lossy();
+            let mut index = FolderIndex::begin(&mut conn, &root).map_err(|err| err.to_string())?;
+            let (folder, _) = scan_with_index(&path, Some(&mut index))?;
+            index.prune().map_err(|err| err.to_string())?;
+            let mut excerpts = index.search(&terms, max_chars).map_err(|err| err.to_string())?;
+            let docs = if excerpts.is_empty() && !terms.is_empty() && max_chars != 0 {
+                index.documents().map_err(|err| err.to_string())?
+            } else {
+                Vec::new()
+            };
+            index.commit().map_err(|err| err.to_string())?;
+            if !docs.is_empty() {
+                excerpts = best_excerpts(&docs, &terms, max_chars);
+            }
+            Ok::<_, String>((folder, excerpts))
+        });
+        let (folder, excerpts) = match indexed {
+            Some(Ok(result)) => result,
+            fallback => {
+                if let Some(Err(err)) = fallback {
+                    log::debug!("Folder index unavailable: {err}");
+                }
+                let (folder, docs) = scan_folder(&path)?;
+                (folder, best_excerpts(&docs, &terms, max_chars))
+            }
+        };
         let unreadable_matches = folder
             .unreadable
             .iter()
@@ -326,7 +426,8 @@ fn gmail_client() -> Result<imap::Client<native_tls::TlsStream<std::net::TcpStre
 /// The newest `limit` emails in the inbox, newest first.
 #[cfg(desktop)]
 #[tauri::command]
-pub async fn gmail_fetch(email: String, app_password: String, limit: u32) -> Result<Vec<MailSummary>, String> {
+pub async fn gmail_fetch(app: AppHandle, email: String, app_password: String, limit: u32) -> Result<Vec<MailSummary>, String> {
+    settings::require_network(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<MailSummary>, String> {
         let client = gmail_client()
             .map_err(|_| "Couldn't reach Gmail. Check your internet connection.".to_string())?;
@@ -356,7 +457,8 @@ pub async fn gmail_fetch(email: String, app_password: String, limit: u32) -> Res
 /// The newest `limit` emails in the inbox, newest first.
 #[cfg(mobile)]
 #[tauri::command]
-pub async fn gmail_fetch(email: String, app_password: String, limit: u32) -> Result<Vec<MailSummary>, String> {
+pub async fn gmail_fetch(app: AppHandle, email: String, app_password: String, limit: u32) -> Result<Vec<MailSummary>, String> {
+    settings::require_network(&app)?;
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<MailSummary>, String> {
         let password: String = app_password.chars().filter(|c| !c.is_whitespace()).collect();
         let raw = crate::imap_lite::fetch_gmail(email.trim(), &password, limit)?;
@@ -389,7 +491,8 @@ const README_CHARS: usize = 3_000;
 
 /// Public data of a GitHub repository: description, README and open issues.
 #[tauri::command]
-pub async fn github_fetch(repo: String) -> Result<GithubSnapshot, String> {
+pub async fn github_fetch(app: AppHandle, repo: String) -> Result<GithubSnapshot, String> {
+    settings::require_network(&app)?;
     let repo = repo.trim();
     let repo = repo.strip_prefix("https://").or_else(|| repo.strip_prefix("http://")).unwrap_or(repo);
     let repo = repo.strip_prefix("www.").unwrap_or(repo);
@@ -542,7 +645,7 @@ mod tests {
             "test",
             Path::new(&model_path),
             sampling,
-            LoadOptions { context_length: 4096, threads: 4 },
+            LoadOptions { context_length: 4096, threads: 4, ..LoadOptions::default() },
         )
         .expect("load");
 
@@ -552,8 +655,13 @@ mod tests {
             ("How much is the generator fuel cost?", "6,350"),
             ("What is the final invoice number?", "inv-55120"),
         ] {
-            let found = tauri::async_runtime::block_on(search_folder(folder.clone(), question.into(), 2600))
-                .expect("search_folder");
+            let found = tauri::async_runtime::block_on(search_folder_in(
+                Some(dir.join(".cache")),
+                folder.clone(),
+                question.into(),
+                2600,
+            ))
+            .expect("search_folder");
             let bodies: String =
                 found.excerpts.iter().map(|e| format!("--- File: {} ---\n{}\n\n", e.path, e.text)).collect();
             assert!(!bodies.is_empty(), "nothing found for: {question}");

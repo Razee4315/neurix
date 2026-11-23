@@ -54,6 +54,7 @@ pub async fn download_model(
     confirmed_wifi: bool,
     on_event: Channel<DownloadEvent>,
 ) -> Result<(), String> {
+    settings::require_network(&app)?;
     // Defense-in-depth: re-enforce WiFi-only on the backend. The frontend
     // gate can be bypassed by devtools or a future code path that forgets to
     // call DownloadContext.startDownload. This is the second wall.
@@ -179,7 +180,8 @@ pub async fn delete_model(
     drop(freed);
 
     info!("Deleting model: {}", model_id);
-    manager::delete_model(&models_dir(&app)?, &model_id).await
+    manager::delete_model(&models_dir(&app)?, &model_id).await?;
+    super::history_cmds::clear_prompt_cache(&app).await
 }
 
 #[tauri::command]
@@ -233,6 +235,10 @@ pub async fn load_model(
             device::total_memory_bytes(),
         ),
         threads: if current.threads > 0 { current.threads } else { device::inference_threads() },
+        kv_cache_quant: current.kv_cache_quant,
+        flash_attention: current.flash_attention,
+        gpu_layers: current.gpu_layers,
+        cache_dir: app.path().app_cache_dir().ok(),
     };
 
     info!("Loading model: {} ({})", catalog_entry.name, model_id);
@@ -260,6 +266,9 @@ pub async fn load_model(
         reasoning,
         context_length: loaded.context_length,
         threads: loaded.threads,
+        kv_cache_quant: loaded.kv_cache_quant.clone(),
+        flash_attention: loaded.flash_attention,
+        gpu_layers: loaded.gpu_layers,
     };
     // Nothing else can have filled the slot while `ModelOps` was held.
     let replaced = state.lock().await.model.set_ready(active, loaded);

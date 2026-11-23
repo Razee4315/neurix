@@ -6,12 +6,14 @@
 //! first word no longer grows with the length of the conversation.
 
 use std::ffi::{c_char, c_void, CStr};
+use std::fs;
+use std::io::{self, Read};
 use std::num::NonZeroU32;
-use std::path::Path;
-use std::sync::OnceLock;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
-use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::context::params::{KvCacheType, LlamaContextParams};
 use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -20,6 +22,7 @@ use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 use llama_cpp_2::{LlamaStateSeqFlags, SeqState};
+use llama_cpp_sys_2::{LLAMA_FLASH_ATTN_TYPE_DISABLED, LLAMA_FLASH_ATTN_TYPE_ENABLED};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -113,6 +116,66 @@ pub struct LoadOptions {
     /// Context window to allocate, in tokens.
     pub context_length: u32,
     pub threads: u32,
+    pub kv_cache_quant: String,
+    pub flash_attention: bool,
+    pub gpu_layers: u32,
+    pub cache_dir: Option<PathBuf>,
+}
+
+impl Default for LoadOptions {
+    fn default() -> Self {
+        let settings = crate::settings::Settings::default();
+        Self {
+            context_length: 4096,
+            threads: 4,
+            kv_cache_quant: settings.kv_cache_quant,
+            flash_attention: settings.flash_attention,
+            gpu_layers: settings.gpu_layers,
+            cache_dir: None,
+        }
+    }
+}
+
+const PROMPT_STATE: &str = "prompt_state.bin";
+const PROMPT_META: &str = "prompt_state.meta.json";
+const PROMPT_STATE_TEMP: &str = "prompt_state.bin.tmp";
+const PROMPT_META_TEMP: &str = "prompt_state.meta.json.tmp";
+// Serializes cache access and invalidates writes from replies begun before a clear.
+static PROMPT_CACHE_EPOCH: Mutex<u64> = Mutex::new(0);
+
+pub fn prompt_cache_epoch() -> Option<u64> {
+    PROMPT_CACHE_EPOCH.try_lock().ok().map(|epoch| *epoch)
+}
+
+#[derive(Serialize, Deserialize, PartialEq)]
+struct PromptCacheKey {
+    model_id: String,
+    context_length: usize,
+    kv_cache_quant: String,
+    flash_attention: bool,
+    gpu_layers: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PromptCacheMeta {
+    key: PromptCacheKey,
+    // The portion of the prompt before the assistant marker is shared by
+    // later turns even when the template or UI removes generated reasoning.
+    prefix: Vec<i32>,
+}
+
+pub fn clear_prompt_cache(dir: &Path) -> io::Result<()> {
+    let mut epoch = PROMPT_CACHE_EPOCH.lock().map_err(|err| io::Error::other(err.to_string()))?;
+    *epoch = epoch.wrapping_add(1);
+    let mut result = Ok(());
+    for name in [PROMPT_META, PROMPT_STATE, PROMPT_META_TEMP, PROMPT_STATE_TEMP] {
+        if let Err(err) = fs::remove_file(dir.join(name)) {
+            if err.kind() != io::ErrorKind::NotFound {
+                result = Err(err);
+            }
+        }
+    }
+    result
 }
 
 /// The model plus the context created from it.
@@ -162,6 +225,10 @@ pub struct LoadedModel {
     pub id: String,
     pub context_length: usize,
     pub threads: u32,
+    pub kv_cache_quant: String,
+    pub flash_attention: bool,
+    pub gpu_layers: u32,
+    cache_dir: Option<PathBuf>,
     session: Session,
     template: ChatTemplate,
     sampling: SamplingDefaults,
@@ -231,18 +298,34 @@ pub fn load_model_from_disk(
     let started = Instant::now();
 
     info!("Loading {model_id} from {model_path:?}");
-    // Defaults: memory-mapped file, CPU only.
-    let model_params = LlamaModelParams::default();
-    let model = LlamaModel::load_from_file(backend, model_path, &model_params).map_err(|e| {
+    let mut gpu_layers = options.gpu_layers.min(999);
+    if gpu_layers != 0 && !backend.supports_gpu_offload() {
+        warn!("GPU offload is unavailable for {model_id}; loading on CPU");
+        gpu_layers = 0;
+    }
+    let load_weights = |layers| {
+        let params = LlamaModelParams::default().with_n_gpu_layers(layers);
+        LlamaModel::load_from_file(backend, model_path, &params)
+    };
+    let weights = match load_weights(gpu_layers) {
+        Err(e) if gpu_layers != 0 => {
+            warn!("GPU offload failed for {model_id} ({e}); retrying on CPU");
+            gpu_layers = 0;
+            load_weights(0)
+        }
+        result => result,
+    };
+    let model = weights.map_err(|e| {
         format!("This model could not be loaded ({e}). The file may be damaged; delete it and download it again.")
     })?;
+    gpu_layers = gpu_layers.min(model.n_layer().saturating_add(1));
     let model = Box::new(model);
 
     let trained = model.n_ctx_train().max(512);
     let n_ctx = options.context_length.clamp(512, trained);
     let threads = options.threads.clamp(1, 32) as i32;
 
-    let ctx_params = LlamaContextParams::default()
+    let base_params = LlamaContextParams::default()
         .with_n_ctx(NonZeroU32::new(n_ctx))
         .with_n_batch(PROMPT_BATCH as u32)
         .with_n_threads(threads)
@@ -252,7 +335,32 @@ pub fn load_model_from_disk(
     // heap address never changes, both are owned by the same `Session`, and
     // `Session` declares `ctx` first so it is dropped before the model.
     let model_ref: &'static LlamaModel = unsafe { &*(model.as_ref() as *const LlamaModel) };
-    let ctx = model_ref.new_context(backend, ctx_params).map_err(|e| {
+    // llama.cpp forces Flash Attention off for Grok. Quantized V requires
+    // Flash Attention, so use F16 for both caches when the switch is off.
+    let mut flash_attention = options.flash_attention
+        && !model.meta_val_str("general.architecture").is_ok_and(|arch| arch == "grok");
+    let (mut kv_cache_quant, kv_type) = match (flash_attention, options.kv_cache_quant.as_str()) {
+        (true, "q8_0") => ("q8_0", KvCacheType::Q8_0),
+        (true, "q4_0") => ("q4_0", KvCacheType::Q4_0),
+        _ => ("f16", KvCacheType::F16),
+    };
+    let new_context = |flash, cache_type| {
+        let policy = if flash { LLAMA_FLASH_ATTN_TYPE_ENABLED } else { LLAMA_FLASH_ATTN_TYPE_DISABLED };
+        model_ref.new_context(
+            backend,
+            base_params.clone().with_flash_attention_policy(policy).with_type_k(cache_type).with_type_v(cache_type),
+        )
+    };
+    let context = match new_context(flash_attention, kv_type) {
+        Err(e) if flash_attention || kv_type != KvCacheType::F16 => {
+            warn!("Context setup failed for {model_id} ({e}); retrying with F16 and Flash Attention off");
+            flash_attention = false;
+            kv_cache_quant = "f16";
+            new_context(false, KvCacheType::F16)
+        }
+        result => result,
+    };
+    let ctx = context.map_err(|e| {
         format!("Not enough memory to start this model ({e}). Close other apps or choose a smaller model.")
     })?;
     let context_length = ctx.n_ctx() as usize;
@@ -279,6 +387,10 @@ pub fn load_model_from_disk(
         id: model_id.to_string(),
         context_length,
         threads: threads as u32,
+        kv_cache_quant: kv_cache_quant.into(),
+        flash_attention,
+        gpu_layers,
+        cache_dir: options.cache_dir,
         session: Session { ctx, model },
         template,
         sampling,
@@ -330,6 +442,73 @@ struct Prompt {
 }
 
 impl LoadedModel {
+    fn prompt_cache_key(&self) -> PromptCacheKey {
+        PromptCacheKey {
+            model_id: self.id.clone(),
+            context_length: self.context_length,
+            kv_cache_quant: self.kv_cache_quant.clone(),
+            flash_attention: self.flash_attention,
+            gpu_layers: self.gpu_layers,
+        }
+    }
+
+    fn restore_prompt_cache(&mut self, prompt: &[LlamaToken], epoch: u64) {
+        let Some(dir) = self.cache_dir.as_ref() else { return };
+        let Ok(current) = PROMPT_CACHE_EPOCH.lock() else { return };
+        if *current != epoch {
+            return;
+        }
+        let Ok(meta) = fs::File::open(dir.join(PROMPT_META)) else { return };
+        let limit = self.context_length as u64 * 16 + 4096;
+        let Ok(meta) = serde_json::from_reader::<_, PromptCacheMeta>(meta.take(limit)) else {
+            return;
+        };
+        let matches = |tokens: &[LlamaToken]| {
+            tokens.len() >= meta.prefix.len()
+                && tokens.iter().zip(&meta.prefix).all(|(token, saved)| token.0 == *saved)
+        };
+        if meta.key != self.prompt_cache_key() || meta.prefix.is_empty() || !matches(prompt) {
+            return;
+        }
+        match self.session.ctx.state_load_file(dir.join(PROMPT_STATE), self.context_length) {
+            Ok(tokens) if matches(&tokens) => self.cached = tokens,
+            _ => self.reset_context(),
+        }
+    }
+
+    fn save_prompt_cache(&self, stable_len: usize, epoch: u64, cancel: &CancellationToken) {
+        let Some(dir) = self.cache_dir.as_ref() else { return };
+        let Ok(current) = PROMPT_CACHE_EPOCH.lock() else { return };
+        if *current != epoch || cancel.is_cancelled() || stable_len == 0 {
+            return;
+        }
+        let meta = PromptCacheMeta {
+            key: self.prompt_cache_key(),
+            prefix: self.cached[..stable_len].iter().map(|token| token.0).collect(),
+        };
+        let state_temp = dir.join(PROMPT_STATE_TEMP);
+        let meta_temp = dir.join(PROMPT_META_TEMP);
+        let write = || -> io::Result<()> {
+            fs::create_dir_all(dir)?;
+            self.session.ctx.state_save_file(&state_temp, &self.cached).map_err(io::Error::other)?;
+            if cancel.is_cancelled() {
+                return Ok(());
+            }
+            fs::write(&meta_temp, serde_json::to_vec(&meta)?)?;
+            let meta_path = dir.join(PROMPT_META);
+            match fs::remove_file(&meta_path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err),
+            }
+            fs::rename(&state_temp, dir.join(PROMPT_STATE))?;
+            fs::rename(&meta_temp, meta_path)
+        };
+        let _ = write();
+        let _ = fs::remove_file(state_temp);
+        let _ = fs::remove_file(meta_temp);
+    }
+
     /// Whether this model can be asked to reason before answering.
     pub fn supports_thinking_switch(&self) -> bool {
         self.template.supports_thinking_switch()
@@ -594,6 +773,17 @@ impl LoadedModel {
         emit: &mut dyn FnMut(InferenceEvent),
         cancel: &CancellationToken,
     ) -> Result<GenerationStats, String> {
+        self.generate_reply(request, emit, cancel, None)
+    }
+
+    pub fn generate_reply(
+        &mut self,
+        request: &GenerationRequest,
+        emit: &mut dyn FnMut(InferenceEvent),
+        cancel: &CancellationToken,
+        cache_epoch: Option<u64>,
+    ) -> Result<GenerationStats, String> {
+        let cache_epoch = cache_epoch.filter(|_| !self.checkpointing && self.cache_dir.is_some());
         let mut max_tokens = request.max_tokens.max(16);
         if request.enable_thinking && self.supports_thinking_switch() {
             max_tokens += REASONING_BUDGET;
@@ -612,6 +802,11 @@ impl LoadedModel {
         let prompt_started = Instant::now();
         let mut stats = GenerationStats { prompt_tokens: prompt.tokens.len(), ..Default::default() };
 
+        if let Some(epoch) = cache_epoch {
+            if self.cached.is_empty() && !cancel.is_cancelled() {
+                self.restore_prompt_cache(&prompt.tokens, epoch);
+            }
+        }
         let Some(reused) = self.ingest(&prompt, emit, cancel)? else {
             emit(InferenceEvent::GenerationComplete {
                 total_tokens: 0,
@@ -636,6 +831,9 @@ impl LoadedModel {
         let started = Instant::now();
 
         let stop_reason = loop {
+            if cancel.is_cancelled() {
+                break StopReason::Cancelled;
+            }
             let token = sampler.sample(&self.session.ctx, -1);
             let vocab = self.session.model.vocab();
             if vocab.is_eog(token) {
@@ -695,6 +893,11 @@ impl LoadedModel {
             stop_reason
         );
 
+        if let Some(epoch) = cache_epoch {
+            if !self.checkpointing && stop_reason != StopReason::Cancelled {
+                self.save_prompt_cache(prompt.stable_len, epoch, cancel);
+            }
+        }
         emit(InferenceEvent::GenerationComplete {
             total_tokens: stats.generated_tokens,
             duration_ms: stats.generation_ms,
@@ -768,7 +971,7 @@ mod tests {
     fn real_model_end_to_end() {
         let path = std::env::var("NEURIX_TEST_MODEL").expect("NEURIX_TEST_MODEL is not set");
         let sampling = SamplingDefaults { top_k: 40, min_p: 0.05, repeat_penalty: 1.0 };
-        let options = LoadOptions { context_length: 2048, threads: 2 };
+        let options = LoadOptions { context_length: 2048, threads: 2, ..LoadOptions::default() };
         let mut model = load_model_from_disk("test", Path::new(&path), sampling, options)
             .expect("model failed to load");
         println!(

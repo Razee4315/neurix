@@ -12,6 +12,7 @@ use crate::device;
 use crate::models::catalog::ModelInfo;
 use crate::models::added;
 use crate::models::hub::{self, ApiModel, HubModel, HF_ORIGIN};
+use crate::settings;
 
 /// The API answer for a repository with thousands of files is still well
 /// under this; anything larger is not a normal answer.
@@ -86,7 +87,8 @@ async fn file_architecture(client: &reqwest::Client, repo: &str, filename: &str)
 /// Check a pasted link and describe what it points at, or say plainly why
 /// it can't be used.
 #[tauri::command]
-pub async fn inspect_hf_link(link: String) -> Result<HubModel, String> {
+pub async fn inspect_hf_link(app: AppHandle, link: String) -> Result<HubModel, String> {
+    settings::require_network(&app)?;
     let parsed = hub::parse_link(&link)?;
     let client = client()?;
     let model = fetch_model(&client, &parsed.repo).await?;
@@ -99,6 +101,7 @@ pub async fn inspect_hf_link(link: String) -> Result<HubModel, String> {
 /// which the normal download flow then fetches and verifies.
 #[tauri::command]
 pub async fn add_hf_model(app: AppHandle, repo: String, filename: String) -> Result<ModelInfo, String> {
+    settings::require_network(&app)?;
     if !hub::valid_filename(&filename) {
         return Err("That file can't be downloaded by Neurix.".to_string());
     }
