@@ -20,19 +20,19 @@
     <path
         android:pathData="M6.1,6.1 L6.1,17.9"
         android:strokeWidth="4.2"
-        android:strokeColor="#F3EFE6"
+        android:strokeColor="#EEF3F8"
         android:strokeLineCap="round" />
     <path
         android:pathData="M17.9,6.1 L17.9,17.9"
         android:strokeWidth="4.2"
-        android:strokeColor="#F3EFE6"
+        android:strokeColor="#EEF3F8"
         android:strokeLineCap="round" />
 
     <!-- Gap around the ribbon, in the tile color -->
     <path
         android:pathData="M6.1,6.1 L17.9,17.9"
         android:strokeWidth="6.4"
-        android:strokeColor="#22211F"
+        android:strokeColor="#12171D"
         android:strokeLineCap="round" />
 
     <!-- Ribbon -->
@@ -47,8 +47,8 @@
             android:startY="4"
             android:endX="20"
             android:endY="20">
-          <item android:offset="0" android:color="#E88A68" />
-          <item android:offset="1" android:color="#C8603E" />
+          <item android:offset="0" android:color="#3CE0D0" />
+          <item android:offset="1" android:color="#2EC4B6" />
         </gradient>
       </aapt:attr>
     </path>
