@@ -1570,7 +1570,13 @@ export function ChatPage() {
 				rightActions={
 					<>
 						{messages.length > 0 && !isMobile() && (
-							<TopBarBtn type="button" onClick={handleExportChat} aria-label="Export chat as Markdown" title="Export chat">
+							<TopBarBtn
+								type="button"
+								onClick={handleExportChat}
+								aria-label="Export chat as Markdown"
+								title="Export chat"
+								data-narrow-hide="true"
+							>
 								<Icon name="download" size={18} />
 							</TopBarBtn>
 						)}

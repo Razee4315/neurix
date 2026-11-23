@@ -652,6 +652,11 @@ export const ComposerBar = styled.div`
   gap: 0.375rem;
   margin-top: 0.375rem;
   min-height: 34px;
+
+  @media (max-width: 480px) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 `;
 
 /* A connected folder in the composer: lit when it is used for this chat. */
@@ -695,6 +700,13 @@ export const ComposerChips = styled.div`
   @media (max-width: 600px) {
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
     mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
+  }
+
+  @media (max-width: 480px) {
+    min-width: min-content;
+    max-width: 100%;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   > * { flex-shrink: 0; }
@@ -790,6 +802,10 @@ export const TopBarBtn = styled.button`
   /* The open sidebar already offers this one (New chat): don't show it twice. */
   @media (min-width: ${tokens.breakpoints.wide}) {
     html[data-sidebar="open"] &[data-sidebar-dup="true"] { display: none; }
+  }
+
+  @media (max-width: 480px) {
+    &[data-narrow-hide="true"] { display: none; }
   }
 `;
 
