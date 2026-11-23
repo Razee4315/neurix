@@ -129,3 +129,36 @@ Run via local Playwright (`channel="msedge"`, `1280x800` desktop + `390x844` mob
 | **Settled Idle CPU** | `0.84%` all-core | **<= `1.0%`** all-core |
 | **Command Palette / Filter Latency** | `135.5 ms` / `153.4 ms` | **<= `100 ms`** interactive |
 | **Console / Page Errors** | `0` | **`0`** |
+
+---
+
+## Post-Mission Measurements (Wave 4 — After)
+
+Measured after final commit `084619b` on branch `next`, using the CI-built Windows binary (`neurix-tauri.exe`, `19,201,536` bytes from run [`45153453423`](https://github.com/Razee4315/neurix/actions/runs/45153453423)) against the user's real local 2.71 GB `qwen-3.5-4b-3d-coder\model.gguf` (`2,708,804,096` bytes), plus full Playwright Edge walkthrough (`walkthrough_after.py` across `1280x800` desktop & `390x844` mobile) and production Vite bundle (`npm run build`).
+
+### 1. Native Windows Desktop Benchmark (`neurix-tauri.exe` vs `v1.0.0` Baseline)
+
+| Metric | Baseline (`v1.0.0` Installed) | After (`next` / `084619b` CI Build) | Observed Delta |
+|---|---:|---:|---|
+| **Startup UI Block (`BootScreen`)** | `73,785 ms` blocked before UI usable | **Non-blocking startup** (`SplashScreen` navigates immediately on JS/store check; background model load finishes at `~34.9 s` / settled `37,661 ms`) | Eliminates synchronous `73.8 s` UI lock; app stays responsive while GGUF loads in background |
+| **Window Visible (`Title='Neurix'`)** | `694–2,629 ms` | `2,924 ms` (first-launch cold WebView2 `PrintWindow` capture at `5 s` -> `native-after-5s.png` at `279.24 MB` WS / `108.86 MB` Private while `Rust=29.75 MB`) | Splash opens cleanly on Karakoram `#151A20` |
+| **Model-Load Settle Time** | `~74,000 ms` (`BootScreen`) | **`37,661 ms`** (`Rust` model load active `t=11.8s–30.7s`, CPU `< 2%` by `34,869 ms`) | **~49% faster** total time to settled model readiness |
+| **Committed Private Memory (Settled)** | `2,534.72 MB` (`8` processes) | **`2,410.10 MB`** (`7` processes) | **`-124.62 MB`** Private RAM (`Q8_0` KV + Flash Attention) |
+| **Settled Working Set (OS Mapped)** | `3,290.55 MB` (`2,950.97 MB` Rust + `338.56 MB` WebView2) | `3,788.36 MB` (`3,457.46 MB` Rust + `330.90 MB` WebView2) | WebView2 down `-7.66 MB`; Rust maps model + KV state |
+| **True Settled Idle CPU (10 s window)** | `0.671875 s` (`0.84%` all-core / `6.719%` single-core) | **`0.140625 s` (`0.176%` all-core / `1.406%` single-core)** | **`-79%` idle CPU** (4.8x lower background CPU) |
+| **Compiled Binary Size** | `14,857,216` bytes | `19,201,536` bytes (includes bundled SQLite FTS5 + `quick-xml`) | +4.14 MB for offline FTS5 & DOCX engine |
+
+Native screenshots captured in [docs/mission/after/](docs/mission/after/):
+- [native-after-5s.png](docs/mission/after/native-after-5s.png) (`t = 5 s` Karakoram splash, `Rust = 29.75 MB`, before background weight load)
+- [native-after-settled.png](docs/mission/after/native-after-settled.png) (`t = 37.7 s` settled `/chat` with `Qwen 3.5 4B 3D Coder · KV Q8_0 · Flash Attn · 8.2k ctx`)
+
+### 2. Web Production Build & Playwright Verification (`after_metrics.json`)
+
+| Metric / Check | Baseline | After (`next` / `084619b`) |
+|---|---:|---|
+| **`dist/` Core Initial Shell** | `792,450 B` total unsplit baseline | **`363,136 B`** (`index.html`, `index-CpWPjb_l.js` `150.78 kB`, `react-vendor` `174.20 kB`, `styled-vendor` `36.68 kB`, CSS) |
+| **`dist/` Total Pre-Chunked Assets** | `792,450 B` | `7,642,516 B` across **`187` files** (includes lazy-only KaTeX fonts/JS, Mermaid diagrams & `elk`/`cynefin` on demand, and 24 per-language `highlight.js` chunks; `ChatPage` chunk = `151.20 kB` / `44.37 kB` gzip) |
+| **Playwright Console / Page Errors** | `0` console, `0` page errors | **`0` console errors, `0` page errors** across 21 captures |
+| **Viewport Horizontal Overflow** | Not checked programmatically | **`overflow: false`** (`scrollWidth == 1280` desktop, `390` mobile) on all 20 captured route checks |
+| **Verified Themes & Interactive Checks** | Single Graphite default | `karakoram` default, `deodar`, `paper` switched live; Retry `< 1 / 2 >` variants verified (`passed: true`); Model Detail CTA above fold (`y=308.4, h=48`, `passed: true`); `Connectors` zero `"coming soon"` (`true`); Mobile `390x844` ComposerBar pairwise overlap across 4 controls (`overlaps: []`, `passed: true`) |
+

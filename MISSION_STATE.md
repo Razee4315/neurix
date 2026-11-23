@@ -3,10 +3,10 @@
 Single source of truth for resuming the Neurix autonomous mission.
 
 ## Status
-- **Current Phase**: Phase 2C — Wave 3 Complete; Wave 4 Verification & Final CI Gate
+- **Current Phase**: COMPLETE — Wave 4 verified; PR open (`next` -> `main`), awaiting human review
 - **Active Branch**: `next`
 - **Safety Tag (`main`)**: `before-mission-2026-11-23` -> `a5b7f8667b50a135a25e280acfd6a253529b8b14` (v1.0.1)
-- **App Data Backup**: Complete (`C:\Users\Saqlain\AppData\Local\neurix-mission-backup-2026-11-23\`, `settings.json` 507 B + `models-manifest.txt`)
+- **App Data Backup**: Restored (`C:\Users\Saqlain\AppData\Roaming\com.neurix.app\settings.json` `507` B MD5 `8B4EE12D50F83011A268DDFBA989AC93`; 2.71 GB GGUF `2,708,804,096` B untouched)
 
 ## Done Items
 | ID | Description | Commit |
@@ -19,19 +19,19 @@ Single source of truth for resuming the Neurix autonomous mission.
 | WAVE1-01 | Non-blocking startup, KV quant (`Q8_0`/`Q4_0`/`F16`) + Flash Attention + GPU offload fallback, prompt KV persistence, `<think>` history stripping, Air-Gap enforcement, SQLite FTS5 `FolderIndex` + `quick-xml` DOCX + PDF page hints | `e05f45a` |
 | WAVE2-01 | Generated & visually verified 5 Karakoram Slate WebP illustrations (`public/assets/art/`, 4–26 KB) and regenerated all Windows/iOS/Android icons + Android system bars | `ae71fad` |
 | WAVE3A-01 | Replaced Graphite/Dusk with `karakoram` default + `deodar` + upgraded `paper` + `system` matchMedia theme, bespoke WebP Illustrations, Sovereign Engine Pill + collapsible recessed Sidebar + Command Palette shortcuts | `532e380` |
-| WAVE3-01 | Completed Wave 3 page redesigns & features (`3B`/`3C-1`/`3C-2`): Chat Edit-as-Branch + `< 1 / N >` Rust/TS `MessageVariant` persistence, lazy KaTeX/Mermaid + 24 highlight langs, citations, virtualization, Store/Detail/Models/Connectors/Splash/Onboarding, 2-col Character + Memory Ledger Friend editors, Tavern V2 PNG/JSON, History pins/folders/export, Engine/Air-Gap/ChatGPT+Claude import Settings, About | *(this commit)* |
+| WAVE3-01 | Completed Wave 3 page redesigns & features (`3B`/`3C-1`/`3C-2`): Chat Edit-as-Branch + `< 1 / N >` Rust/TS `MessageVariant` persistence, lazy KaTeX/Mermaid + 24 highlight langs, citations, virtualization, Store/Detail/Models/Connectors/Splash/Onboarding, 2-col Character + Memory Ledger Friend editors, Tavern V2 PNG/JSON, History pins/folders/export, Engine/Air-Gap/ChatGPT+Claude import Settings, About | `ac645b7` |
+| WAVE3-FIX | Wrapped mobile `ModelStorePage` meters/quant tag (`390px`), wrapped narrow-window `ComposerBar` & hid Export on narrow width, updated `tauri.conf.json` window background to `#151A20` | `9455dac`, `084619b` |
+| WAVE4-01 | Verified all 21 Playwright screenshots (`0` errors, `0` overflows, pairwise mobile overlap = `0`), benchmarked CI `neurix-tauri.exe` on 2.71 GB GGUF (`37,661 ms` settle, `2,410.1 MB` Private, `0.176%` idle CPU), restored `settings.json` backup, updated `PERFORMANCE.md`, authored `FINAL_REPORT.md`, opened PR `next` -> `main` | *(this commit)* |
 
 ## Item In Progress
-- **Phase 2C (Wave 4 Verification & Final CI Gate)**: Trigger final CI build (`ci.yml` on `next`) + run comprehensive post-redesign Playwright walkthrough (`docs/mission/after/*.png`) + native Windows `neurix-tauri.exe` benchmark against real local GGUF.
-- **Exact Next Step**: Push Wave 3 commit on `next`, run `gh workflow run ci.yml --ref next`, capture & visually inspect `docs/mission/after/*.png` via Playwright (`msedge`), download & benchmark CI Windows exe, restore settings backup, write `FINAL_REPORT.md` + open PR `next` -> `main`.
-- **Files Touched**: `src/pages/**`, `src/pages/chat/**`, `src/utils/**`, `src/services/types.ts`, `src-tauri/src/chat/storage.rs`, `MISSION_STATE.md`
+- None (awaiting human review on PR `next` -> `main`).
 
 ## Next 5 Items in Order
-1. **Wave 1**: Non-blocking startup (`< 2s`), `Q8_0`/`Q4_0` KV cache + Flash Attention + GPU offload + fallback, `<think>` history stripping, prompt KV state cache, Air-Gap lock, `rusqlite` FTS5 RAG + `quick-xml`, safe npm patches.
-2. **Wave 2**: Part 7 bespoke Karakoram illustrations (`public/assets/art/`) & refreshed app icon set (`src-tauri/icons/`).
-3. **Wave 2b (Early CI Gate)**: Run `gh workflow run ci.yml --ref next` and confirm Rust tests, Clippy, real-model E2E, Windows exe, and Android APK all build green.
-4. **Wave 3**: Full UI/UX redesign (`Karakoram Slate`, `Paper`, `Deodar`, `Phosphor`, `System`), Edit-as-Branch (`< 1/N >`), lazy KaTeX/Mermaid, Tavern Card V2 import, long-chat virtualization, mobile overlap fix.
-5. **Wave 4**: Post-redesign Playwright + real native CI artifact install verification + `FINAL_REPORT.md` + PR `next` -> `main`.
+1. Human review of PR (`next` -> `main`) and verification notes in `FINAL_REPORT.md`.
+2. Optional hardware smoke test using CI APK (`neurix-android-1.0.1` from run `45153453423`).
+3. Optional local GGUF throughput harness (`CPU` vs Vulkan GPU offload).
+4. Optional multi-turn edit-prompt tree persistence extending `variants` in `storage.rs`.
+5. Release merge on `main` only after explicit maintainer approval.
 
 ## Agent Roles (Part 1 — Calibrated 2026-11-23)
 | Role | Agent (`Provider / Model`) | Calibration Score & Notes |
@@ -68,4 +68,7 @@ Single source of truth for resuming the Neurix autonomous mission.
 - Local host lacks `libclang.dll` (LLVM), so Rust crates depending on `llama-cpp-sys-2` compile cleanly in GitHub Actions CI (`45137177811` green) rather than locally without LLVM env.
 
 ## Running Processes & CI Runs
-- Early CI Run [`45137177811`](https://github.com/Razee4315/neurix/actions/runs/45137177811) on `next` (`ae71fad`): **SUCCESS** across all 4 jobs (`Frontend`, `Windows app`, `Engine` real-model Qwen+LFM tests, `Android APK+AAB`).
+- CI Run [`45137177811`](https://github.com/Razee4315/neurix/actions/runs/45137177811) on `next` (`ae71fad`): **SUCCESS** across all 4 jobs (`Frontend`, `Windows app`, `Engine` real-model Qwen+LFM tests, `Android APK+AAB`).
+- CI Run [`45143368043`](https://github.com/Razee4315/neurix/actions/runs/45143368043) on `next` (`ac645b7`): **SUCCESS** across all 4 jobs.
+- CI Run [`45151081494`](https://github.com/Razee4315/neurix/actions/runs/45151081494) on `next` (`9455dac`): **SUCCESS** across all 4 jobs.
+- Final CI Run [`45153453423`](https://github.com/Razee4315/neurix/actions/runs/45153453423) on `next` (`084619b`): **SUCCESS** across all 4 jobs (`Frontend` `49s`, `Android APK+AAB` `6m01s`, `Engine` `6m27s`, `Windows app` `7m38s`).
