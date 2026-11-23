@@ -299,7 +299,7 @@ const DEFAULT_SETTINGS: Settings = {
 	top_p: 0.9,
 	max_tokens: 512,
 	font_size: "medium",
-	theme: "obsidian",
+	theme: "karakoram",
 	onboarding_done: false,
 	last_model_id: null,
 	active_character_id: "preset:default",

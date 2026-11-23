@@ -11,10 +11,10 @@ import { tokens } from "@/theme/tokens";
 import { togglePin, usePins } from "@/utils/pins";
 import { isMac } from "@/utils/platform";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
-import styled from "styled-components";
+import styled, { keyframes } from "styled-components";
 import { type RecentEntry, addPending, dropPending, mergeSaved } from "./recents";
 
 /**
@@ -38,10 +38,13 @@ const Aside = styled.aside`
   @media (min-width: ${tokens.breakpoints.wide}) {
     display: flex;
     flex-direction: column;
-    width: 264px;
+    width: 256px;
     min-height: 0;
+    /* The navigation plane: recessed below the reading plane, set off by a
+       single hairline rather than a shadow. */
     background: ${tokens.colors.surfaceContainerLow};
-    padding: 0.625rem 0.5rem 0.5rem;
+    border-right: 1px solid ${tokens.colors.outlineVariant};
+    padding: 0.5rem 0.5rem 0.5rem;
   }
 `;
 
@@ -50,7 +53,7 @@ const Brand = styled.div`
   align-items: center;
   gap: 0.5rem;
   height: 40px;
-  padding: 0 0.625rem;
+  padding: 0 0.25rem 0 0.625rem;
   /* Clear of macOS's traffic lights (see TitleBar.tsx). */
   padding-left: calc(0.625rem + var(--window-inset-left, 0px));
   margin-bottom: 0.5rem;
@@ -92,6 +95,7 @@ const Row = styled.button<{ $active?: boolean }>`
   &:active { transform: scale(0.985); }
 
   > span {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -107,16 +111,24 @@ const Progress = styled.small`
   color: ${tokens.colors.primary};
 `;
 
+/* New chat is an ordinary row with an outline glyph: no filled accent disc. */
 const NewChatIcon = styled.span`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-left: -2px;
-  border-radius: 50%;
-  background: ${tokens.colors.primary};
-  color: ${tokens.colors.onPrimary};
+  color: ${tokens.colors.primary};
+`;
+
+const Shortcut = styled.kbd`
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: ${tokens.typography.fontFamily.mono};
+  font-size: ${tokens.typography.fontSize["2xs"]};
+  color: ${tokens.colors.outline};
+  opacity: 0;
+  transition: opacity ${tokens.transitions.fast};
+
+  button:hover > &, button:focus-visible > & { opacity: 1; }
 `;
 
 const Group = styled.nav`
@@ -213,30 +225,149 @@ const Empty = styled.div`
   color: ${tokens.colors.onSurfaceVariant};
 `;
 
+/* ── The Local Engine pill, at the foot of the sidebar ──
+
+   What the app is running on: the model in memory, its KV cache precision
+   and whether Air-Gap is on. A click opens the engine popover; the gear
+   beside it goes straight to Settings. */
+
 const FootWrap = styled.div`
   position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
   margin-top: 0.5rem;
   padding-top: 0.5rem;
-  border-top: 1px solid ${alpha(tokens.colors.outlineVariant, "80")};
+  border-top: 1px solid ${tokens.colors.outlineVariant};
 `;
 
-const Foot = styled.button<{ $open: boolean }>`
+const EnginePill = styled.button<{ $open: boolean }>`
+  position: relative;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  width: 100%;
-  padding: 0.5rem 0.625rem;
-  border: none;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.625rem;
+  border: 1px solid ${({ $open }) => ($open ? tokens.colors.outline : tokens.colors.outlineVariant)};
   border-radius: ${tokens.borderRadius.lg};
-  background: ${({ $open }) => ($open ? tokens.colors.surfaceContainerHigh : "transparent")};
+  background: ${({ $open }) => ($open ? tokens.colors.surfaceContainerHigh : tokens.colors.surfaceContainer)};
+  color: ${tokens.colors.onSurface};
   text-align: left;
   cursor: pointer;
+  overflow: hidden;
+  transition: background ${tokens.transitions.fast}, border-color ${tokens.transitions.fast};
 
-  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
-  > svg { margin-left: auto; color: ${tokens.colors.onSurfaceVariant}; }
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; border-color: ${tokens.colors.outline}; }
 `;
 
-/* The account menu, opening upwards from the foot like Claude's. */
+const pulse = keyframes`
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+`;
+
+const sweep = keyframes`
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+`;
+
+const StatusDot = styled.span<{ $state: "ready" | "loading" | "idle" }>`
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: ${({ $state }) =>
+		$state === "ready"
+			? tokens.colors.primary
+			: $state === "loading"
+				? tokens.colors.secondary
+				: "transparent"};
+  border: ${({ $state }) => ($state === "idle" ? `1.5px solid ${tokens.colors.outline}` : "none")};
+  animation: ${({ $state }) => ($state === "loading" ? pulse : "none")} 1.4s ease-in-out infinite;
+`;
+
+/* A quiet warming bar along the pill's lower edge while weights map in. */
+const WarmingBar = styled.span`
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  background: ${alpha(tokens.colors.secondary, "26")};
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: ${tokens.colors.secondary};
+    animation: ${sweep} 1.6s ${tokens.animation.easing.standard} infinite;
+  }
+`;
+
+const EngineText = styled.span`
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+
+  strong {
+    font-size: ${tokens.typography.fontSize.sm};
+    font-weight: ${tokens.typography.fontWeight.medium};
+    color: ${tokens.colors.onSurface};
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  > span {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    font-size: ${tokens.typography.fontSize["2xs"]};
+    color: ${tokens.colors.onSurfaceVariant};
+    white-space: nowrap;
+  }
+`;
+
+const Badge = styled.span<{ $tone?: "primary" | "secondary" }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+  height: 16px;
+  padding: 0 0.3125rem;
+  border: 1px solid
+    ${({ $tone }) => ($tone === "primary" ? alpha(tokens.colors.primary, "66") : tokens.colors.outlineVariant)};
+  border-radius: ${tokens.borderRadius.sm};
+  font-family: ${tokens.typography.fontFamily.mono};
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: ${({ $tone }) => ($tone === "primary" ? tokens.colors.primary : tokens.colors.secondary)};
+  flex-shrink: 0;
+`;
+
+const GearBtn = styled.button`
+  flex-shrink: 0;
+  width: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid ${tokens.colors.outlineVariant};
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.surfaceContainer};
+  color: ${tokens.colors.onSurfaceVariant};
+  cursor: pointer;
+  transition: background ${tokens.transitions.fast}, color ${tokens.transitions.fast};
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; color: ${tokens.colors.onSurface}; }
+`;
+
+/* The engine popover, opening upwards from the pill. */
 const Menu = styled.div`
   position: absolute;
   left: 0;
@@ -244,16 +375,29 @@ const Menu = styled.div`
   bottom: calc(100% + 6px);
   padding: 0.375rem;
   background: ${tokens.colors.surfaceContainer};
-  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
+  border: 1px solid ${tokens.colors.outlineVariant};
   border-radius: ${tokens.borderRadius.xl};
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
   z-index: ${tokens.zIndex.overlay};
 `;
 
 const MenuHeader = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
   padding: 0.375rem 0.625rem 0.5rem;
-  font-size: ${tokens.typography.fontSize.xs};
-  color: ${tokens.colors.onSurfaceVariant};
+
+  strong {
+    font-size: ${tokens.typography.fontSize.sm};
+    font-weight: ${tokens.typography.fontWeight.semibold};
+    color: ${tokens.colors.onSurface};
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  span {
+    font-size: ${tokens.typography.fontSize.xs};
+    color: ${tokens.colors.onSurfaceVariant};
+  }
 `;
 
 const MenuItem = styled.button`
@@ -272,10 +416,12 @@ const MenuItem = styled.button`
   cursor: pointer;
 
   &:hover { background: ${tokens.colors.surfaceContainerHighest}; }
-  > kbd {
+  &:disabled { opacity: 0.45; cursor: default; background: transparent; }
+  > kbd, > em {
     margin-left: auto;
-    font-family: inherit;
-    font-size: ${tokens.typography.fontSize.xs};
+    font-family: ${tokens.typography.fontFamily.mono};
+    font-style: normal;
+    font-size: ${tokens.typography.fontSize["2xs"]};
     color: ${tokens.colors.onSurfaceVariant};
   }
 `;
@@ -283,41 +429,84 @@ const MenuItem = styled.button`
 const MenuDivider = styled.div`
   height: 1px;
   margin: 0.375rem 0.25rem;
-  background: ${alpha(tokens.colors.outlineVariant, "99")};
+  background: ${tokens.colors.outlineVariant};
 `;
 
-const Avatar = styled.span`
+/* ── Collapse: hide the sidebar on desktop (Ctrl+B), remembered across launches ── */
+
+const COLLAPSE_KEY = "neurix.sidebar.collapsed";
+const collapseListeners = new Set<() => void>();
+
+function readCollapsed(): boolean {
+	try {
+		return localStorage.getItem(COLLAPSE_KEY) === "1";
+	} catch {
+		return false;
+	}
+}
+
+let collapsed = readCollapsed();
+
+function setSidebarCollapsed(next: boolean): void {
+	if (next === collapsed) return;
+	collapsed = next;
+	try {
+		localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+	} catch {
+		// Storage unavailable: still applies for this session.
+	}
+	for (const listener of collapseListeners) listener();
+}
+
+/** Show or hide the desktop sidebar. */
+export function toggleSidebar(): void {
+	setSidebarCollapsed(!collapsed);
+}
+
+function subscribeCollapsed(listener: () => void): () => void {
+	collapseListeners.add(listener);
+	return () => collapseListeners.delete(listener);
+}
+
+/** Whether the desktop sidebar is hidden. */
+export function useSidebarCollapsed(): boolean {
+	return useSyncExternalStore(
+		subscribeCollapsed,
+		() => collapsed,
+		() => false,
+	);
+}
+
+/* A panel-with-rail glyph, drawn for this button rather than borrowed. */
+export function SidebarGlyph({ size = 18 }: { size?: number }) {
+	return (
+		<svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true" focusable="false">
+			<rect x="2.5" y="3.5" width="15" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" />
+			<path d="M8 3.5v13" stroke="currentColor" strokeWidth="1.5" />
+			<path d="M4.75 7h1.5M4.75 10h1.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+		</svg>
+	);
+}
+
+/** The button that shows and hides the sidebar. */
+export const SidebarToggle = styled.button`
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: ${tokens.colors.surfaceContainerHighest};
-  color: ${tokens.colors.onSurface};
   flex-shrink: 0;
+  border: none;
+  border-radius: ${tokens.borderRadius.md};
+  background: transparent;
+  color: ${tokens.colors.onSurfaceVariant};
+  cursor: pointer;
+  transition: background ${tokens.transitions.fast}, color ${tokens.transitions.fast};
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; color: ${tokens.colors.onSurface}; }
 `;
 
-const FootText = styled.div`
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  line-height: 1.25;
-
-  strong {
-    font-size: ${tokens.typography.fontSize.sm};
-    font-weight: ${tokens.typography.fontWeight.medium};
-    color: ${tokens.colors.onSurface};
-  }
-
-  span {
-    font-size: ${tokens.typography.fontSize.xs};
-    color: ${tokens.colors.onSurfaceVariant};
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-`;
+const MOD_LABEL = isMac() ? "⌘" : "Ctrl+";
 
 interface RecentItemProps {
 	entry: RecentEntry;
@@ -487,10 +676,15 @@ function RecentItem({ entry, active, pinned, onOpen, onDeletedOpen }: RecentItem
 export function Sidebar() {
 	const location = useLocation();
 	const navigate = useNavigate();
-	const { activeModel } = useAppContext();
+	const { showToast } = useToast();
+	const { modelStatus, activeModel, activeModelInfo, settings, updateSettings, unloadModel } =
+		useAppContext();
 	const { downloads } = useDownloads();
 	const pins = usePins();
-	const running = Object.values(downloads).filter((d) => d.status === "downloading" || d.status === "verifying");
+	const isCollapsed = useSidebarCollapsed();
+	const running = Object.values(downloads).filter(
+		(d) => d.status === "downloading" || d.status === "verifying",
+	);
 	const total = running.reduce((sum, d) => sum + d.totalBytes, 0);
 	const done = running.reduce((sum, d) => sum + d.downloadedBytes, 0);
 	const percent = total > 0 ? Math.floor((done / total) * 100) : 0;
@@ -553,21 +747,62 @@ export function Sidebar() {
 		};
 	}, [menuOpen]);
 
-	// Cmd/Ctrl+, opens Settings, as in most desktop apps.
+	// Cmd/Ctrl+, opens Settings and Cmd/Ctrl+B shows or hides the sidebar,
+	// as in most desktop apps.
 	useEffect(() => {
 		const onKey = (e: KeyboardEvent) => {
-			if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+			if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+			if (e.key === ",") {
 				e.preventDefault();
 				navigate("/settings");
+			} else if (e.key.toLowerCase() === "b") {
+				e.preventDefault();
+				toggleSidebar();
 			}
 		};
 		document.addEventListener("keydown", onKey);
 		return () => document.removeEventListener("keydown", onKey);
 	}, [navigate]);
 
+	// Pages can read this to drop controls the sidebar already offers.
+	useEffect(() => {
+		document.documentElement.dataset.sidebar = isCollapsed ? "collapsed" : "open";
+	}, [isCollapsed]);
+
 	const go = (path: string) => {
 		setMenuOpen(false);
 		navigate(path);
+	};
+
+	const engineState = modelStatus.kind;
+	const quant = activeModelInfo?.kv_cache_quant?.toUpperCase();
+	const airGap = settings?.air_gap === true;
+	const engineName =
+		modelStatus.kind === "ready"
+			? (activeModel ?? "Model ready")
+			: modelStatus.kind === "loading"
+				? "Warming up..."
+				: "No model loaded";
+	const engineDetail =
+		modelStatus.kind === "ready" ? "Ready · local" : modelStatus.kind === "loading" ? modelStatus.id : "Idle";
+
+	const toggleAirGap = async () => {
+		setMenuOpen(false);
+		try {
+			const stored = await updateSettings({ air_gap: !airGap });
+			showToast(stored.air_gap ? "Air-Gap on: nothing leaves this device" : "Air-Gap off", "info");
+		} catch {
+			showToast("Couldn't change Air-Gap mode", "error");
+		}
+	};
+
+	const unload = async () => {
+		setMenuOpen(false);
+		try {
+			await unloadModel();
+		} catch {
+			showToast("Couldn't unload the model", "error");
+		}
 	};
 
 	const pinned = (recents ?? []).filter((c) => pins.includes(c.id));
@@ -594,12 +829,23 @@ export function Sidebar() {
 		(path !== "/chat" && location.pathname.startsWith(path)) ||
 		owns.some((prefix) => location.pathname.startsWith(prefix));
 
+	if (isCollapsed) return null;
+
 	return (
 		<Aside aria-label="Sidebar">
 			{/* Part of the window's title bar on desktop: drags the window. */}
 			<Brand data-tauri-drag-region>
 				<NeurixMark size={22} knockout="rgb(var(--c-surface-container-low))" />
 				<Wordmark data-tauri-drag-region>Neurix</Wordmark>
+				<SidebarToggle
+					type="button"
+					style={{ marginLeft: "auto" }}
+					aria-label="Hide sidebar"
+					title={`Hide sidebar (${MOD_LABEL}B)`}
+					onClick={toggleSidebar}
+				>
+					<SidebarGlyph />
+				</SidebarToggle>
 			</Brand>
 
 			<Group>
@@ -611,13 +857,19 @@ export function Sidebar() {
 					}}
 				>
 					<NewChatIcon>
-						<Icon name="add" size={14} fill />
+						<Icon name="edit_square" size={17} />
 					</NewChatIcon>
 					<span>New chat</span>
+					<Shortcut>{MOD_LABEL}N</Shortcut>
 				</Row>
-				<Row type="button" onClick={() => navigate("/chat/history")} $active={location.pathname === "/chat/history"}>
+				<Row
+					type="button"
+					onClick={() => navigate("/chat/history")}
+					$active={location.pathname === "/chat/history"}
+				>
 					<Icon name="search" size={17} />
 					<span>Search chats</span>
+					<Shortcut>{MOD_LABEL}⇧F</Shortcut>
 				</Row>
 				{SECTIONS.map((section) => (
 					<Row
@@ -646,8 +898,37 @@ export function Sidebar() {
 
 			<FootWrap ref={footRef}>
 				{menuOpen && (
-					<Menu role="menu">
-						<MenuHeader>Private · runs on this device</MenuHeader>
+					<Menu role="menu" aria-label="Local engine">
+						<MenuHeader>
+							<strong>{engineName}</strong>
+							<span>
+								{modelStatus.kind === "ready"
+									? `Running on this device${quant ? ` · KV ${quant}` : ""}`
+									: modelStatus.kind === "loading"
+										? "Mapping weights into memory"
+										: "Pick a model to start chatting"}
+							</span>
+						</MenuHeader>
+						<MenuItem type="button" role="menuitem" onClick={() => go("/models")}>
+							<Icon name="deployed_code" size={16} />
+							{modelStatus.kind === "ready" ? "Switch model" : "My models"}
+						</MenuItem>
+						<MenuItem type="button" role="menuitem" disabled={modelStatus.kind !== "ready"} onClick={unload}>
+							<Icon name="power_settings_new" size={16} />
+							Unload model
+						</MenuItem>
+						<MenuItem
+							type="button"
+							role="menuitemcheckbox"
+							aria-checked={airGap}
+							disabled={!settings}
+							onClick={toggleAirGap}
+						>
+							<Icon name="shield" size={16} />
+							Air-Gap mode
+							<em>{airGap ? "On" : "Off"}</em>
+						</MenuItem>
+						<MenuDivider />
 						<MenuItem
 							type="button"
 							role="menuitem"
@@ -658,30 +939,17 @@ export function Sidebar() {
 						>
 							<Icon name="command" size={16} />
 							Command palette
-							<kbd>{isMac() ? "⌘ K" : "Ctrl K"}</kbd>
+							<kbd>{MOD_LABEL}K</kbd>
 						</MenuItem>
 						<MenuItem type="button" role="menuitem" onClick={() => go("/settings")}>
 							<Icon name="settings" size={16} />
 							Settings
-							<kbd>{isMac() ? "⌘ ," : "Ctrl ,"}</kbd>
+							<kbd>{MOD_LABEL},</kbd>
 						</MenuItem>
-						<MenuItem type="button" role="menuitem" onClick={() => go("/connectors")}>
-							<Icon name="plug" size={16} />
-							Connectors
+						<MenuItem type="button" role="menuitem" onClick={() => go("/about")}>
+							<Icon name="info" size={16} />
+							About Neurix
 						</MenuItem>
-						<MenuItem type="button" role="menuitem" onClick={() => go("/models")}>
-							<Icon name="deployed_code" size={16} />
-							Manage models
-						</MenuItem>
-						<MenuItem type="button" role="menuitem" onClick={() => go("/friend/new")}>
-							<Icon name="diversity_3" size={16} />
-							New friend
-						</MenuItem>
-						<MenuItem type="button" role="menuitem" onClick={() => go("/character/new")}>
-							<Icon name="person" size={16} />
-							New character
-						</MenuItem>
-						<MenuDivider />
 						<MenuItem
 							type="button"
 							role="menuitem"
@@ -690,26 +958,42 @@ export function Sidebar() {
 								openUrl("https://github.com/Razee4315/neurix/issues").catch(() => {});
 							}}
 						>
-							<Icon name="info" size={16} />
+							<Icon name="open_in_new" size={16} />
 							Get help
-							<Icon name="open_in_new" size={14} />
-						</MenuItem>
-						<MenuItem type="button" role="menuitem" onClick={() => go("/about")}>
-							<Icon name="verified_user" size={16} />
-							About Neurix
 						</MenuItem>
 					</Menu>
 				)}
-				<Foot type="button" $open={menuOpen} onClick={() => setMenuOpen((v) => !v)} aria-haspopup="menu" aria-expanded={menuOpen}>
-					<Avatar>
-						<Icon name="enhanced_encryption" size={15} />
-					</Avatar>
-					<FootText>
-						<strong>On this device</strong>
-						<span>{activeModel ? `${activeModel} · offline` : "No model loaded"}</span>
-					</FootText>
-					<Icon name="expand_more" size={14} />
-				</Foot>
+				<EnginePill
+					type="button"
+					$open={menuOpen}
+					onClick={() => setMenuOpen((v) => !v)}
+					aria-haspopup="menu"
+					aria-expanded={menuOpen}
+					aria-label={`Local engine: ${engineName}${airGap ? ", Air-Gap on" : ""}`}
+				>
+					<StatusDot $state={engineState} aria-hidden="true" />
+					<EngineText>
+						<strong>{engineName}</strong>
+						<span>
+							<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{engineDetail}</span>
+						</span>
+					</EngineText>
+					{modelStatus.kind === "ready" && quant && <Badge>{quant}</Badge>}
+					{airGap && (
+						<Badge $tone="primary" title="Air-Gap on">
+							<Icon name="shield" size={10} />
+						</Badge>
+					)}
+					{modelStatus.kind === "loading" && <WarmingBar aria-hidden="true" />}
+				</EnginePill>
+				<GearBtn
+					type="button"
+					aria-label="Settings"
+					title={`Settings (${MOD_LABEL},)`}
+					onClick={() => go("/settings")}
+				>
+					<Icon name="settings" size={17} />
+				</GearBtn>
 			</FootWrap>
 		</Aside>
 	);

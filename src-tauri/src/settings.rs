@@ -98,7 +98,7 @@ impl Default for Settings {
             top_p: 0.9,
             max_tokens: 512,
             font_size: "medium".to_string(),
-            theme: "obsidian".to_string(),
+            theme: "karakoram".to_string(),
             onboarding_done: false,
             last_model_id: None,
             active_character_id: Some("preset:default".to_string()),
@@ -299,7 +299,7 @@ mod tests {
         let s: Settings = serde_json::from_str(r#"{"wifi_only": false}"#).unwrap();
         assert!(!s.wifi_only);
         assert!(s.save_history);
-        assert_eq!(s.theme, "obsidian");
+        assert_eq!(s.theme, "karakoram");
     }
 
     #[test]

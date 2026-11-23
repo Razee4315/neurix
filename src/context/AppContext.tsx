@@ -1,6 +1,6 @@
 import { modelService, settingsService } from "@/services";
 import type { ActiveModel, Settings } from "@/services/types";
-import { applyFontSize, applyTheme } from "@/theme/themes";
+import { SYSTEM_THEME_ID, applyFontSize, applyTheme, isSystemTheme } from "@/theme/themes";
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { type ModelStatus, activeOf, initialModelState, loadingIdOf, modelReducer } from "./modelMachine";
 
@@ -168,6 +168,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 		applyTheme(settings.theme);
 		applyFontSize(settings.font_size);
 	}, [settings]);
+
+	// "Match system": repaint when the OS switches between light and dark
+	// (Windows personalisation, Android dark mode) while the app is open.
+	const themeChoice = settings?.theme;
+	useEffect(() => {
+		if (!isSystemTheme(themeChoice) || typeof window.matchMedia !== "function") return;
+		const query = window.matchMedia("(prefers-color-scheme: light)");
+		const onChange = () => applyTheme(SYSTEM_THEME_ID);
+		query.addEventListener?.("change", onChange);
+		return () => query.removeEventListener?.("change", onChange);
+	}, [themeChoice]);
 
 	const active = activeOf(model.status);
 	const value = useMemo<AppContextValue>(

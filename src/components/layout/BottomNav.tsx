@@ -12,9 +12,19 @@ import styled from "styled-components";
  * where the user is.
  */
 const NAV_TABS = [
-	{ icon: "chat_bubble", label: "Chat", path: "/chat", owns: ["/character", "/friend"] },
+	{
+		icon: "chat_bubble",
+		label: "Chat",
+		path: "/chat",
+		owns: ["/character", "/friend"],
+	},
 	{ icon: "deployed_code", label: "Models", path: "/models", owns: [] },
-	{ icon: "storefront", label: "Store", path: "/store", owns: ["/downloading"] },
+	{
+		icon: "storefront",
+		label: "Store",
+		path: "/store",
+		owns: ["/downloading"],
+	},
 	{ icon: "plug", label: "Connect", path: "/connectors", owns: [] },
 	{ icon: "settings", label: "Settings", path: "/settings", owns: ["/about"] },
 ] as const;
@@ -24,8 +34,10 @@ const NavOuter = styled.div`
   width: 100%;
   flex-shrink: 0;
   background: ${tokens.colors.surfaceContainerLow};
-  border-top: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
+  border-top: 1px solid ${tokens.colors.outlineVariant};
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
   display: flex;
   justify-content: center;
 
@@ -62,6 +74,9 @@ const Tab = styled.button<{ $active: boolean }>`
   gap: 3px;
   flex: 1;
   height: 100%;
+  /* Comfortable thumb targets on every phone. */
+  min-width: 44px;
+  min-height: 44px;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -85,9 +100,10 @@ const Pill = styled.span<{ $active: boolean }>`
   justify-content: center;
   width: 52px;
   height: 28px;
-  border-radius: 14px;
-  background: ${({ $active }) => ($active ? alpha(tokens.colors.primary, "24") : "transparent")};
-  transition: background ${tokens.transitions.normal};
+  border-radius: ${tokens.borderRadius.circle};
+  background: ${({ $active }) => ($active ? alpha(tokens.colors.primary, "1f") : "transparent")};
+  box-shadow: inset 0 0 0 1px ${({ $active }) => ($active ? alpha(tokens.colors.primary, "4d") : "transparent")};
+  transition: background ${tokens.transitions.fast}, box-shadow ${tokens.transitions.fast};
 `;
 
 const TabLabel = styled.span<{ $active: boolean }>`

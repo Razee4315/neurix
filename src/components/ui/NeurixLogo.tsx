@@ -17,7 +17,7 @@ interface MarkProps {
 }
 
 /**
- * The Neurix mark: an N made of two pillars and a clay ribbon laid across
+ * The Neurix mark: an N made of two pillars and a teal ribbon laid across
  * them. Pillars take the text color, the ribbon the accent.
  */
 export function NeurixMark({
@@ -92,7 +92,7 @@ export function NeurixLogo({ size = 40, className }: NeurixLogoProps) {
 			style={{ flexShrink: 0 }}
 		>
 			<title>Neurix</title>
-			<rect width="24" height="24" rx="5.4" fill="#22211f" />
+			<rect width="24" height="24" rx="5.4" fill="#12171d" />
 			<rect
 				x="0.15"
 				y="0.15"
@@ -105,12 +105,12 @@ export function NeurixLogo({ size = 40, className }: NeurixLogoProps) {
 				strokeWidth="0.3"
 			/>
 			<g transform="translate(4.2 4.2) scale(0.65)">
-				<g fill="#f3efe6">
+				<g fill="#eef3f8">
 					<rect x="4" y="4" width="4.2" height="16" rx="2.1" />
 					<rect x="15.8" y="4" width="4.2" height="16" rx="2.1" />
 				</g>
-				<line x1="6.1" y1="6.1" x2="17.9" y2="17.9" stroke="#22211f" strokeWidth="6.4" strokeLinecap="round" />
-				<line x1="6.1" y1="6.1" x2="17.9" y2="17.9" stroke="#d97757" strokeWidth="4.2" strokeLinecap="round" />
+				<line x1="6.1" y1="6.1" x2="17.9" y2="17.9" stroke="#12171d" strokeWidth="6.4" strokeLinecap="round" />
+				<line x1="6.1" y1="6.1" x2="17.9" y2="17.9" stroke="#2ec4b6" strokeWidth="4.2" strokeLinecap="round" />
 			</g>
 		</svg>
 	);

@@ -11,6 +11,10 @@
  * Colors are stored as space-separated RGB triplets (`--c-primary: 143 245
  * 255`) so `tokens.colors.*` can stay static strings
  * (`rgb(var(--c-primary))`) and still accept an alpha channel.
+ *
+ * Besides the themes in `THEMES` there is one more choice, `"system"`, which
+ * follows the operating system: Karakoram when it is dark, Paper when it is
+ * light. It is a choice, not a theme, so it lives outside the list.
  */
 import { type IconWeight, setIconWeights } from "./iconWeight";
 
@@ -77,6 +81,7 @@ export interface ThemeDefinition {
 const SANS = "'Inter', system-ui, sans-serif";
 // The platform's own interface face: SF Pro on macOS, Segoe UI on Windows.
 const UI = "-apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif";
+const DISPLAY = "'Space Grotesk', 'Inter', system-ui, sans-serif";
 const MONO = "'JetBrains Mono', ui-monospace, monospace";
 // Book faces that ship with the platform: Noto Serif on Android, Palatino or
 // Georgia on desktop. Nothing extra has to be bundled.
@@ -96,82 +101,96 @@ function grain(ink: "0" | "1", strength: number): string {
 	return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 }
 
-export const DEFAULT_THEME_ID = "obsidian";
+export const DEFAULT_THEME_ID = "karakoram";
+
+/** The choice that follows the operating system's light or dark setting. */
+export const SYSTEM_THEME_ID = "system";
+
+/** Theme used for `"system"` when the OS is dark, and when it is light. */
+export const SYSTEM_DARK_THEME_ID = "karakoram";
+export const SYSTEM_LIGHT_THEME_ID = "paper";
 
 export const THEMES: readonly ThemeDefinition[] = [
 	{
-		// Warm graphite with a clay accent: a calm, professional desktop look.
-		// Plain sans for the interface, a book serif only for the greeting.
-		id: "obsidian",
-		name: "Graphite",
-		tagline: "Warm graphite, clay accent",
+		// Slate stone under a clear high-altitude sky: a recessed basalt
+		// sidebar, a matte reading plane and a glacial teal accent with a
+		// brass telemetry tone. Space Grotesk for display, platform UI face
+		// for everything else.
+		id: "karakoram",
+		name: "Karakoram",
+		tagline: "Slate, glacial teal, brass",
 		mode: "dark",
 		colors: {
-			background: "#262624",
-			surface: "#262624",
-			surfaceBright: "#3a3935",
-			surfaceContainerLowest: "#141413",
-			surfaceContainerLow: "#1f1e1d",
-			surfaceContainer: "#2a2927",
-			surfaceContainerHigh: "#30302e",
-			surfaceContainerHighest: "#3a3935",
-			onSurface: "#f5f4ef",
-			onSurfaceVariant: "#a6a49b",
-			outline: "#77756d",
-			outlineVariant: "#45443f",
-			primary: "#d97757",
-			primaryDim: "#c6613f",
-			primaryContainer: "#d97757",
-			onPrimary: "#ffffff",
-			// Text on clay. White reads at only 3.1:1 there, so labels use ink.
-			onPrimaryFixed: "#1f1e1d",
-			onPrimaryContainer: "#ffffff",
-			secondary: "#d6b98c",
-			secondaryContainer: "#4a3d26",
-			tertiary: "#8ab4f8",
-			error: "#ef7a6a",
-			errorContainer: "#5c201a",
+			background: "#151a20",
+			surface: "#151a20",
+			surfaceBright: "#2b3440",
+			surfaceContainerLowest: "#0a0d10",
+			surfaceContainerLow: "#0f1317",
+			surfaceContainer: "#1a2028",
+			surfaceContainerHigh: "#212832",
+			surfaceContainerHighest: "#29323e",
+			onSurface: "#eef3f8",
+			onSurfaceVariant: "#9baabb",
+			outline: "#6b7a8c",
+			outlineVariant: "#2c3643",
+			primary: "#2ec4b6",
+			primaryDim: "#20a396",
+			primaryContainer: "#2ec4b6",
+			onPrimary: "#081416",
+			onPrimaryFixed: "#081416",
+			onPrimaryContainer: "#081416",
+			secondary: "#e0a458",
+			secondaryContainer: "#3a2d1b",
+			tertiary: "#6ea8fe",
+			error: "#f27474",
+			errorContainer: "#5a1f24",
 			onError: "#ffffff",
 		},
 		style: {
-			fonts: { headline: UI, body: UI, label: UI },
-			radius: { sm: "0.25rem", md: "0.375rem", lg: "0.5rem", xl: "0.75rem", pill: "9999px" },
+			fonts: { headline: DISPLAY, body: UI, label: UI },
+			radius: {
+				sm: "0.25rem",
+				md: "0.375rem",
+				lg: "0.625rem",
+				xl: "0.875rem",
+				pill: "9999px",
+			},
 			backdrop: "none",
 			overlay: "none",
 			overlayOpacity: 0,
-			headlineTracking: "-0.01em",
+			headlineTracking: "-0.015em",
 			icons: { regular: "regular", small: "regular" },
 		},
 	},
 	{
-		// Ink on paper: a book. Serif text, warm stock with visible grain and
-		// crisp corners.
+		// Ink on archival paper: a book. Serif text, warm stock with visible
+		// grain, crisp corners and a forest-ink accent.
 		id: "paper",
 		name: "Paper",
 		tagline: "Ink, serif and daylight",
 		mode: "light",
 		colors: {
-			background: "#f6f1e7",
-			surface: "#f6f1e7",
+			background: "#f8f5ee",
+			surface: "#f8f5ee",
 			surfaceBright: "#ffffff",
-			surfaceContainerLowest: "#fffdf8",
-			surfaceContainerLow: "#f0eadd",
-			surfaceContainer: "#eae3d4",
-			surfaceContainerHigh: "#e3dbca",
-			surfaceContainerHighest: "#d9d0bd",
-			onSurface: "#1f1a14",
-			onSurfaceVariant: "#5c5346",
-			outline: "#8a7f6d",
-			outlineVariant: "#c9bfaa",
-			primary: "#8c2f1b",
-			primaryDim: "#73240f",
-			primaryContainer: "#a13d27",
+			surfaceContainerLowest: "#fffdf9",
+			surfaceContainerLow: "#efece4",
+			surfaceContainer: "#ebe5d9",
+			surfaceContainerHigh: "#e4ded1",
+			surfaceContainerHighest: "#d8d0c0",
+			onSurface: "#1a1e1c",
+			onSurfaceVariant: "#4c544e",
+			outline: "#7d827a",
+			outlineVariant: "#cbc3b2",
+			primary: "#226b52",
+			primaryDim: "#195440",
+			primaryContainer: "#226b52",
 			onPrimary: "#ffffff",
 			onPrimaryFixed: "#ffffff",
 			onPrimaryContainer: "#ffffff",
 			secondary: "#1f4e8c",
 			secondaryContainer: "#d6e2f3",
-			tertiary: "#8a5a00",
+			tertiary: "#7a5318",
 			error: "#b3261e",
 			errorContainer: "#f6d6d1",
 			onError: "#ffffff",
@@ -184,6 +203,55 @@ export const THEMES: readonly ThemeDefinition[] = [
 			overlayOpacity: 0.22,
 			headlineTracking: "-0.015em",
 			icons: { regular: "light", small: "regular" },
+		},
+	},
+	{
+		// A cedar study after dark: warm near-black, juniper ink, soft round
+		// shapes and filled icons.
+		id: "deodar",
+		name: "Deodar",
+		tagline: "Warm cedar study, juniper ink",
+		mode: "dark",
+		colors: {
+			background: "#161614",
+			surface: "#161614",
+			surfaceBright: "#34322d",
+			surfaceContainerLowest: "#0d0d0c",
+			surfaceContainerLow: "#10100f",
+			surfaceContainer: "#1f1e1b",
+			surfaceContainerHigh: "#282622",
+			surfaceContainerHighest: "#322f2a",
+			onSurface: "#f4efe6",
+			onSurfaceVariant: "#afa79a",
+			outline: "#7b7469",
+			outlineVariant: "#3a3731",
+			primary: "#4ca884",
+			primaryDim: "#3a8a6b",
+			primaryContainer: "#4ca884",
+			onPrimary: "#0b1913",
+			onPrimaryFixed: "#0b1913",
+			onPrimaryContainer: "#0b1913",
+			secondary: "#d4a359",
+			secondaryContainer: "#40321c",
+			tertiary: "#86b8d9",
+			error: "#ef7a6a",
+			errorContainer: "#5c201a",
+			onError: "#ffffff",
+		},
+		style: {
+			fonts: { headline: SANS, body: SANS, label: SANS },
+			radius: {
+				sm: "0.5rem",
+				md: "0.75rem",
+				lg: "1rem",
+				xl: "1.5rem",
+				pill: "9999px",
+			},
+			backdrop: "none",
+			overlay: grain("1", 0.5),
+			overlayOpacity: 0.07,
+			headlineTracking: "-0.025em",
+			icons: { regular: "fill", small: "fill" },
 		},
 	},
 	{
@@ -229,58 +297,16 @@ export const THEMES: readonly ThemeDefinition[] = [
 			icons: { regular: "bold", small: "bold" },
 		},
 	},
-	{
-		// The last light on the mountains: a plum sky, an apricot accent,
-		// soft round shapes and filled icons.
-		id: "dusk",
-		name: "Dusk",
-		tagline: "Soft, warm and rounded",
-		mode: "dark",
-		colors: {
-			background: "#1a1426",
-			surface: "#1a1426",
-			surfaceBright: "#3d3252",
-			surfaceContainerLowest: "#120d1b",
-			surfaceContainerLow: "#211a30",
-			surfaceContainer: "#281f3a",
-			surfaceContainerHigh: "#302644",
-			surfaceContainerHighest: "#3a2f50",
-			onSurface: "#fbf1ea",
-			onSurfaceVariant: "#c4b5c9",
-			outline: "#8d7d96",
-			outlineVariant: "#4d4060",
-			primary: "#ffb38a",
-			primaryDim: "#ff9a66",
-			primaryContainer: "#ff8fa3",
-			onPrimary: "#5a2408",
-			onPrimaryFixed: "#3b1503",
-			onPrimaryContainer: "#4a1020",
-			secondary: "#c7a6ff",
-			secondaryContainer: "#4b2f80",
-			tertiary: "#8fc7ff",
-			error: "#ff8a8a",
-			errorContainer: "#7a1f2e",
-			onError: "#ffffff",
-		},
-		style: {
-			fonts: { headline: SANS, body: SANS, label: SANS },
-			radius: { sm: "0.5rem", md: "0.75rem", lg: "1rem", xl: "1.5rem", pill: "9999px" },
-			backdrop: "none",
-			overlay: grain("1", 0.5),
-			overlayOpacity: 0.07,
-			headlineTracking: "-0.025em",
-			icons: { regular: "fill", small: "fill" },
-		},
-	},
 ];
 
 /** Themes from earlier versions, mapped to the closest current one. */
 const RETIRED: Record<string, string> = {
-	aurora: "dusk",
-	karakoram: "obsidian",
-	deosai: "obsidian",
-	ember: "dusk",
-	sakura: "dusk",
+	obsidian: "karakoram",
+	dusk: "deodar",
+	aurora: "deodar",
+	deosai: "karakoram",
+	ember: "deodar",
+	sakura: "deodar",
 	void: "phosphor",
 	glacier: "paper",
 	apricot: "paper",
@@ -288,9 +314,33 @@ const RETIRED: Record<string, string> = {
 
 const STORAGE_KEY = "neurix.theme";
 
+/** True for the "follow the operating system" choice. */
+export function isSystemTheme(v: unknown): v is typeof SYSTEM_THEME_ID {
+	return v === SYSTEM_THEME_ID;
+}
+
+/** Whether the operating system currently asks for a light interface. */
+export function systemPrefersLight(): boolean {
+	try {
+		return window.matchMedia?.("(prefers-color-scheme: light)")?.matches ?? false;
+	} catch {
+		return false;
+	}
+}
+
+/** The concrete theme id a stored choice stands for ("system" resolves via the OS). */
+export function resolveThemeId(id: string | null | undefined): string {
+	return getTheme(id).id;
+}
+
 export function getTheme(id: string | null | undefined): ThemeDefinition {
-	const current = id ? (RETIRED[id] ?? id) : id;
-	return THEMES.find((t) => t.id === current) ?? THEMES[0];
+	const chosen = isSystemTheme(id)
+		? systemPrefersLight()
+			? SYSTEM_LIGHT_THEME_ID
+			: SYSTEM_DARK_THEME_ID
+		: id;
+	const current = chosen ? (RETIRED[chosen] ?? chosen) : chosen;
+	return THEMES.find((t) => t.id === current) ?? THEMES.find((t) => t.id === DEFAULT_THEME_ID) ?? THEMES[0];
 }
 
 function toTriplet(hex: string): string {
@@ -336,8 +386,13 @@ type BarsWindow = Window & {
 	NeurixBars?: { setColors(top: string, bottom: string, light: boolean): void };
 };
 
-/** Apply a theme to the page and remember the choice for next launch. */
+/**
+ * Apply a theme choice to the page and remember it for next launch.
+ * `"system"` is remembered as `"system"` and paints the theme the OS asks
+ * for right now; call again when the OS setting changes.
+ */
 export function applyTheme(id: string | null | undefined): ThemeDefinition {
+	const followSystem = isSystemTheme(id);
 	const theme = getTheme(id);
 	const root = document.documentElement;
 	for (const [name, value] of Object.entries(themeVariables(theme))) {
@@ -345,11 +400,10 @@ export function applyTheme(id: string | null | undefined): ThemeDefinition {
 	}
 	setIconWeights(theme.style.icons.regular, theme.style.icons.small);
 	root.dataset.theme = theme.id;
+	root.dataset.themeChoice = followSystem ? SYSTEM_THEME_ID : theme.id;
 	root.dataset.mode = theme.mode;
 	root.style.colorScheme = theme.mode;
-	document
-		.querySelector('meta[name="theme-color"]')
-		?.setAttribute("content", theme.colors.background);
+	document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme.colors.background);
 	// Android: match the status bar to the top bar and the navigation bar to
 	// the tab bar, with bar icons that stay readable on light themes.
 	try {
@@ -362,7 +416,7 @@ export function applyTheme(id: string | null | undefined): ThemeDefinition {
 		// Not on Android, or an older build without the bridge.
 	}
 	try {
-		localStorage.setItem(STORAGE_KEY, theme.id);
+		localStorage.setItem(STORAGE_KEY, followSystem ? SYSTEM_THEME_ID : theme.id);
 	} catch {
 		// Storage unavailable: the theme still applies for this session.
 	}
@@ -378,7 +432,12 @@ export function storedThemeId(): string | null {
 	}
 }
 
-export const FONT_SCALES = { small: 0.9, medium: 1, large: 1.12, xlarge: 1.25 } as const;
+export const FONT_SCALES = {
+	small: 0.9,
+	medium: 1,
+	large: 1.12,
+	xlarge: 1.25,
+} as const;
 export type FontSize = keyof typeof FONT_SCALES;
 
 export function isFontSize(v: unknown): v is FontSize {

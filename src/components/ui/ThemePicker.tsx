@@ -1,7 +1,15 @@
 import { Icon } from "@/components/ui/Icon";
-import { THEMES, type ThemeDefinition, getTheme, themeVariables } from "@/theme/themes";
+import {
+	SYSTEM_THEME_ID,
+	THEMES,
+	type ThemeDefinition,
+	getTheme,
+	isSystemTheme,
+	systemPrefersLight,
+	themeVariables,
+} from "@/theme/themes";
 import { tokens } from "@/theme/tokens";
-import type { CSSProperties } from "react";
+import { type CSSProperties, useSyncExternalStore } from "react";
 import styled from "styled-components";
 
 /* One compact row of swatches. Each swatch is a tiny scene drawn with the
@@ -130,6 +138,75 @@ const Caption = styled.p`
   color: ${tokens.colors.onSurfaceVariant};
 `;
 
+/* "Match system": a row above the swatches with a two-segment pill. */
+const SystemRow = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid ${tokens.colors.outlineVariant};
+  border-radius: ${tokens.borderRadius.lg};
+  background: ${tokens.colors.surfaceContainerLow};
+`;
+
+const SystemText = styled.span`
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+`;
+
+const SystemTitle = styled.span`
+  font-size: ${tokens.typography.fontSize.sm};
+  font-weight: 600;
+  color: ${tokens.colors.onSurface};
+`;
+
+const SystemHint = styled.span`
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const Segmented = styled.div`
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid ${tokens.colors.outlineVariant};
+  border-radius: ${tokens.borderRadius.circle};
+  background: ${tokens.colors.surfaceContainerLowest};
+`;
+
+const Segment = styled.button<{ $on: boolean }>`
+  min-height: 2rem;
+  padding: 0 0.875rem;
+  border: none;
+  border-radius: ${tokens.borderRadius.circle};
+  background: ${({ $on }) => ($on ? tokens.colors.primary : "transparent")};
+  color: ${({ $on }) => ($on ? tokens.colors.onPrimaryFixed : tokens.colors.onSurfaceVariant)};
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: 600;
+  cursor: pointer;
+  transition: background ${tokens.transitions.fast}, color ${tokens.transitions.fast};
+
+  &:hover { color: ${({ $on }) => ($on ? tokens.colors.onPrimaryFixed : tokens.colors.onSurface)}; }
+`;
+
+/* Re-render when the OS flips between light and dark, so the picker shows
+   which theme "Match system" is painting right now. */
+function subscribeScheme(listener: () => void): () => void {
+	if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
+	const query = window.matchMedia("(prefers-color-scheme: light)");
+	query.addEventListener?.("change", listener);
+	return () => query.removeEventListener?.("change", listener);
+}
+
+function useSystemPrefersLight(): boolean {
+	return useSyncExternalStore(subscribeScheme, systemPrefersLight, () => false);
+}
+
 function ThemeSwatch({ theme, active }: { theme: ThemeDefinition; active: boolean }) {
 	return (
 		<Ring $active={active}>
@@ -151,14 +228,48 @@ function ThemeSwatch({ theme, active }: { theme: ThemeDefinition; active: boolea
 }
 
 interface ThemePickerProps {
+	/** A theme id from `THEMES`, or `"system"` to follow the OS. */
 	value: string;
 	onChange: (themeId: string) => void;
 }
 
 export function ThemePicker({ value, onChange }: ThemePickerProps) {
-	const selected = getTheme(value);
+	const prefersLight = useSystemPrefersLight();
+	const followSystem = isSystemTheme(value);
+	// Read `prefersLight` so a live OS switch re-resolves the selection.
+	const selected = followSystem ? getTheme(prefersLight ? "paper" : "karakoram") : getTheme(value);
 	return (
 		<div>
+			<SystemRow>
+				<SystemText>
+					<SystemTitle>Match system</SystemTitle>
+					<SystemHint>Karakoram when your device is dark, Paper when it is light</SystemHint>
+				</SystemText>
+				<Segmented role="radiogroup" aria-label="Theme mode">
+					<Segment
+						type="button"
+						role="radio"
+						aria-checked={followSystem}
+						$on={followSystem}
+						onClick={() => {
+							if (!followSystem) onChange(SYSTEM_THEME_ID);
+						}}
+					>
+						Auto (System)
+					</Segment>
+					<Segment
+						type="button"
+						role="radio"
+						aria-checked={!followSystem}
+						$on={!followSystem}
+						onClick={() => {
+							if (followSystem) onChange(selected.id);
+						}}
+					>
+						Manual
+					</Segment>
+				</Segmented>
+			</SystemRow>
 			<Row role="radiogroup" aria-label="Theme">
 				{THEMES.map((theme) => {
 					const active = theme.id === selected.id;
@@ -167,7 +278,7 @@ export function ThemePicker({ value, onChange }: ThemePickerProps) {
 							key={theme.id}
 							type="button"
 							role="radio"
-							aria-checked={active}
+							aria-checked={active && !followSystem}
 							aria-label={`${theme.name}: ${theme.tagline}`}
 							onClick={() => onChange(theme.id)}
 						>
@@ -178,7 +289,7 @@ export function ThemePicker({ value, onChange }: ThemePickerProps) {
 				})}
 			</Row>
 			<Caption aria-live="polite">
-				{selected.name}: {selected.tagline}
+				{followSystem ? `Following your device: ${selected.name}` : `${selected.name}: ${selected.tagline}`}
 			</Caption>
 		</div>
 	);

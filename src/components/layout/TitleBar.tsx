@@ -1,8 +1,11 @@
+import { Icon } from "@/components/ui/Icon";
+import { useAppContext } from "@/context/AppContext";
+import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { isMac, isMobile } from "@/utils/platform";
-import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
+import { type Window, getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
-import styled from "styled-components";
+import styled, { keyframes } from "styled-components";
 
 /**
  * The desktop window's controls, drawn by the app. The window has no native
@@ -34,7 +37,9 @@ const Controls = styled.div`
   -webkit-user-select: none;
 `;
 
-/* As tall as the page's top row, so the glyphs line up with its title. */
+/* As tall as the page's top row (52px narrow, 40px on desktop), so the
+   glyphs line up with its title. Square hover fills edge to edge, as in
+   Windows 11's own caption buttons. */
 const Control = styled.button<{ $close?: boolean }>`
   width: ${BUTTON_W}px;
   height: 52px;
@@ -45,10 +50,10 @@ const Control = styled.button<{ $close?: boolean }>`
   background: transparent;
   color: ${tokens.colors.onSurfaceVariant};
   cursor: default;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background ${tokens.transitions.fast}, color ${tokens.transitions.fast};
 
   @media (min-width: ${tokens.breakpoints.wide}) {
-    height: 48px;
+    height: 40px;
   }
 
   svg {
@@ -175,5 +180,72 @@ export function TitleBar() {
 				<CloseGlyph />
 			</Control>
 		</Controls>
+	);
+}
+
+/* ── Engine status chip, for the top bar on desktop ── */
+
+const breathe = keyframes`
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+`;
+
+const Chip = styled.span<{ $warming: boolean }>`
+  display: none;
+  align-items: center;
+  gap: 0.375rem;
+  height: 24px;
+  max-width: 16rem;
+  padding: 0 0.5rem;
+  border: 1px solid
+    ${({ $warming }) => ($warming ? alpha(tokens.colors.secondary, "55") : tokens.colors.outlineVariant)};
+  border-radius: ${tokens.borderRadius.circle};
+  background: ${tokens.colors.surfaceContainerLow};
+  color: ${tokens.colors.onSurfaceVariant};
+  font-size: ${tokens.typography.fontSize["2xs"]};
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    display: inline-flex;
+  }
+
+  > i {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: ${({ $warming }) => ($warming ? tokens.colors.secondary : tokens.colors.primary)};
+    animation: ${({ $warming }) => ($warming ? breathe : "none")} 1.4s ease-in-out infinite;
+  }
+
+  > span { overflow: hidden; text-overflow: ellipsis; }
+
+  > b {
+    font-family: ${tokens.typography.fontFamily.mono};
+    font-weight: 500;
+    color: ${tokens.colors.secondary};
+  }
+`;
+
+/**
+ * A quiet pill showing what the engine is doing: brass and breathing while a
+ * model warms up, a teal dot with its KV precision once it is ready. Hidden
+ * when nothing is loaded, and on phones (the chat header says it there).
+ */
+export function EngineStatusChip() {
+	const { modelStatus, settings } = useAppContext();
+	if (modelStatus.kind === "idle") return null;
+	const warming = modelStatus.kind === "loading";
+	const quant = warming ? undefined : modelStatus.model.kv_cache_quant?.toUpperCase();
+	const airGap = settings?.air_gap === true;
+	return (
+		<Chip $warming={warming} role="status" aria-live="polite" data-tauri-drag-region>
+			<i />
+			<span>{warming ? "Warming up model..." : "Local engine ready"}</span>
+			{quant && <b>{quant}</b>}
+			{airGap && <Icon name="shield" size={11} />}
+		</Chip>
 	);
 }
