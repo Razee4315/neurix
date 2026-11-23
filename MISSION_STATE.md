@@ -3,28 +3,29 @@
 Single source of truth for resuming the Neurix autonomous mission.
 
 ## Status
-- **Current Phase**: Phase 1 — Setup, Calibration (Part 1), Baseline (Part 2), Research (Part 3)
+- **Current Phase**: Phase 1 — Research Synthesis (Step 1.5)
 - **Active Branch**: `next`
 - **Safety Tag (`main`)**: `before-mission-2026-11-23` -> `a5b7f8667b50a135a25e280acfd6a253529b8b14` (v1.0.1)
-- **App Data Backup**: Pending Step 1.4.1 (`C:\Users\Saqlain\AppData\Local\neurix-mission-backup-2026-11-23\`)
+- **App Data Backup**: Complete (`C:\Users\Saqlain\AppData\Local\neurix-mission-backup-2026-11-23\`, `settings.json` 507 B + `models-manifest.txt`)
 
 ## Done Items
 | ID | Description | Commit |
 |----|-------------|--------|
 | INIT-01 | Tagged `main` as `before-mission-2026-11-23`, branched `next` from `main` | `a5b7f86` |
-| CAL-01 | Calibrated 5 models (`claude-opus-5-5`, `gpt-6.2-sol`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-4-neon`) and assigned team roles | *(pending commit)* |
+| CAL-01 | Calibrated 5 models (`claude-opus-5-5`, `gpt-6.2-sol`, `gemini-4-argon`, `gemini-4-hydrogen`, `gemini-4-neon`) and verified `npm ci`/lint/typecheck/test/build (`22` files, `272` tests, `792,450 B` dist) | `fd97419` |
+| BASE-01 | Captured installed `v1.0.0` native runtime baseline (`73.8s` BootScreen block, `3,290.55 MB` settled WS) + 19 Playwright Edge screenshots (`0` console/page errors) -> `PERFORMANCE.md`, `BEHAVIOR_NOTES.md`, `UX_BASELINE.md` | *(pending commit)* |
 
 ## Item In Progress
-- **Step 1.1 / 1.4 / 1.5**: Verifying `task-86` (`npm ci && lint && typecheck && test && build`), running settled native v1.0.0 baseline + dev Playwright walkthrough (`PERFORMANCE.md`, `BEHAVIOR_NOTES.md`, `UX_BASELINE.md`), and running 5 parallel research tracks.
-- **Exact Next Step**: Record `task-86` outputs, commit & push `.gitignore` + `DECISIONS.md` + `MISSION_STATE.md`, run settled native baseline + Playwright 18-screen walkthrough, then synthesize 5 research tracks.
-- **Files Touched**: `.gitignore`, `DECISIONS.md`, `MISSION_STATE.md`, `docs/mission/baseline/native-v1.0.0.png`
+- **Step 1.5**: Synthesize all 5 completed research tracks into `RESEARCH.md`, `DESIGN_RESEARCH.md`, and `FEATURE_MATRIX.md`, then hand back via `enter_plan_mode` for Phase 2 planning.
+- **Exact Next Step**: Author `RESEARCH.md`, `DESIGN_RESEARCH.md`, and `FEATURE_MATRIX.md` from `scratch/track1.md`–`track5.md`, commit & push to `origin next`, and call `enter_plan_mode`.
+- **Files Touched**: `PERFORMANCE.md`, `BEHAVIOR_NOTES.md`, `UX_BASELINE.md`, `docs/mission/baseline/*.png`, `MISSION_STATE.md`
 
 ## Next 5 Items in Order
-1. **Step 1.4.2**: Settled native v1.0.0 baseline (`PERFORMANCE.md` — note `native-v1.0.0.png` showed v1.0.0 stuck on `BootScreen` past 10s while loading 2.7 GB GGUF).
-2. **Step 1.4.3**: Full dev walkthrough via Playwright (`BEHAVIOR_NOTES.md`, `UX_BASELINE.md`, 18 baseline screenshots).
-3. **Step 1.5**: Collect & synthesize 5 parallel research tracks into `RESEARCH.md`, `DESIGN_RESEARCH.md`, and `FEATURE_MATRIX.md`.
-4. **Step 1.6**: Hand back to planning model (`[plan review]`) to author `BACKLOG.md`, `UI_AUDIT.md`, `DESIGN_SYSTEM.md`, `MOTION.md`, and Phase 2 plan.
-5. **Phase 2**: Implement master backlog, redesign UI/UX, generate Part 7 custom graphics, verify via CI + local install.
+1. **Step 1.5**: Synthesize 5 research tracks -> `RESEARCH.md`, `DESIGN_RESEARCH.md`, `FEATURE_MATRIX.md` + commit/push.
+2. **Step 1.6**: Hand back to planning model (`enter_plan_mode`) for Phase 2 (`BACKLOG.md`, `UI_AUDIT.md`, `DESIGN_SYSTEM.md`, `MOTION.md`, implementation plan).
+3. **Phase 2A**: Design system + anti-Claude visual/layout foundation + Part 7 custom graphics + theme/typography overhaul.
+4. **Phase 2B**: Rust engine upgrades (non-blocking load, KV cache quant, Flash Attention, GPU layers, SQLite FTS5 RAG, prompt state cache).
+5. **Phase 2C**: Feature completeness + Android/Desktop UX polish + CI artifacts (`next`) + local install verification + `FINAL_REPORT.md` + PR.
 
 ## Agent Roles (Part 1 — Calibrated 2026-11-23)
 | Role | Agent (`Provider / Model`) | Calibration Score & Notes |
@@ -44,12 +45,12 @@ Single source of truth for resuming the Neurix autonomous mission.
 
 | Timestamp (PKT) | Account / Provider | Model | Calls Used (Session) | Status / Estimate | Notes |
 |---|---|---|---|---|---|
-| 2026-11-23 11:48 | `antigravity_antigravity_viylsa` | `gemini-pro-orchestrator-neon` | 2 turns | Unknown % (no API meter) | Healthy; zero rate-limit signals |
-| 2026-11-23 11:48 | `antigravity_antigravity_ani` | `gemini-4-argon` | 1 calibration + 1 research | Unknown % | Healthy; Track 1 queued |
-| 2026-11-23 11:48 | `antigravity_antigravity_ani` | `gemini-4-hydrogen` | 1 calibration + 1 research | Unknown % | Healthy; Track 3 queued |
-| 2026-11-23 11:48 | `antigravity_antigravity_ani` | `gemini-4-neon` | 1 calibration + 1 research | Unknown % | Healthy; Track 4 queued |
-| 2026-11-23 11:48 | `claudeAgent` | `claude-opus-5-5` | 1 calibration + 1 research | Unknown % | Healthy; Track 2 queued |
-| 2026-11-23 11:48 | `codex` | `gpt-6.2-sol` / `codex exec` | 1 calibration + 1 research | Unknown % | Healthy; Track 5 queued |
+| 2026-11-23 12:16 | `antigravity_antigravity_viylsa` | `gemini-pro-orchestrator-neon` | 2 turns | Unknown % (no API meter) | Healthy; zero rate-limit signals |
+| 2026-11-23 12:16 | `antigravity_antigravity_ani` | `gemini-4-argon` | 1 calibration + 1 research | Unknown % | Track 1 completed (`track1.md`), 0 errors |
+| 2026-11-23 12:16 | `antigravity_antigravity_ani` | `gemini-4-hydrogen` | 1 calibration + 1 research | Unknown % | Track 3 completed (`track3.md`), 0 errors |
+| 2026-11-23 12:16 | `antigravity_antigravity_ani` | `gemini-4-neon` | 1 calibration + 1 research | Unknown % | Track 4 completed (`track4.md`), 0 errors |
+| 2026-11-23 12:16 | `claudeAgent` | `claude-opus-5-5` | 1 calibration + 1 research | Unknown % | Track 2 completed (`track2.md`), 0 errors |
+| 2026-11-23 12:16 | `codex` | `gpt-6.2-sol` / `codex exec` | 1 calibration + 1 research | Unknown % | Track 5 completed (`track5.md`), 0 errors |
 
 ## Key Decisions
 - **DEC-001**: Safety tag `before-mission-2026-11-23` on `main` (`a5b7f86`); all work on `next`. See [DECISIONS.md](DECISIONS.md#dec-001-git-safety-tag--working-branch-next).
@@ -61,4 +62,4 @@ Single source of truth for resuming the Neurix autonomous mission.
 - Local host lacks `libclang.dll` (LLVM), so Rust crates depending on `llama-cpp-sys-2` compile in GitHub Actions CI rather than locally.
 
 ## Running Processes & CI Runs
-- `task-86`: `npm ci && npm run lint && npm run typecheck && npm test && npm run build` (in progress).
+- None (all Phase 1 calibration, research, native runtime, and Playwright walkthrough tasks finished cleanly).
