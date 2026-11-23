@@ -473,8 +473,9 @@ const CardBottom = styled.div`
 
 const CardMeters = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.875rem;
+  gap: 0.375rem 0.875rem;
 `;
 
 const CardTags = styled.div`
