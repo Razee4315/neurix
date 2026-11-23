@@ -29,78 +29,148 @@ const Page = styled.div`
   gap: 1.25rem;
 `;
 
-const Header = styled.div``;
+const Header = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+`;
+
+const ModelMetaRow = styled.div`
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+`;
 
 const ModelName = styled.span`
-  font-size: ${tokens.typography.fontSize.base};
-  color: ${tokens.colors.onSurfaceVariant};
+	font-size: ${tokens.typography.fontSize.base};
+	font-weight: ${tokens.typography.fontWeight.medium};
+	color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const QuantPill = styled.span`
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-size: 11px;
+	padding: 0.15rem 0.5rem;
+	border-radius: ${tokens.borderRadius.sm};
+	background: ${tokens.colors.surfaceContainerHigh};
+	color: ${tokens.colors.onSurfaceVariant};
 `;
 
 const Title = styled.h1`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: clamp(1.5rem, 6vw, 2rem);
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
-  margin-top: 0.25rem;
+	font-family: ${tokens.typography.fontFamily.headline};
+	font-size: clamp(1.5rem, 6vw, 2rem);
+	font-weight: ${tokens.typography.fontWeight.bold};
+	color: ${tokens.colors.onSurface};
+	margin-top: 0.125rem;
 `;
 
-const ProgressSection = styled.div`
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+const ProgressCard = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 0.875rem;
+	padding: 1.125rem;
+	border-radius: ${tokens.borderRadius.xl};
+	background: ${tokens.colors.surfaceContainerLow};
+	border: 1px solid ${tokens.colors.outlineVariant};
 `;
 
 const StatsRow = styled.div`
-  display: flex;
-  justify-content: space-between;
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-end;
+	gap: 1rem;
 `;
 
 const StatLabel = styled.span`
-  font-size: ${tokens.typography.fontSize.sm};
-  color: ${tokens.colors.onSurfaceVariant};
+	font-size: ${tokens.typography.fontSize.xs};
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	color: ${tokens.colors.onSurfaceVariant};
 `;
 
 const StatValue = styled.span`
-  font-family: ${tokens.typography.fontFamily.headline};
-  font-size: ${tokens.typography.fontSize.xl};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurface};
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-variant-numeric: tabular-nums;
+	font-size: ${tokens.typography.fontSize.xl};
+	font-weight: ${tokens.typography.fontWeight.bold};
+	color: ${tokens.colors.onSurface};
 `;
 
 const PrimaryValue = styled(StatValue)`
-  color: ${tokens.colors.primary};
+	color: ${tokens.colors.secondary};
 `;
 
 const BarTrack = styled.div`
-  width: 100%;
-  height: 8px;
-  background: ${tokens.colors.surfaceContainerHighest};
-  border-radius: ${tokens.borderRadius.circle};
-  overflow: hidden;
+	width: 100%;
+	height: 10px;
+	background: ${tokens.colors.surfaceContainerHighest};
+	border-radius: ${tokens.borderRadius.circle};
+	overflow: hidden;
 `;
 
 const BarFill = styled.div<{ $pct: number }>`
-  height: 100%;
-  width: ${({ $pct }) => $pct}%;
-  border-radius: ${tokens.borderRadius.circle};
-  background: ${tokens.colors.primary};
-  animation: ${fillIn} 0.8s ease-out both;
-  transition: width 0.3s ease;
+	height: 100%;
+	width: ${({ $pct }) => $pct}%;
+	border-radius: ${tokens.borderRadius.circle};
+	background: ${tokens.colors.primary};
+	animation: ${fillIn} 0.8s ease-out both;
+	transition: width 0.36s ease-out;
 `;
 
 const BarInfo = styled.div`
-  display: flex;
-  justify-content: space-between;
-  font-size: ${tokens.typography.fontSize.sm};
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-variant-numeric: tabular-nums;
+	font-size: ${tokens.typography.fontSize.sm};
 `;
 
 const BarText = styled.span`
-  color: ${tokens.colors.onSurfaceVariant};
+	color: ${tokens.colors.onSurfaceVariant};
 `;
 
 const BarPct = styled.span`
-  color: ${tokens.colors.primary};
-  font-weight: ${tokens.typography.fontWeight.bold};
+	color: ${tokens.colors.primary};
+	font-weight: ${tokens.typography.fontWeight.bold};
+`;
+
+const DestinationRow = styled.div`
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem 1rem;
+	padding-top: 0.75rem;
+	border-top: 1px solid ${tokens.colors.outlineVariant};
+	font-size: ${tokens.typography.fontSize.xs};
+	color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const DestinationPath = styled.span`
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	font-family: ${tokens.typography.fontFamily.mono};
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+`;
+
+const ChecksumBadge = styled.span<{ $active: boolean }>`
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	font-family: ${tokens.typography.fontFamily.mono};
+	color: ${({ $active }) =>
+		$active ? tokens.colors.secondary : tokens.colors.onSurfaceVariant};
+	font-weight: ${({ $active }) =>
+		$active
+			? tokens.typography.fontWeight.semibold
+			: tokens.typography.fontWeight.regular};
 `;
 
 const Hint = styled.p`
@@ -298,24 +368,31 @@ export function DownloadingPage() {
 		<AppLayout title="Download" back="/store">
 			<Page>
 				<Header>
-					<ModelName>
-						{model.name} · {model.size_label}
-					</ModelName>
+					<ModelMetaRow>
+						<ModelName>
+							{model.name} · {model.size_label}
+						</ModelName>
+						<QuantPill>{model.quantization}</QuantPill>
+					</ModelMetaRow>
 					<Title>{TITLES[status]}</Title>
 				</Header>
 
-				<ProgressSection>
+				<ProgressCard>
 					<StatsRow>
 						<div>
 							<StatLabel>Speed</StatLabel>
 							<br />
-							<PrimaryValue>{status === "downloading" ? formatSpeed(speed) : "--"}</PrimaryValue>
+							<PrimaryValue>
+								{status === "downloading" ? formatSpeed(speed) : "--"}
+							</PrimaryValue>
 						</div>
 						<div style={{ textAlign: "right" }}>
 							<StatLabel>Remaining</StatLabel>
 							<br />
 							<StatValue>
-								{status === "downloading" ? formatEta(totalBytes - downloaded, speed) : "--"}
+								{status === "downloading"
+									? formatEta(totalBytes - downloaded, speed)
+									: "--"}
 							</StatValue>
 						</div>
 					</StatsRow>
@@ -336,7 +413,29 @@ export function DownloadingPage() {
 						</BarText>
 						<BarPct>{pct.toFixed(1)}%</BarPct>
 					</BarInfo>
-				</ProgressSection>
+
+					<DestinationRow>
+						<DestinationPath title={`${model.hf_repo}/${model.hf_filename}`}>
+							<Icon name="storage" size={13} color={tokens.colors.primary} />
+							models/{model.id}/{model.hf_filename}
+						</DestinationPath>
+						<ChecksumBadge
+							$active={status === "verifying" || status === "finished"}
+						>
+							<Icon
+								name={
+									status === "finished" ? "check_circle" : "verified_user"
+								}
+								size={13}
+							/>
+							{status === "verifying"
+								? "Verifying SHA-256…"
+								: status === "finished"
+									? "SHA-256 verified"
+									: "SHA-256 integrity check"}
+						</ChecksumBadge>
+					</DestinationRow>
+				</ProgressCard>
 
 				{(status === "failed" || status === "paused") && dl?.error && (
 					<Reason role="alert">

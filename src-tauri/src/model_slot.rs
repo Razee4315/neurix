@@ -144,6 +144,9 @@ mod tests {
             reasoning: Reasoning::None,
             context_length: 4096,
             threads: 4,
+            kv_cache_quant: "q8_0".into(),
+            flash_attention: true,
+            gpu_layers: 0,
         }
     }
 

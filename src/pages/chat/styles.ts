@@ -28,9 +28,14 @@ export const ChatContainer = styled.div<{ $hero?: boolean }>`
 export const MessagesArea = styled.div<{ $wide?: boolean; $hero?: boolean }>`
   flex: ${({ $hero }) => ($hero ? "0 0 auto" : "1")};
   overflow-y: auto;
-  padding: 1.5rem 1.25rem 1rem;
+  overflow-anchor: none;
+  /* Room under the header band, so the first message (and a Large text or
+     Paper heading) is never tucked under it; scroll-padding keeps Find and
+     jump-to-message landing below it too. */
+  padding: 2rem 1.25rem 1rem;
+  scroll-padding-top: 2rem;
 
-  @media (max-width: 600px) { padding: 1rem 0.875rem 0.75rem; }
+  @media (max-width: 600px) { padding: 1.25rem 0.875rem 0.75rem; scroll-padding-top: 1.25rem; }
 
   display: flex;
   flex-direction: column;
@@ -43,11 +48,65 @@ export const MessagesArea = styled.div<{ $wide?: boolean; $hero?: boolean }>`
   scrollbar-width: none;
 `;
 
-export const BubbleWrap = styled.div<{ $role: Message["role"] }>`
+export const BubbleWrap = styled.div<{ $role: Message["role"]; $still?: boolean }>`
   display: flex;
   flex-direction: column;
   align-items: ${({ $role }) => ($role === "user" ? "flex-end" : "flex-start")};
   animation: ${fadeInUp} 0.25s ease-out both;
+
+  /* A virtualized row mounts again as it scrolls into view: no entrance. */
+  &[data-still="true"] { animation: none; }
+`;
+
+/* Long chats draw only the rows near the view. The list keeps the full
+   height so the scrollbar and stick-to-bottom behave as before. */
+export const VirtualList = styled.div`
+  position: relative;
+  width: 100%;
+  flex-shrink: 0;
+`;
+
+export const VirtualRow = styled.div`
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding-bottom: 1.25rem;
+`;
+
+/* < 1 / 3 > under a branched message. */
+export const VariantSwitch = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  margin-top: 0.375rem;
+  font-family: ${tokens.typography.fontFamily.mono};
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: ${tokens.colors.onSurfaceVariant};
+
+  > span { min-width: 2.75rem; text-align: center; }
+`;
+
+export const VariantBtn = styled.button`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: ${tokens.borderRadius.md};
+  background: transparent;
+  color: ${tokens.colors.onSurfaceVariant};
+  cursor: pointer;
+
+  &:hover:not(:disabled) { background: ${tokens.colors.surfaceContainerHigh}; color: ${tokens.colors.onSurface}; }
+  &:disabled { opacity: 0.35; cursor: default; }
+  &:focus-visible { outline: 2px solid ${tokens.colors.primary}; outline-offset: 1px; }
+
+  &[data-dir="back"] svg { transform: rotate(180deg); }
+
+  @media (hover: none) { width: 36px; height: 36px; }
 `;
 
 export const Bubble = styled.div<{ $role: Message["role"] }>`
@@ -121,7 +180,7 @@ export const MessageActions = styled.div<{ $open: boolean }>`
     opacity: ${({ $open }) => ($open ? 1 : 0)};
     ${BubbleWrap}:hover &,
     ${BubbleWrap}:focus-within &,
-    ${BubbleWrap}:last-child & { opacity: 1; }
+    ${BubbleWrap}[data-last="true"] & { opacity: 1; }
   }
 
   @media (hover: none) {
@@ -250,24 +309,197 @@ export const Welcome = styled.div<{ $hero?: boolean }>`
   animation: ${fadeInUp} 0.3s ease-out both;
 `;
 
-export const WelcomeTitle = styled.h2`
+/* ── Workspace welcome ──
+   An empty chat opens on a working card, not a greeting: who is answering,
+   which model is in memory (or warming up), that nothing leaves the device,
+   and four ways to start. Left-aligned, with the identity rail on the left. */
+
+export const WorkspaceWelcome = styled.section<{ $hero?: boolean }>`
+  flex: ${({ $hero }) => ($hero ? "0 0 auto" : "1")};
+  display: flex;
+  flex-direction: column;
+  justify-content: ${({ $hero }) => ($hero ? "flex-end" : "center")};
+  width: 100%;
+  padding: 0.5rem 0 1rem;
+  animation: ${fadeInUp} 0.3s ease-out both;
+
+  @media (prefers-reduced-motion: reduce) { animation: none; }
+`;
+
+export const WorkspaceCard = styled.div`
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.875rem 1.25rem;
+  width: 100%;
+  padding: 1.25rem 1.25rem 1.125rem 1.375rem;
+  background: ${tokens.colors.surfaceContainerLow};
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
+  border-left: 3px solid ${tokens.colors.primary};
+  border-radius: ${tokens.borderRadius.lg};
+  text-align: left;
+
+  @media (max-width: 600px) {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 1rem 0.875rem 0.875rem 1rem;
+  }
+`;
+
+export const WorkspaceHead = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+`;
+
+export const PersonaPill = styled.button<{ $accent: string }>`
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  height: 26px;
+  padding: 0 0.5rem 0 0.25rem;
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
+  border-radius: ${tokens.borderRadius.md};
+  background: ${tokens.colors.surfaceContainer};
+  color: ${tokens.colors.onSurface};
+  font-size: ${tokens.typography.fontSize.xs};
+  font-weight: ${tokens.typography.fontWeight.medium};
+  cursor: pointer;
+
+  > i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: ${tokens.borderRadius.sm};
+    background: ${({ $accent }) => alpha($accent, "26")};
+    color: ${({ $accent }) => $accent};
+  }
+  > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+  &:focus-visible { outline: 2px solid ${tokens.colors.primary}; outline-offset: 2px; }
+`;
+
+export const WorkspaceTitle = styled.h2`
+  margin: 0;
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: 1.5rem;
+  font-weight: ${tokens.typography.fontWeight.semibold};
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: ${tokens.colors.onSurface};
+  overflow-wrap: anywhere;
+
+  @media (max-width: 600px) { font-size: 1.25rem; }
+`;
+
+export const WorkspaceLede = styled.p`
+  margin: 0;
+  max-width: 34rem;
+  font-size: ${tokens.typography.fontSize.sm};
+  line-height: ${tokens.typography.lineHeight.relaxed};
+  color: ${tokens.colors.onSurfaceVariant};
+`;
+
+/* Right column on a computer, a row under the title on a phone. */
+export const TrustColumn = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.375rem;
+
+  @media (max-width: 600px) { flex-direction: row; flex-wrap: wrap; align-items: center; }
+`;
+
+export const TrustBadge = styled.span<{ $strict?: boolean }>`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  height: 24px;
+  padding: 0 0.5rem;
+  border-radius: ${tokens.borderRadius.md};
+  border: 1px solid ${({ $strict }) => ($strict ? alpha(tokens.colors.secondary, "80") : alpha(tokens.colors.outlineVariant, "cc"))};
+  background: ${({ $strict }) => ($strict ? alpha(tokens.colors.secondary, "14") : "transparent")};
+  color: ${({ $strict }) => ($strict ? tokens.colors.secondary : tokens.colors.onSurfaceVariant)};
+  font-size: 11px;
+  font-weight: ${tokens.typography.fontWeight.medium};
+  white-space: nowrap;
+`;
+
+export const EngineLine = styled.div`
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
-  font-size: 2.125rem;
-  font-weight: ${tokens.typography.fontWeight.regular};
+  flex-wrap: wrap;
+  gap: 0.375rem 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid ${alpha(tokens.colors.outlineVariant, "99")};
+  font-size: ${tokens.typography.fontSize.xs};
+  color: ${tokens.colors.onSurfaceVariant};
 
-  /* On a phone the greeting wraps, so the mark goes above it instead of
-     floating beside a two-line heading. */
-  @media (max-width: 600px) { flex-direction: column; font-size: 1.625rem; gap: 0.625rem; }
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  color: ${tokens.colors.onSurface};
-  margin: 0;
+  > strong {
+    font-weight: ${tokens.typography.fontWeight.semibold};
+    color: ${tokens.colors.onSurface};
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 18rem;
+  }
+`;
 
-  svg { color: ${tokens.colors.primary}; }
+export const EngineTag = styled.span`
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 0.375rem;
+  border-radius: ${tokens.borderRadius.sm};
+  background: ${tokens.colors.surfaceContainerHigh};
+  font-family: ${tokens.typography.fontFamily.mono};
+  font-size: 10.5px;
+  color: ${tokens.colors.onSurfaceVariant};
+  white-space: nowrap;
+`;
+
+const warmSweep = keyframes`
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+`;
+
+/* The model is still loading: say so calmly. Typing works meanwhile. */
+export const WarmingTrack = styled.span`
+  position: relative;
+  flex: 1 1 6rem;
+  max-width: 12rem;
+  height: 3px;
+  border-radius: 2px;
+  background: ${tokens.colors.surfaceContainerHighest};
+  overflow: hidden;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: ${tokens.colors.primary};
+    border-radius: 2px;
+    animation: ${warmSweep} 1.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &::after { animation: none; width: 100%; opacity: 0.5; }
+  }
+`;
+
+export const WorkspaceStarters = styled.div`
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+
+  @media (max-width: 480px) { grid-template-columns: 1fr; }
 `;
 
 /* A friend's empty chat: their face and name, then their greeting as the
@@ -320,13 +552,6 @@ export const FriendGreeting = styled.div<{ $accent: string }>`
   line-height: 1.55;
   text-align: left;
   white-space: pre-wrap;
-`;
-
-export const WelcomeText = styled.p`
-  font-size: ${tokens.typography.fontSize.base};
-  color: ${tokens.colors.onSurfaceVariant};
-  max-width: 20rem;
-  line-height: ${tokens.typography.lineHeight.relaxed};
 `;
 
 export const StartersGrid = styled.div<{ $hero?: boolean }>`
@@ -427,6 +652,11 @@ export const ComposerBar = styled.div`
   gap: 0.375rem;
   margin-top: 0.375rem;
   min-height: 34px;
+
+  @media (max-width: 480px) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 `;
 
 /* A connected folder in the composer: lit when it is used for this chat. */
@@ -470,6 +700,13 @@ export const ComposerChips = styled.div`
   @media (max-width: 600px) {
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
     mask-image: linear-gradient(to right, #000 calc(100% - 1.25rem), transparent);
+  }
+
+  @media (max-width: 480px) {
+    min-width: min-content;
+    max-width: 100%;
+    -webkit-mask-image: none;
+    mask-image: none;
   }
 
   > * { flex-shrink: 0; }
@@ -561,6 +798,15 @@ export const TopBarBtn = styled.button`
 
   &:hover { background: ${tokens.colors.surfaceContainerHigh}; color: ${tokens.colors.onSurface}; }
   &:active { transform: scale(0.9); }
+
+  /* The open sidebar already offers this one (New chat): don't show it twice. */
+  @media (min-width: ${tokens.breakpoints.wide}) {
+    html[data-sidebar="open"] &[data-sidebar-dup="true"] { display: none; }
+  }
+
+  @media (max-width: 480px) {
+    &[data-narrow-hide="true"] { display: none; }
+  }
 `;
 
 /* Header pill (character + model): the primary identity element for the
@@ -625,31 +871,30 @@ export const HeaderCharName = styled.span`
 
 
 
-/* First-run coachmark so the switcher doesn't go undiscovered. */
-
-const coachIn = keyframes`
-  from { opacity: 0; transform: translate(-50%, -4px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
-`;
+/* First-run tip so the switcher doesn't go undiscovered. It sits in the
+   page flow above the chat, so it can never cover a reply. */
 
 export const Coachmark = styled.div`
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 64px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: ${tokens.zIndex.overlay};
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.625rem 0.875rem;
-  background: ${tokens.colors.surfaceContainerHighest};
+  width: calc(100% - 2.5rem);
+  max-width: 48rem;
+  margin: 0.75rem auto 0;
+  padding: 0.5rem 0.375rem 0.5rem 0.75rem;
+  flex-shrink: 0;
+  background: ${tokens.colors.surfaceContainer};
   color: ${tokens.colors.onSurface};
-  border: 1px solid ${alpha(tokens.colors.primary, "66")};
-  border-radius: ${tokens.borderRadius.xl};
+  border: 1px solid ${alpha(tokens.colors.outlineVariant, "cc")};
+  border-left: 3px solid ${tokens.colors.primary};
+  border-radius: ${tokens.borderRadius.md};
   font-size: ${tokens.typography.fontSize.xs};
-  box-shadow: ${tokens.shadows.elevated};
-  animation: ${coachIn} 0.25s ease-out;
-  max-width: calc(100vw - 2rem);
+  animation: ${fadeInUp} 0.25s ease-out both;
+
+  > span { flex: 1; min-width: 0; }
+
+  @media (max-width: 600px) { width: calc(100% - 1.75rem); }
+  @media (prefers-reduced-motion: reduce) { animation: none; }
 `;
 
 export const CoachClose = styled.button`
@@ -660,4 +905,10 @@ export const CoachClose = styled.button`
   align-items: center;
   cursor: pointer;
   padding: 0.25rem;
+  min-width: 28px;
+  min-height: 28px;
+  justify-content: center;
+  border-radius: ${tokens.borderRadius.md};
+
+  &:hover { background: ${tokens.colors.surfaceContainerHigh}; color: ${tokens.colors.onSurface}; }
 `;

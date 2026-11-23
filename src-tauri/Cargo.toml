@@ -1,6 +1,6 @@
 [package]
 name = "neurix-tauri"
-version = "1.0.1"
+version = "1.1.0"
 edition = "2021"
 rust-version = "1.77"
 
@@ -38,6 +38,7 @@ reqwest = { version = "0.12", default-features = false, features = ["stream", "r
 fs2 = "0.4"
 sha2 = "0.10"
 base64 = "0.22"
+rusqlite = { version = "0.43", features = ["bundled"] }
 # Reads the newest Gmail messages on every platform.
 mailparse = "0.15"
 # Gmail on phones: IMAP over the same rustls (ring) stack reqwest already
@@ -78,4 +79,5 @@ native-tls = "0.2"
 # PDF and Word files in connected folders. Desktop only, since phones share
 # plain text documents, so neither ends up in the APK.
 lopdf = { version = "0.42", default-features = false }
+quick-xml = "0.42"
 zip = { version = "9", default-features = false, features = ["deflate"] }

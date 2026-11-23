@@ -25,6 +25,7 @@ import {
 	relationshipOf,
 } from "@/utils/persona";
 import { vibrate } from "@/utils/platform";
+import { parseTavernCard, serializeTavernCard } from "@/utils/tavernCard";
 import { useTestRun } from "@/utils/useTestRun";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
@@ -46,6 +47,11 @@ const AVATARS = [
 	"diversity_3", "smart_toy", "lightbulb", "code",
 ];
 
+// Older or externally restored friends may have larger memories than the
+// automatic learning limit. The ledger keeps every entry allowed by Rust.
+const MEMORY_BYTES_MAX = 240;
+const encoder = new TextEncoder();
+
 interface Draft {
 	name: string;
 	tagline: string;
@@ -53,6 +59,7 @@ interface Draft {
 	accent: string;
 	greeting: string;
 	persona: Persona;
+	starters?: string[];
 }
 
 
@@ -67,14 +74,18 @@ function draftFromTemplate(t: FriendTemplate): Draft {
 	};
 }
 
-function draftFromCharacter(c: Character, copy: boolean): Draft {
+function draftFromCharacter(c: Omit<Character, "id">, copy: boolean): Draft {
 	return {
 		name: copy ? `${c.name} (copy)`.slice(0, LIMITS.name) : c.name,
 		tagline: c.description,
 		icon: c.icon,
 		accent: isAccentHex(c.accent_color) ? c.accent_color : ACCENT_PALETTE[6].value,
 		greeting: c.greeting ?? "",
-		persona: normalizePersona(c.persona),
+		persona: {
+			...normalizePersona(c.persona),
+			memories: c.persona?.memories ?? [],
+		},
+		starters: c.conversation_starters?.length ? c.conversation_starters : undefined,
 	};
 }
 
@@ -475,7 +486,24 @@ const MemoryItem = styled.li`
   font-size: ${tokens.typography.fontSize.sm};
   color: ${tokens.colors.onSurface};
 
-  span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+`;
+
+const MemoryInput = styled(TextArea)`
+  flex: 1;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0.5rem;
+  background: transparent;
+  font-size: ${tokens.typography.fontSize.sm};
+`;
+
+const CardActions = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+
+  > a { text-decoration: none; }
 `;
 
 const IconBtn = styled.button`
@@ -744,6 +772,12 @@ export function FriendEditPage() {
 	const [draft, setDraft] = useState<Draft>(initial);
 	const [templateId, setTemplateId] = useState<string | null>(seed ? null : FRIEND_TEMPLATES[0].id);
 	const [memoryInput, setMemoryInput] = useState("");
+	const cardInput = useRef<HTMLInputElement>(null);
+	const cardRequest = useRef(0);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: a new editor location invalidates in-flight card reads.
+	useEffect(() => () => {
+		cardRequest.current += 1;
+	}, [location.key]);
 	const test = useTestRun();
 	const testing = test.running;
 	const testReply = test.text;
@@ -772,6 +806,7 @@ export function FriendEditPage() {
 	const p = draft.persona;
 
 	const applyTemplate = (t: FriendTemplate) => {
+		cardRequest.current += 1;
 		vibrate(5);
 		setTemplateId(t.id);
 		// Keep what the user already said about themselves.
@@ -844,30 +879,61 @@ export function FriendEditPage() {
 	const [saving, setSaving] = useState(false);
 	const canSave = name.length > 0 && !saving;
 
-	const save = async () => {
-		if (!canSave) return;
+	const characterFromDraft = (id: string): Character => {
 		const greeting = draft.greeting.trim().slice(0, LIMITS.greeting);
 		const persona: Persona = {
 			...p,
 			backstory: p.backstory.trim(),
 			style: p.style.trim(),
 			user_name: p.user_name.trim(),
+			memories: p.memories.map((memory) => memory.trim()).filter(Boolean),
 		};
-		const character: Character = {
-			id: existing?.id ?? `custom:${shortId()}`,
+		return {
+			id,
 			name: name.slice(0, LIMITS.name),
 			description: draft.tagline.trim().slice(0, LIMITS.description),
 			icon: draft.icon,
 			accent_color: draft.accent,
 			system_prompt: compilePersona(name, draft.tagline, persona).slice(0, LIMITS.prompt),
 			...personaSampling(persona),
-			conversation_starters: relationshipOf(persona).starters.slice(0, LIMITS.starterCount),
+			conversation_starters: draft.starters ?? relationshipOf(persona).starters.slice(0, LIMITS.starterCount),
 			...(greeting ? { greeting } : {}),
 			is_preset: false,
 			persona,
 			created_at: existing?.created_at ?? new Date().toISOString(),
 			...(existing?.last_used_at ? { last_used_at: existing.last_used_at } : {}),
 		};
+	};
+
+	const handleImportCard = async (file: File) => {
+		const request = ++cardRequest.current;
+		try {
+			const result = parseTavernCard(file.name.toLowerCase().endsWith(".png")
+				? new Uint8Array(await file.arrayBuffer()) : await file.text());
+			if (request !== cardRequest.current) return;
+			if (!result.ok) {
+				showToast(result.error, "error");
+				return;
+			}
+			const next = draftFromCharacter(result.draft, false);
+			if (!result.draft.persona) next.persona.backstory = result.draft.system_prompt.slice(0, PERSONA_LIMITS.backstory);
+			setDraft((previous) => ({
+				...next,
+				persona: { ...next.persona, memories: previous.persona.memories, user_name: previous.persona.user_name },
+			}));
+			setTemplateId(null);
+			setTestAsked("");
+			test.reset();
+			showToast("Card loaded. Review it before saving.", "success");
+		} catch {
+			if (request === cardRequest.current) showToast("Couldn't read the card file.", "error");
+		}
+	};
+
+	const save = async () => {
+		if (!canSave) return;
+		cardRequest.current += 1;
+		const character = characterFromDraft(existing?.id ?? `custom:${shortId()}`);
 		setSaving(true);
 		try {
 			await saveCustom(character);
@@ -925,33 +991,33 @@ export function FriendEditPage() {
 			<Page>
 				{!isEditing && (
 					<Templates>
-					<Card>
-						<CardHead>
-							<h2>Start from someone</h2>
-							<p>Pick a starting point. You can change everything below.</p>
-						</CardHead>
-						<TemplateStrip>
-							{FRIEND_TEMPLATES.map((t) => {
-								const a = accentOf({ accent_color: t.accent } as Character);
-								return (
-									<TemplateBtn
-										key={t.id}
-										type="button"
-										$accent={a}
-										$on={templateId === t.id}
-										aria-pressed={templateId === t.id}
-										onClick={() => applyTemplate(t)}
-									>
-										<MiniAvatar $accent={a}>
-											<Icon name={t.icon} size={16} />
-										</MiniAvatar>
-										<strong>{t.label}</strong>
-										<span>{t.name}</span>
-									</TemplateBtn>
-								);
-							})}
-						</TemplateStrip>
-					</Card>
+						<Card>
+							<CardHead>
+								<h2>Start from someone</h2>
+								<p>Pick a starting point. You can change everything below.</p>
+							</CardHead>
+							<TemplateStrip>
+								{FRIEND_TEMPLATES.map((t) => {
+									const a = accentOf({ accent_color: t.accent } as Character);
+									return (
+										<TemplateBtn
+											key={t.id}
+											type="button"
+											$accent={a}
+											$on={templateId === t.id}
+											aria-pressed={templateId === t.id}
+											onClick={() => applyTemplate(t)}
+										>
+											<MiniAvatar $accent={a}>
+												<Icon name={t.icon} size={16} />
+											</MiniAvatar>
+											<strong>{t.label}</strong>
+											<span>{t.name}</span>
+										</TemplateBtn>
+									);
+								})}
+							</TemplateStrip>
+						</Card>
 					</Templates>
 				)}
 				<Aside>
@@ -999,6 +1065,25 @@ export function FriendEditPage() {
 							)}
 						</Thread>
 					</Preview>
+					<CardActions>
+						<input hidden ref={cardInput} type="file" accept=".png,.json,image/png,application/json"
+							onChange={(event) => {
+								const file = event.currentTarget.files?.[0];
+								event.currentTarget.value = "";
+								if (file) void handleImportCard(file);
+							}} />
+						<GhostBtn type="button" disabled={saving} onClick={() => cardInput.current?.click()}>
+							Import Card (.png / .json)
+						</GhostBtn>
+						{name ? (
+							<GhostBtn as="a" download="friend-card.json"
+								href={`data:application/json;charset=utf-8,${encodeURIComponent(serializeTavernCard(characterFromDraft("")))}`}>
+								Export Card
+							</GhostBtn>
+						) : (
+							<GhostBtn type="button" disabled>Export Card</GhostBtn>
+						)}
+					</CardActions>
 				</Aside>
 
 				<Form>
@@ -1191,18 +1276,30 @@ export function FriendEditPage() {
 
 					<Card>
 						<CardHead>
-							<h2>What {name || "they"} should remember</h2>
-							<p>Facts about you they keep in mind in every chat. They also pick these up as you talk. All of it stays on this device.</p>
+							<h2>Memory Ledger</h2>
+							<p>Edit the facts {name || "your friend"} keeps in mind. Changes apply when you save. Memories stay on this device when you export a card.</p>
 						</CardHead>
 						{p.memories.length > 0 && (
 							<MemoryList>
 								{p.memories.map((m, i) => (
-									<MemoryItem key={`${i}:${m}`}>
+									// biome-ignore lint/suspicious/noArrayIndexKey: memory strings have no identity and are edited in place.
+									<MemoryItem key={i}>
 										<Icon name="emoji_objects" size={15} color={accent} />
-										<span>{m}</span>
+										<MemoryInput
+											rows={2}
+											value={m}
+											maxLength={MEMORY_BYTES_MAX}
+											aria-label={`Memory ${i + 1}`}
+											onChange={(event) => {
+												const value = event.target.value;
+												if (encoder.encode(value).length <= MEMORY_BYTES_MAX) {
+													setP("memories", p.memories.map((memory, index) => index === i ? value : memory));
+												}
+											}}
+										/>
 										<IconBtn
 											type="button"
-											aria-label={`Forget: ${m}`}
+											aria-label={`Delete memory ${i + 1}`}
 											title="Forget"
 											onClick={() => setP("memories", p.memories.filter((_, j) => j !== i))}
 										>
@@ -1228,7 +1325,7 @@ export function FriendEditPage() {
 								</SmallBtn>
 							</AddRow>
 						) : (
-							<Hint>That's the most they can keep in mind at once. New facts replace the oldest.</Hint>
+							<Hint>Delete a memory to make room for a new one.</Hint>
 						)}
 					</Card>
 

@@ -1,10 +1,11 @@
+import { toggleSidebar } from "@/components/layout/Sidebar";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
 import { historyService, modelService } from "@/services";
 import { alpha } from "@/theme/alpha";
-import { THEMES } from "@/theme/themes";
+import { SYSTEM_THEME_ID, THEMES } from "@/theme/themes";
 import { tokens } from "@/theme/tokens";
 import { rankMatches } from "@/utils/fuzzy";
 import { isMac } from "@/utils/platform";
@@ -104,10 +105,24 @@ const Option = styled.button<{ $active: boolean }>`
   svg { flex-shrink: 0; color: ${tokens.colors.onSurfaceVariant}; }
   > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  kbd, small {
+  small {
     flex-shrink: 0;
     font-family: inherit;
     font-size: ${tokens.typography.fontSize.xs};
+    color: ${tokens.colors.onSurfaceVariant};
+  }
+
+  kbd {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 0.375rem;
+    border: 1px solid ${tokens.colors.outlineVariant};
+    border-radius: ${tokens.borderRadius.sm};
+    background: ${tokens.colors.surfaceContainer};
+    font-family: ${tokens.typography.fontFamily.mono};
+    font-size: ${tokens.typography.fontSize["2xs"]};
     color: ${tokens.colors.onSurfaceVariant};
   }
 `;
@@ -136,15 +151,17 @@ interface Entry {
 	group: string;
 	label: string;
 	icon: string;
-	/** Right-hand note: a shortcut or the current state. */
+	/** Right-hand note: the current state ("Active", "On"). */
 	note?: string;
+	/** Keyboard shortcut, shown as a key badge. */
+	shortcut?: string;
 	run: () => void | Promise<void>;
 }
 
 export function CommandPalette() {
 	const navigate = useNavigate();
 	const { showToast } = useToast();
-	const { activeModelId, settings, updateSettings, loadModel } = useAppContext();
+	const { activeModelId, modelStatus, settings, updateSettings, loadModel, unloadModel } = useAppContext();
 	const { allCharacters, activeCharacter, setActiveCharacter } = useCharacters();
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
@@ -248,21 +265,70 @@ export function CommandPalette() {
 	}, [open, activeModelId, loadModel, navigate, showToast]);
 
 	const entries = useMemo<Entry[]>(() => {
-		const go = (id: string, label: string, icon: string, path: string, note?: string): Entry => ({
+		const go = (id: string, label: string, icon: string, path: string, shortcut?: string): Entry => ({
 			id,
 			group: "Go to",
 			label,
 			icon,
-			note,
+			shortcut,
 			run: () => navigate(path),
 		});
+		const airGap = settings?.air_gap === true;
+		const setTheme = (theme: string) =>
+			updateSettings({ theme }).then(
+				() => undefined,
+				() => showToast("Couldn't change the theme", "error"),
+			);
+		const actions: Entry[] = [
+			{
+				id: "action:sidebar",
+				group: "Actions",
+				label: "Show or hide sidebar",
+				icon: "menu_book",
+				shortcut: `${MOD}+B`,
+				run: toggleSidebar,
+			},
+			{
+				id: "action:air-gap",
+				group: "Actions",
+				label: airGap ? "Turn off Air-Gap mode" : "Turn on Air-Gap mode",
+				icon: "shield",
+				note: airGap ? "On" : "Off",
+				run: () =>
+					updateSettings({ air_gap: !airGap }).then(
+						(stored) => showToast(stored.air_gap ? "Air-Gap on" : "Air-Gap off", "info"),
+						() => showToast("Couldn't change Air-Gap mode", "error"),
+					),
+			},
+		];
+		if (modelStatus.kind === "ready") {
+			actions.push({
+				id: "action:unload",
+				group: "Actions",
+				label: "Unload model from memory",
+				icon: "power_settings_new",
+				note: modelStatus.model.name,
+				run: () =>
+					unloadModel().then(
+						() => showToast("Model unloaded", "info"),
+						() => showToast("Couldn't unload the model", "error"),
+					),
+			});
+		}
 		return [
-			{ id: "new", group: "Go to", label: "New chat", icon: "add", note: `${MOD} N`, run: newChat },
-			go("history", "Search chats", "search", "/chat/history", `${MOD} Shift F`),
+			{
+				id: "new",
+				group: "Go to",
+				label: "New chat",
+				icon: "edit_square",
+				shortcut: `${MOD}+N`,
+				run: newChat,
+			},
+			go("history", "Search chats", "search", "/chat/history", `${MOD}+Shift+F`),
 			go("models", "Models", "deployed_code", "/models"),
 			go("store", "Model Store", "storefront", "/store"),
 			go("connectors", "Connectors", "plug", "/connectors"),
-			go("settings", "Settings", "settings", "/settings", `${MOD} ,`),
+			go("settings", "Settings", "settings", "/settings", `${MOD}+,`),
 			go("friend", "New friend", "diversity_3", "/friend/new"),
 			go("character", "New character", "person", "/character/new"),
 			...allCharacters.map((character) => ({
@@ -273,23 +339,46 @@ export function CommandPalette() {
 				note: character.id === activeCharacter?.id ? "Active" : undefined,
 				run: () => setActiveCharacter(character.id),
 			})),
+			...actions,
+			{
+				id: "theme:system",
+				group: "Themes",
+				label: "Match system",
+				icon: "laptop",
+				note: settings?.theme === SYSTEM_THEME_ID ? "Active" : undefined,
+				run: () => setTheme(SYSTEM_THEME_ID),
+			},
 			...THEMES.map((theme) => ({
 				id: `theme:${theme.id}`,
 				group: "Themes",
-				label: theme.name,
+				label: `${theme.name} theme`,
 				icon: "palette",
 				note: theme.id === settings?.theme ? "Active" : undefined,
-				run: () => updateSettings({ theme: theme.id }).then(() => undefined),
+				run: () => setTheme(theme.id),
 			})),
 			...chatEntries,
 			...modelEntries,
 		];
-	}, [allCharacters, activeCharacter?.id, chatEntries, modelEntries, navigate, newChat, setActiveCharacter, settings?.theme, updateSettings]);
+	}, [
+		allCharacters,
+		activeCharacter?.id,
+		chatEntries,
+		modelEntries,
+		modelStatus,
+		navigate,
+		newChat,
+		setActiveCharacter,
+		settings?.theme,
+		settings?.air_gap,
+		showToast,
+		unloadModel,
+		updateSettings,
+	]);
 
 	const shown = useMemo(() => {
 		if (!query.trim()) {
 			const chats = entries.filter((e) => e.group === "Chats").slice(0, RECENT_CHATS);
-			return [...chats, ...entries.filter((e) => e.group === "Go to")];
+			return [...chats, ...entries.filter((e) => e.group === "Go to" || e.group === "Actions")];
 		}
 		const ranked = rankMatches(query, entries, (e) => e.label);
 		const chats = ranked.filter((e) => e.group === "Chats").slice(0, MATCHED_CHATS);
@@ -363,6 +452,7 @@ export function CommandPalette() {
 								<Icon name={entry.icon} size={16} />
 								<span>{entry.label}</span>
 								{entry.note && <small>{entry.note}</small>}
+								{entry.shortcut && <kbd>{entry.shortcut}</kbd>}
 							</Option>
 						</div>
 					))}

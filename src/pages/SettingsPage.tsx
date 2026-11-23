@@ -6,15 +6,17 @@ import { ThemePicker } from "@/components/ui/ThemePicker";
 import { useToast } from "@/components/ui/Toast";
 import { useAppContext } from "@/context/AppContext";
 import { useCharacters } from "@/context/CharacterContext";
+import { parseCloudImport } from "@/utils/cloudImport";
 import { accentOf } from "@/utils/characterAccent";
-import type { BenchmarkResult, Settings } from "@/services/types";
+import { clearChatAssignments } from "@/utils/chatMeta";
+import type { BenchmarkResult, KvCacheQuant, Settings } from "@/services/types";
 import { chatService, dataService, historyService, settingsService } from "@/services";
 import { alpha } from "@/theme/alpha";
 import { FONT_SCALES, type FontSize, isFontSize } from "@/theme/themes";
 import { isMac, isMobile, vibrate } from "@/utils/platform";
 import { type Prefs, setPref, usePrefs } from "@/utils/prefs";
 import { tokens } from "@/theme/tokens";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -30,6 +32,7 @@ const Page = styled.div`
 
 const Section = styled.div`
   background: ${tokens.colors.surfaceContainerLow};
+  border: 1px solid ${tokens.colors.outlineVariant};
   border-radius: ${tokens.borderRadius.lg};
   margin-bottom: 1rem;
   overflow: hidden;
@@ -138,20 +141,30 @@ const ActionRow = styled(ToggleRow)`
 `;
 
 const SectionHeading = styled.h2`
-  font-family: ${tokens.typography.fontFamily.label};
-  font-size: ${tokens.typography.fontSize.xs};
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: ${tokens.typography.fontFamily.headline};
+  font-size: ${tokens.typography.fontSize.base};
   font-weight: ${tokens.typography.fontWeight.bold};
-  color: ${tokens.colors.onSurfaceVariant};
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  color: ${tokens.colors.onSurface};
   margin: 1.5rem 0.25rem 0.5rem;
 
   &:first-child { margin-top: 0; }
 `;
 
+const AppearancePanel = styled(Section)`
+  padding: 0.875rem;
+`;
+
+const SizeLabel = styled.h3`
+  margin-top: 1rem;
+  font-size: ${tokens.typography.fontSize.sm};
+`;
+
 const Segments = styled.div`
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.25rem;
   padding: 0.25rem;
   margin-top: 0.75rem;
@@ -160,53 +173,54 @@ const Segments = styled.div`
 `;
 
 const Segment = styled.button<{ $active: boolean; $scale: number }>`
-  padding: 0.5rem 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  column-gap: 0.375rem;
+  min-height: 44px;
+  padding: 0.375rem 0.25rem;
   border: none;
   border-radius: ${tokens.borderRadius.lg};
   background: ${({ $active }) => ($active ? tokens.colors.primary : "transparent")};
   color: ${({ $active }) => ($active ? tokens.colors.onPrimaryFixed : tokens.colors.onSurfaceVariant)};
   font-family: ${tokens.typography.fontFamily.headline};
   font-weight: ${tokens.typography.fontWeight.bold};
-  font-size: ${({ $scale }) => 14 * $scale}px;
+  font-size: ${tokens.typography.fontSize.xs};
+
+  > span:first-child { font-size: ${({ $scale }) => 16 * $scale}px; }
   cursor: pointer;
   transition: background ${tokens.transitions.fast};
 `;
 
-/* A setting with a handful of fixed choices, shown under its own label. */
-const ChoiceRow = styled.div`
-  padding: 0.75rem 1rem;
+const EngineRow = styled(ToggleRow)`
+  flex-wrap: wrap;
+  > :last-child { margin-left: auto; }
 `;
 
-const ChoiceHead = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.625rem;
-`;
-
-const Choices = styled.div<{ $count: number }>`
-  display: grid;
-  grid-template-columns: repeat(${({ $count }) => $count}, 1fr);
-  gap: 0.25rem;
-  padding: 0.25rem;
-  border-radius: ${tokens.borderRadius.lg};
+const EngineControl = styled.select`
+  max-width: 100%;
+  min-height: 42px;
+  padding: 0.375rem 0.625rem;
   background: ${tokens.colors.surfaceContainerHigh};
+  color: ${tokens.colors.onSurface};
+  border: 1px solid ${tokens.colors.outlineVariant};
+  border-radius: ${tokens.borderRadius.md};
+  font: inherit;
+
+  &:focus-visible { outline: 2px solid ${tokens.colors.primary}; }
+  &:disabled { opacity: 0.6; }
 `;
 
-const Choice = styled.button<{ $active: boolean }>`
-  min-height: 36px;
-  padding: 0.25rem;
-  border: none;
-  border-radius: ${tokens.borderRadius.md};
-  background: ${({ $active }) => ($active ? tokens.colors.primary : "transparent")};
-  color: ${({ $active }) => ($active ? tokens.colors.onPrimaryFixed : tokens.colors.onSurfaceVariant)};
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.semibold};
-  cursor: pointer;
-  transition: background ${tokens.transitions.fast};
+const LayerInput = styled(EngineControl)`
+  width: 5rem;
+`;
 
-  &:disabled { opacity: 0.5; cursor: default; }
-  &:focus-visible { outline: 2px solid ${tokens.colors.primary}; outline-offset: 1px; }
+const PrivacyPanel = styled(Section)`
+  > :first-child {
+    background: ${alpha(tokens.colors.primary, "12")};
+    border-bottom: 1px solid ${tokens.colors.outlineVariant};
+  }
 `;
 
 const Result = styled.div`
@@ -225,20 +239,8 @@ const Result = styled.div`
   }
 `;
 
-const CONTEXT_CHOICES = [
-	{ value: 0, label: "Auto" },
-	{ value: 4096, label: "4K" },
-	{ value: 8192, label: "8K" },
-	{ value: 16384, label: "16K" },
-];
-
-const THREAD_CHOICES = [
-	{ value: 0, label: "Auto" },
-	{ value: 2, label: "2" },
-	{ value: 4, label: "4" },
-	{ value: 6, label: "6" },
-	{ value: 8, label: "8" },
-];
+const CONTEXT_CHOICES = [0, 2048, 4096, 8192, 16384, 32768];
+const THREAD_CHOICES = Array.from({ length: 17 }, (_, i) => i);
 
 /** A plain-language read of a writing speed, in tokens per second. */
 function speedVerdict(tokensPerSecond: number): string {
@@ -268,7 +270,14 @@ const FONT_LABELS: Record<FontSize, string> = {
 	xlarge: "Extra large text",
 };
 
-type ToggleKey = "wifi_only" | "save_history" | "show_speed";
+const FONT_NAMES: Record<FontSize, string> = {
+	small: "Small",
+	medium: "Default",
+	large: "Large",
+	xlarge: "XL",
+};
+
+type ToggleKey = "wifi_only" | "save_history" | "show_speed" | "air_gap" | "flash_attention" | "strip_thinking_history";
 
 /* ── Component ── */
 
@@ -293,7 +302,9 @@ export function SettingsPage() {
 	const { showConfirm } = useConfirm();
 	const { showToast } = useToast();
 	const [pickerOpen, setPickerOpen] = useState(false);
-	const [busy, setBusy] = useState<"export" | "import" | null>(null);
+	const [busy, setBusy] = useState<"export" | "import" | "cloud" | null>(null);
+	const cloudInput = useRef<HTMLInputElement>(null);
+	const [gpuDraft, setGpuDraft] = useState<string | null>(null);
 	const [autoThreads, setAutoThreads] = useState<number | null>(null);
 	const [reloadingHere, setReloading] = useState(false);
 	// The engine reload is unload + load; any load elsewhere counts too.
@@ -318,8 +329,10 @@ export function SettingsPage() {
 		setPending((p) => ({ ...p, ...patch }));
 		try {
 			await updateSettings(patch);
+			return true;
 		} catch {
-			showToast("Couldn't save that setting. Nothing was changed.", "error");
+			showToast("Couldn't save that setting.", "error");
+			return false;
 		} finally {
 			setPending((p) => {
 				const next = { ...p };
@@ -329,28 +342,20 @@ export function SettingsPage() {
 		}
 	};
 
-	const toggle = (key: ToggleKey) => {
-		vibrate(5);
-		save({ [key]: !current(key) });
-	};
-
-	/**
-	 * Context size and thread count are fixed when a model loads, so a
-	 * change is applied by reloading the model that is in use.
-	 */
 	const saveEngineSetting = async (patch: Partial<Settings>) => {
+		if (testing || reloading) return;
 		vibrate(5);
-		await save(patch);
-		setBenchmark(null);
-		if (!activeModelId || reloading) return;
 		setReloading(true);
 		try {
+			if (!(await save(patch))) return;
+			setBenchmark(null);
+			if (!activeModelId) return;
 			await unloadModel();
 			await loadModel(activeModelId);
 			showToast(`${activeModel ?? "Model"} reloaded with the new setting`, "success");
 		} catch (err) {
 			showToast(
-				err instanceof Error ? err.message : "Couldn't reload the model with that setting",
+				typeof err === "string" ? err : err instanceof Error ? err.message : "Couldn't reload the model with that setting",
 				"error",
 			);
 		} finally {
@@ -385,6 +390,12 @@ export function SettingsPage() {
 			showToast("Chat history cleared", "info");
 		} catch {
 			showToast("Couldn't clear chat history", "error");
+			return;
+		}
+		try {
+			clearChatAssignments(window.localStorage);
+		} catch {
+			showToast("Couldn't clear the saved pins and folder assignments.", "error");
 		}
 	};
 
@@ -439,6 +450,39 @@ export function SettingsPage() {
 		}
 	};
 
+	const handleCloudImport = async (file: File) => {
+		if (busy) return;
+		setBusy("cloud");
+		try {
+			const conversations = parseCloudImport(await file.text());
+			const existing = new Set((await historyService.getConversations()).map((chat) => chat.id.toLowerCase()));
+			let imported = 0;
+			let skipped = 0;
+			let failed = 0;
+			for (const chat of conversations) {
+				const id = chat.id.toLowerCase();
+				if (existing.has(id)) {
+					skipped += 1;
+					continue;
+				}
+				try {
+					await historyService.saveConversation(chat);
+					existing.add(id);
+					imported += 1;
+				} catch {
+					failed += 1;
+				}
+			}
+			const summary = [`${imported} imported`, ...(skipped ? [`${skipped} already saved`] : []),
+				...(failed ? [`${failed} couldn't be saved`] : [])].join(", ");
+			showToast(summary, failed ? "error" : "success");
+		} catch (err) {
+			showToast(err instanceof Error ? err.message : "Couldn't import those conversations.", "error");
+		} finally {
+			setBusy(null);
+		}
+	};
+
 	if (!settings) {
 		return (
 			<AppLayout title="Settings">
@@ -463,27 +507,43 @@ export function SettingsPage() {
 
 	const fontSize = isFontSize(current("font_size")) ? (current("font_size") as FontSize) : "medium";
 
-	const toggleRow = (key: ToggleKey, icon: string, title: string, sub: string) => (
-		<ToggleRow>
-			<RowLeft>
-				<RowIcon>
-					<Icon name={icon} size={18} color={tokens.colors.primary} />
-				</RowIcon>
-				<RowText>
-					<RowTitle>{title}</RowTitle>
-					<RowSub>{sub}</RowSub>
-				</RowText>
-			</RowLeft>
-			<Toggle
-				type="button"
-				$on={!!current(key)}
-				onClick={() => toggle(key)}
-				role="switch"
-				aria-checked={!!current(key)}
-				aria-label={title}
-			/>
-		</ToggleRow>
-	);
+	const engineBusy = reloading || testing;
+	const contextSize = current("context_size") ?? 0;
+	const gpuLayers = current("gpu_layers") ?? 0;
+	const toggleRow = (key: ToggleKey, icon: string, title: string, sub: string, defaultOn = false) => {
+		const enabled = current(key) ?? defaultOn;
+		const affectsLoadedModel = key === "flash_attention";
+		return (
+			<ToggleRow>
+				<RowLeft>
+					<RowIcon>
+						<Icon name={icon} size={18} color={tokens.colors.primary} />
+					</RowIcon>
+					<RowText>
+						<RowTitle>{title}</RowTitle>
+						<RowSub id={`setting-${key}-help`}>{sub}</RowSub>
+					</RowText>
+				</RowLeft>
+				<Toggle
+					type="button"
+					$on={enabled}
+					disabled={key in pending || (affectsLoadedModel && engineBusy)}
+					onClick={() => {
+						if (affectsLoadedModel) {
+							void saveEngineSetting({ [key]: !enabled });
+						} else {
+							vibrate(5);
+							void save({ [key]: !enabled });
+						}
+					}}
+					role="switch"
+					aria-checked={enabled}
+					aria-describedby={`setting-${key}-help`}
+					aria-label={title}
+				/>
+			</ToggleRow>
+		);
+	};
 
 	type BoolPref = { [K in keyof Prefs]: Prefs[K] extends boolean ? K : never }[keyof Prefs];
 	const prefRow = (key: BoolPref, icon: string, title: string, sub: string) => (
@@ -546,26 +606,161 @@ export function SettingsPage() {
 	return (
 		<AppLayout title="Settings">
 			<Page>
-				<SectionHeading>Appearance</SectionHeading>
-				<ThemePicker value={current("theme") ?? "obsidian"} onChange={(theme) => save({ theme })} />
-				<Segments role="radiogroup" aria-label="Text size">
-					{(Object.keys(FONT_SCALES) as FontSize[]).map((size) => (
-						<Segment
-							key={size}
-							type="button"
-							role="radio"
-							aria-checked={fontSize === size}
-							aria-label={FONT_LABELS[size]}
-							$active={fontSize === size}
-							$scale={FONT_SCALES[size]}
-							onClick={() => save({ font_size: size })}
-						>
-							Aa
-						</Segment>
-					))}
-				</Segments>
+				<SectionHeading><Icon name="palette" size={18} color={tokens.colors.primary} />Appearance</SectionHeading>
+				<AppearancePanel>
+					<ThemePicker value={current("theme") ?? "karakoram"} onChange={(theme) => save({ theme })} />
+					<SizeLabel>Text size</SizeLabel>
+					<Segments role="radiogroup" aria-label="Text size">
+						{(Object.keys(FONT_SCALES) as FontSize[]).map((size) => (
+							<Segment
+								key={size}
+								type="button"
+								role="radio"
+								aria-checked={fontSize === size}
+								aria-label={FONT_LABELS[size]}
+								$active={fontSize === size}
+								$scale={FONT_SCALES[size]}
+								onClick={() => save({ font_size: size })}
+							>
+								<span aria-hidden="true">Aa</span>
+								<span>{FONT_NAMES[size]}</span>
+							</Segment>
+						))}
+					</Segments>
+				</AppearancePanel>
 
-				<SectionHeading>Chat</SectionHeading>
+				<SectionHeading>
+					<Icon name="memory" size={18} color={tokens.colors.primary} />
+					Inference Engine &amp; Memory
+				</SectionHeading>
+				<Section>
+					<EngineRow>
+						<RowText>
+							<RowTitle as="label" htmlFor="context-window">Context Window</RowTitle>
+							<RowSub id="context-window-help">
+								Larger windows use more RAM.
+								{activeModelInfo ? ` Current model uses ${activeModelInfo.context_length.toLocaleString()} tokens.` : ""}
+							</RowSub>
+						</RowText>
+						<EngineControl
+							id="context-window"
+							aria-describedby="context-window-help"
+							value={contextSize}
+							disabled={engineBusy}
+							onChange={(event) => void saveEngineSetting({ context_size: Number(event.target.value) })}
+						>
+							{!CONTEXT_CHOICES.includes(contextSize) && <option value={contextSize}>{contextSize.toLocaleString()} tokens</option>}
+							{CONTEXT_CHOICES.map((value) => (
+								<option key={value} value={value}>{value ? `${value.toLocaleString()} tokens` : "Auto"}</option>
+							))}
+						</EngineControl>
+					</EngineRow>
+					<EngineRow>
+						<RowText>
+							<RowTitle as="label" htmlFor="kv-cache">KV Cache Quantization</RowTitle>
+							<RowSub id="kv-cache-help">Choose how much memory the conversation cache uses.</RowSub>
+						</RowText>
+						<EngineControl
+							id="kv-cache"
+							aria-describedby="kv-cache-help"
+							value={current("kv_cache_quant") ?? "q8_0"}
+							disabled={engineBusy}
+							onChange={(event) => void saveEngineSetting({ kv_cache_quant: event.target.value as KvCacheQuant })}
+						>
+							<option value="q8_0">Q8_0 Balanced (−47% RAM)</option>
+							<option value="f16">F16 Full Precision</option>
+							<option value="q4_0">Q4_0 Ultra-Compact</option>
+						</EngineControl>
+					</EngineRow>
+					{toggleRow("flash_attention", "bolt", "Flash Attention", "Speeds up attention and reduces memory use where supported.", true)}
+					<EngineRow>
+						<RowText>
+							<RowTitle as="label" htmlFor="gpu-layers">GPU Offload Layers</RowTitle>
+							<RowSub id="gpu-layers-help">
+								0 runs on the CPU. Neurix retries on the CPU if GPU loading fails. Applies when you leave the field.
+							</RowSub>
+						</RowText>
+						<LayerInput
+							as="input"
+							id="gpu-layers"
+							aria-describedby="gpu-layers-help"
+							type="number"
+							min={0}
+							max={99}
+							step={1}
+							value={gpuDraft ?? gpuLayers}
+							disabled={engineBusy}
+							onChange={(event) => setGpuDraft(event.currentTarget.value)}
+							onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}
+							onBlur={() => {
+								setGpuDraft(null);
+								if (!gpuDraft) return;
+								const value = Math.min(99, Math.max(0, Math.round(Number(gpuDraft))));
+								if (value !== gpuLayers) void saveEngineSetting({ gpu_layers: value });
+							}}
+						/>
+					</EngineRow>
+					<EngineRow>
+						<RowText>
+							<RowTitle as="label" htmlFor="inference-threads">Inference Threads</RowTitle>
+							<RowSub id="inference-threads-help">
+								{autoThreads ? `Auto uses ${autoThreads} fast cores on this device.` : "Auto uses this device's fast cores."}
+							</RowSub>
+						</RowText>
+						<EngineControl
+							id="inference-threads"
+							aria-describedby="inference-threads-help"
+							value={current("threads") ?? 0}
+							disabled={engineBusy}
+							onChange={(event) => void saveEngineSetting({ threads: Number(event.target.value) })}
+						>
+							{THREAD_CHOICES.map((value) => <option key={value} value={value}>{value || "Auto"}</option>)}
+						</EngineControl>
+					</EngineRow>
+					{toggleRow(
+						"strip_thinking_history",
+						"psychology",
+						"Strip <think> scratchpad from prompt history",
+						"Keep reasoning visible in chat while leaving it out of future prompts.",
+						true,
+					)}
+
+					{actionRow(
+						"speed",
+						testing ? "Measuring…" : reloading ? "Reloading model…" : "Run a speed test",
+						activeModel
+							? `Measures ${activeModel} on this device (about 15 seconds)`
+							: "Load a model first, then measure it here",
+						handleSpeedTest,
+						{ disabled: !activeModelId || testing || reloading },
+					)}
+					{benchmark && (
+						<Result role="status">
+							<strong>{benchmark.tokens_per_second.toFixed(1)}</strong> tokens per second writing ·{" "}
+							<strong>{benchmark.prompt_tokens_per_second.toFixed(0)}</strong> reading ·{" "}
+							{benchmark.threads} threads
+							<br />
+							{speedVerdict(benchmark.tokens_per_second)}
+						</Result>
+					)}
+				</Section>
+
+				<SectionHeading>
+					<Icon name="shield" size={18} color={tokens.colors.primary} />
+					Privacy &amp; Air-Gap Lock
+				</SectionHeading>
+				<PrivacyPanel>
+					{toggleRow(
+						"air_gap",
+						"cloud_off",
+						"Air-Gap Mode",
+						"Blocks Hugging Face model downloads and Hub inspection, Gmail IMAP, and GitHub fetches at the Rust backend boundary.",
+					)}
+					{infoRow("cloud_off", "Runs on this device", "Models answer locally. Prompts and replies never leave it")}
+					{infoRow("verified_user", "Telemetry", "No analytics, tracking, or account")}
+				</PrivacyPanel>
+
+				<SectionHeading>Chat &amp; Companions</SectionHeading>
 				<Section>
 					<ActionRow as="button" type="button" onClick={() => setPickerOpen(true)}>
 						<RowLeft>
@@ -654,102 +849,6 @@ export function SettingsPage() {
 					)}
 				</Section>
 
-				<SectionHeading>Privacy</SectionHeading>
-				<Section>
-					{infoRow("cloud_off", "Runs on this device", "Models answer locally. Prompts and replies never leave it")}
-					{infoRow("wifi", "Network use", "To download models, and for connectors you turn on")}
-					{infoRow("verified_user", "Telemetry", "None. No analytics, no tracking, no account")}
-				</Section>
-
-				<SectionHeading>Performance</SectionHeading>
-				<Section>
-					<ChoiceRow>
-						<ChoiceHead>
-							<RowIcon>
-								<Icon name="memory" size={18} color={tokens.colors.primary} />
-							</RowIcon>
-							<RowText>
-								<RowTitle>Conversation memory</RowTitle>
-								<RowSub>
-									How much of a chat the model keeps in mind. Larger uses more RAM.
-									{activeModelInfo
-										? ` Now: ${activeModelInfo.context_length.toLocaleString()} tokens.`
-										: ""}
-								</RowSub>
-							</RowText>
-						</ChoiceHead>
-						<Choices $count={CONTEXT_CHOICES.length} role="radiogroup" aria-label="Conversation memory">
-							{CONTEXT_CHOICES.map((choice) => {
-								const active = (current("context_size") ?? 0) === choice.value;
-								return (
-									<Choice
-										key={choice.value}
-										type="button"
-										role="radio"
-										aria-checked={active}
-										$active={active}
-										disabled={reloading || testing}
-										onClick={() => !active && saveEngineSetting({ context_size: choice.value })}
-									>
-										{choice.label}
-									</Choice>
-								);
-							})}
-						</Choices>
-					</ChoiceRow>
-					<ChoiceRow>
-						<ChoiceHead>
-							<RowIcon>
-								<Icon name="bolt" size={18} color={tokens.colors.primary} />
-							</RowIcon>
-							<RowText>
-								<RowTitle>Processor threads</RowTitle>
-								<RowSub>
-									{autoThreads
-										? `Auto uses this device's ${autoThreads} fast cores. More is not always faster.`
-										: "Auto uses this device's fast cores. More is not always faster."}
-								</RowSub>
-							</RowText>
-						</ChoiceHead>
-						<Choices $count={THREAD_CHOICES.length} role="radiogroup" aria-label="Processor threads">
-							{THREAD_CHOICES.map((choice) => {
-								const active = (current("threads") ?? 0) === choice.value;
-								return (
-									<Choice
-										key={choice.value}
-										type="button"
-										role="radio"
-										aria-checked={active}
-										$active={active}
-										disabled={reloading || testing}
-										onClick={() => !active && saveEngineSetting({ threads: choice.value })}
-									>
-										{choice.label}
-									</Choice>
-								);
-							})}
-						</Choices>
-					</ChoiceRow>
-					{actionRow(
-						"speed",
-						testing ? "Measuring…" : reloading ? "Reloading model…" : "Run a speed test",
-						activeModel
-							? `Measures ${activeModel} on this device (about 15 seconds)`
-							: "Load a model first, then measure it here",
-						handleSpeedTest,
-						{ disabled: !activeModelId || testing || reloading },
-					)}
-					{benchmark && (
-						<Result role="status">
-							<strong>{benchmark.tokens_per_second.toFixed(1)}</strong> tokens per second writing ·{" "}
-							<strong>{benchmark.prompt_tokens_per_second.toFixed(0)}</strong> reading ·{" "}
-							{benchmark.threads} threads
-							<br />
-							{speedVerdict(benchmark.tokens_per_second)}
-						</Result>
-					)}
-				</Section>
-
 				<SectionHeading>Downloads</SectionHeading>
 				<Section>
 					{toggleRow(
@@ -760,7 +859,7 @@ export function SettingsPage() {
 					)}
 				</Section>
 
-				<SectionHeading>Your data</SectionHeading>
+				<SectionHeading><Icon name="upload" size={18} color={tokens.colors.primary} />Data, Backup &amp; Cloud Migration</SectionHeading>
 				<Section>
 					{actionRow(
 						"upload",
@@ -776,6 +875,25 @@ export function SettingsPage() {
 						handleImport,
 						{ disabled: busy !== null },
 					)}
+					<input
+						hidden
+						ref={cloudInput}
+						type="file"
+						accept=".json,application/json"
+						onChange={(event) => {
+							const file = event.currentTarget.files?.[0];
+							event.currentTarget.value = "";
+							if (file) void handleCloudImport(file);
+						}}
+					/>
+					{actionRow(
+						"download",
+						busy === "cloud" ? "Importing conversations…" : "Import ChatGPT / Claude (.json)",
+						"Copy text turns from a conversations export into local chat history.",
+						() => cloudInput.current?.click(),
+						{ disabled: busy !== null },
+					)}
+
 					{actionRow("delete_sweep", "Clear chat history", "Delete all saved conversations", handleClearHistory, {
 						danger: true,
 					})}

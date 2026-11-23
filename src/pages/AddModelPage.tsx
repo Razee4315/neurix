@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Icon } from "@/components/ui/Icon";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
+import { useAppContext } from "@/context/AppContext";
 import { modelService, settingsService } from "@/services";
 import type { HubFile, HubModel } from "@/services/types";
 import { alpha } from "@/theme/alpha";
@@ -8,88 +9,284 @@ import { tokens } from "@/theme/tokens";
 import { useModelDownload } from "@/utils/useModelDownload";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { type FormEvent, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
 /** Hugging Face's list of GGUF chat models, most popular first. */
-const BROWSE_URL = "https://huggingface.co/models?library=gguf&pipeline_tag=text-generation&sort=trending";
+const BROWSE_URL =
+	"https://huggingface.co/models?library=gguf&pipeline_tag=text-generation&sort=trending";
+
+const SAMPLE_REPOS = [
+	{
+		label: "Qwen 3.5 4B GGUF",
+		repo: "unsloth/Qwen3.5-4B-GGUF",
+		url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF",
+	},
+	{
+		label: "Gemma 4 E2B GGUF",
+		repo: "google/gemma-4-E2B-it-qat-q4_0-gguf",
+		url: "https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf",
+	},
+	{
+		label: "Llama 3.2 3B GGUF",
+		repo: "bartowski/Llama-3.2-3B-Instruct-GGUF",
+		url: "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF",
+	},
+] as const;
+
+const QUANT_GUIDE = [
+	{
+		code: "Q4_K_M",
+		badge: "Recommended default",
+		summary:
+			"4-bit k-quant medium. Best balance of memory footprint and answer quality; streams smoothly on both multi-core CPU and GPU offload.",
+	},
+	{
+		code: "Q5_K_M",
+		badge: "Higher accuracy",
+		summary:
+			"5-bit k-quant medium (~18% larger than Q4_K_M). Recovers subtle coding and math accuracy when your device has extra RAM or VRAM headroom.",
+	},
+	{
+		code: "Q8_0",
+		badge: "Near-lossless 8-bit",
+		summary:
+			"8-bit weights (~2× the memory of Q4_K_M). Matches unquantized quality, but requires twice the memory bandwidth—best with GPU layer offload.",
+	},
+	{
+		code: "IQ4_XS",
+		badge: "Ultra-compact I-quant",
+		summary:
+			"Importance-matrix 4-bit extra-small. Fits larger parameter models into tight RAM budgets, with slightly higher CPU unpacking work per token.",
+	},
+] as const;
 
 /* ── Styles ── */
 
 const Page = styled.div`
-  max-width: 44rem;
-  margin: 0 auto;
-  padding: 1.25rem;
+	max-width: 44rem;
+	margin: 0 auto;
+	padding: 1.25rem;
+`;
+
+const AirGapBanner = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	margin-bottom: 1rem;
+	padding: 0.75rem 1rem;
+	border-radius: ${tokens.borderRadius.lg};
+	background: ${alpha(tokens.colors.secondary, "14")};
+	border: 1px solid ${alpha(tokens.colors.secondary, "45")};
+	color: ${tokens.colors.onSurface};
+	font-size: ${tokens.typography.fontSize.sm};
+`;
+
+const AirGapText = styled.div`
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex: 1;
+	min-width: 14rem;
+
+	strong {
+		font-weight: ${tokens.typography.fontWeight.bold};
+		color: ${tokens.colors.secondary};
+	}
+`;
+
+const AirGapBtn = styled.button`
+	padding: 0.375rem 0.75rem;
+	border-radius: ${tokens.borderRadius.md};
+	border: 1px solid ${tokens.colors.outlineVariant};
+	background: ${tokens.colors.surfaceContainerHigh};
+	color: ${tokens.colors.onSurface};
+	font-size: ${tokens.typography.fontSize.xs};
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	cursor: pointer;
+
+	&:hover {
+		background: ${tokens.colors.surfaceContainerHighest};
+	}
 `;
 
 const Intro = styled.p`
-  font-size: ${tokens.typography.fontSize.base};
-  color: ${tokens.colors.onSurfaceVariant};
-  line-height: ${tokens.typography.lineHeight.relaxed};
+	font-size: ${tokens.typography.fontSize.base};
+	color: ${tokens.colors.onSurfaceVariant};
+	line-height: ${tokens.typography.lineHeight.relaxed};
 `;
 
 const Steps = styled.ol`
-  margin: 0.875rem 0 0;
-  padding-left: 1.25rem;
-  font-size: ${tokens.typography.fontSize.sm};
-  color: ${tokens.colors.onSurfaceVariant};
-  line-height: ${tokens.typography.lineHeight.relaxed};
+	margin: 0.75rem 0 0;
+	padding-left: 1.25rem;
+	font-size: ${tokens.typography.fontSize.sm};
+	color: ${tokens.colors.onSurfaceVariant};
+	line-height: ${tokens.typography.lineHeight.relaxed};
 
-  li + li { margin-top: 0.25rem; }
+	li + li {
+		margin-top: 0.25rem;
+	}
 `;
 
 const BrowseButton = styled.button`
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.875rem;
-  min-height: 36px;
-  padding: 0 0.875rem;
-  border-radius: ${tokens.borderRadius.md};
-  border: 1px solid ${tokens.colors.outlineVariant};
-  background: transparent;
-  color: ${tokens.colors.onSurface};
-  font-size: ${tokens.typography.fontSize.sm};
-  font-weight: ${tokens.typography.fontWeight.semibold};
-  cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin-top: 0.875rem;
+	min-height: 36px;
+	padding: 0 0.875rem;
+	border-radius: ${tokens.borderRadius.md};
+	border: 1px solid ${tokens.colors.outlineVariant};
+	background: transparent;
+	color: ${tokens.colors.onSurface};
+	font-size: ${tokens.typography.fontSize.sm};
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	cursor: pointer;
 
-  &:hover { background: ${tokens.colors.surfaceContainerHigh}; }
+	&:hover {
+		background: ${tokens.colors.surfaceContainerHigh};
+	}
 `;
 
 const Form = styled.form`
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 1.25rem;
+	display: flex;
+	gap: 0.5rem;
+	margin-top: 1.125rem;
 `;
 
 const LinkInput = styled.input`
-  flex: 1;
-  min-width: 0;
-  height: 44px;
-  padding: 0 0.875rem;
-  background: ${tokens.colors.surfaceContainerHighest};
-  border: none;
-  border-radius: ${tokens.borderRadius.lg};
-  font-size: ${tokens.typography.fontSize.base};
-  color: ${tokens.colors.onSurface};
-  outline: none;
+	flex: 1;
+	min-width: 0;
+	height: 44px;
+	padding: 0 0.875rem;
+	background: ${tokens.colors.surfaceContainerHighest};
+	border: 1px solid ${tokens.colors.outlineVariant};
+	border-radius: ${tokens.borderRadius.lg};
+	font-size: ${tokens.typography.fontSize.base};
+	color: ${tokens.colors.onSurface};
+	outline: none;
 
-  &::placeholder { color: ${tokens.colors.outline}; }
-  &:focus { box-shadow: inset 0 -2px 0 ${tokens.colors.primary}; }
+	&::placeholder {
+		color: ${tokens.colors.outline};
+	}
+	&:focus {
+		border-color: ${tokens.colors.primary};
+		box-shadow: inset 0 -2px 0 ${tokens.colors.primary};
+	}
 `;
 
 const CheckButton = styled.button`
-  flex-shrink: 0;
-  height: 44px;
-  padding: 0 1.125rem;
-  border-radius: ${tokens.borderRadius.lg};
-  border: none;
-  background: ${tokens.colors.primary};
-  color: ${tokens.colors.onPrimaryFixed};
-  font-weight: ${tokens.typography.fontWeight.bold};
-  font-size: ${tokens.typography.fontSize.sm};
-  cursor: pointer;
+	flex-shrink: 0;
+	height: 44px;
+	padding: 0 1.125rem;
+	border-radius: ${tokens.borderRadius.lg};
+	border: none;
+	background: ${tokens.colors.primary};
+	color: ${tokens.colors.onPrimaryFixed};
+	font-weight: ${tokens.typography.fontWeight.bold};
+	font-size: ${tokens.typography.fontSize.sm};
+	cursor: pointer;
 
-  &:disabled { opacity: 0.55; cursor: default; }
+	&:disabled {
+		opacity: 0.55;
+		cursor: default;
+	}
+`;
+
+const ExamplesBlock = styled.div`
+	margin-top: 0.75rem;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.375rem;
+`;
+
+const ExamplesLabel = styled.span`
+	font-size: ${tokens.typography.fontSize.xs};
+	color: ${tokens.colors.onSurfaceVariant};
+	margin-right: 0.25rem;
+`;
+
+const ExampleChip = styled.button`
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	min-height: 30px;
+	padding: 0.2rem 0.625rem;
+	border-radius: ${tokens.borderRadius.md};
+	border: 1px solid ${tokens.colors.outlineVariant};
+	background: ${tokens.colors.surfaceContainerLow};
+	color: ${tokens.colors.onSurface};
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-size: 11px;
+	cursor: pointer;
+	transition: all ${tokens.transitions.fast};
+
+	&:hover {
+		border-color: ${tokens.colors.primary};
+		background: ${tokens.colors.surfaceContainerHigh};
+	}
+`;
+
+const QuantGuideSection = styled.section`
+	margin-top: 1.75rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.625rem;
+`;
+
+const QuantGuideGrid = styled.div`
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.625rem;
+
+	@media (max-width: 540px) {
+		grid-template-columns: 1fr;
+	}
+`;
+
+const QuantCard = styled.div`
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	padding: 0.875rem;
+	border-radius: ${tokens.borderRadius.lg};
+	background: ${tokens.colors.surfaceContainerLow};
+	border: 1px solid ${tokens.colors.outlineVariant};
+`;
+
+const QuantCardHead = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+`;
+
+const QuantCode = styled.span`
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-size: ${tokens.typography.fontSize.sm};
+	font-weight: ${tokens.typography.fontWeight.bold};
+	color: ${tokens.colors.primary};
+`;
+
+const QuantBadge = styled.span`
+	font-size: 10px;
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	padding: 0.15rem 0.45rem;
+	border-radius: ${tokens.borderRadius.sm};
+	background: ${tokens.colors.surfaceContainerHigh};
+	color: ${tokens.colors.onSurfaceVariant};
+`;
+
+const QuantText = styled.p`
+	margin: 0;
+	font-size: ${tokens.typography.fontSize.xs};
+	line-height: 1.5;
+	color: ${tokens.colors.onSurfaceVariant};
 `;
 
 const Notice = styled.div<{ $tone: "warn" | "info" }>`
@@ -258,6 +455,8 @@ type Status =
 	| { kind: "ready"; model: HubModel };
 
 export function AddModelPage() {
+	const navigate = useNavigate();
+	const { settings } = useAppContext();
 	const download = useModelDownload();
 	const [link, setLink] = useState("");
 	const [status, setStatus] = useState<Status>({ kind: "idle" });
@@ -267,24 +466,37 @@ export function AddModelPage() {
 	const [deviceMemory, setDeviceMemory] = useState<number | null>(null);
 
 	useEffect(() => {
-		settingsService.getDeviceInfo()
+		settingsService
+			.getDeviceInfo()
 			.then((info) => setDeviceMemory(info.total_memory_bytes))
 			.catch(() => {});
 	}, []);
 
 	const ramGb = deviceMemory ? Math.ceil(deviceMemory / 1024 ** 3) : null;
+	const airGapped = Boolean(settings?.air_gap);
 
-	const check = async (e: FormEvent) => {
-		e.preventDefault();
-		if (!link.trim() || status.kind === "checking") return;
+	const inspectTarget = async (targetLink: string) => {
+		if (!targetLink.trim() || status.kind === "checking") return;
 		setStatus({ kind: "checking" });
 		setAddError(null);
 		try {
-			const model = await modelService.inspectHfLink(link);
+			const model = await modelService.inspectHfLink(targetLink);
 			setSelected(model.selected);
 			setStatus({ kind: "ready", model });
 		} catch (err) {
 			setStatus({ kind: "error", message: errorText(err) });
+		}
+	};
+
+	const check = async (e: FormEvent) => {
+		e.preventDefault();
+		await inspectTarget(link);
+	};
+
+	const pickSample = (sampleUrl: string) => {
+		setLink(sampleUrl);
+		if (!airGapped) {
+			void inspectTarget(sampleUrl);
 		}
 	};
 
@@ -311,16 +523,46 @@ export function AddModelPage() {
 		<AppLayout title="Add from Hugging Face" back="/store">
 			<OfflineBanner />
 			<Page>
+				{airGapped && (
+					<AirGapBanner role="status">
+						<AirGapText>
+							<Icon
+								name="enhanced_encryption"
+								size={16}
+								color={tokens.colors.secondary}
+							/>
+							<span>
+								<strong>Air-Gap Mode Active:</strong> Outbound Hugging Face
+								inspection and model downloads are disabled while Air-Gap Lock
+								is enabled.
+							</span>
+						</AirGapText>
+						<AirGapBtn type="button" onClick={() => navigate("/settings")}>
+							Open Settings
+						</AirGapBtn>
+					</AirGapBanner>
+				)}
+
 				<Intro>
-					Neurix can run most chat models published on Hugging Face in the GGUF format, not only the
-					ones in the store.
+					Neurix can run most chat models published on Hugging Face in the GGUF
+					format, not only the ones in the store.
 				</Intro>
 				<Steps>
-					<li>Find a model on Hugging Face. Its name usually ends in &ldquo;GGUF&rdquo;.</li>
+					<li>
+						Find a model on Hugging Face. Its name usually ends in
+						&ldquo;GGUF&rdquo;.
+					</li>
 					<li>Copy the link of its page, or of one of its .gguf files.</li>
-					<li>Paste it below. Neurix checks that it will run on this device before anything downloads.</li>
+					<li>
+						Paste it below. Neurix checks that it will run on this device before
+						anything downloads.
+					</li>
 				</Steps>
-				<BrowseButton type="button" onClick={() => openUrl(BROWSE_URL).catch(() => {})}>
+				<BrowseButton
+					type="button"
+					onClick={() => openUrl(BROWSE_URL).catch(() => {})}
+					disabled={airGapped}
+				>
 					<Icon name="open_in_new" size={14} />
 					Browse GGUF models on Hugging Face
 				</BrowseButton>
@@ -336,11 +578,29 @@ export function AddModelPage() {
 						value={link}
 						onChange={(e) => setLink(e.target.value)}
 						aria-label="Hugging Face link"
+						disabled={airGapped}
 					/>
-					<CheckButton type="submit" disabled={!link.trim() || status.kind === "checking"}>
+					<CheckButton
+						type="submit"
+						disabled={!link.trim() || status.kind === "checking" || airGapped}
+					>
 						{status.kind === "checking" ? "Checking…" : "Check"}
 					</CheckButton>
 				</Form>
+
+				<ExamplesBlock>
+					<ExamplesLabel>Popular GGUF examples:</ExamplesLabel>
+					{SAMPLE_REPOS.map((sample) => (
+						<ExampleChip
+							key={sample.repo}
+							type="button"
+							onClick={() => pickSample(sample.url)}
+						>
+							<Icon name="link" size={12} color={tokens.colors.primary} />
+							{sample.label}
+						</ExampleChip>
+					))}
+				</ExamplesBlock>
 
 				{status.kind === "error" && (
 					<Notice $tone="warn" role="alert">
@@ -363,8 +623,9 @@ export function AddModelPage() {
 							<Notice $tone="warn" role="note">
 								<Icon name="warning" size={16} color={tokens.colors.error} />
 								<span>
-									This model has no chat format built in, so it may not hold a conversation well.
-									Models with &ldquo;Instruct&rdquo; or &ldquo;it&rdquo; in their name usually do.
+									This model has no chat format built in, so it may not hold a
+									conversation well. Models with &ldquo;Instruct&rdquo; or
+									&ldquo;it&rdquo; in their name usually do.
 								</span>
 							</Notice>
 						)}
@@ -403,20 +664,53 @@ export function AddModelPage() {
 
 						{addError && (
 							<Notice $tone="warn" role="alert">
-								<Icon name="error_outline" size={16} color={tokens.colors.error} />
+								<Icon
+									name="error_outline"
+									size={16}
+									color={tokens.colors.error}
+								/>
 								<span>{addError}</span>
 							</Notice>
 						)}
 
-						<AddButton type="button" onClick={add} disabled={!chosen || adding}>
-							{adding ? "Checking the file…" : chosen ? `Download · ${chosen.size_label}` : "Choose a file"}
+						<AddButton
+							type="button"
+							onClick={add}
+							disabled={!chosen || adding || airGapped}
+						>
+							{adding
+								? "Checking the file…"
+								: chosen
+									? `Download · ${chosen.size_label}`
+									: "Choose a file"}
 						</AddButton>
 						<Small>
-							Models you add come from their own authors on Hugging Face. Neurix doesn&rsquo;t make,
-							review or filter them, and you are responsible for how you use them.
+							Models you add come from their own authors on Hugging Face. Neurix
+							doesn&rsquo;t make, review or filter them, and you are responsible
+							for how you use them.
 						</Small>
 					</Result>
 				)}
+
+				<QuantGuideSection aria-labelledby="quant-guide-heading">
+					<SectionLabel
+						id="quant-guide-heading"
+						style={{ margin: "0 0 0.25rem 0.125rem" }}
+					>
+						Quantization guide (CPU vs GPU tradeoffs)
+					</SectionLabel>
+					<QuantGuideGrid>
+						{QUANT_GUIDE.map((q) => (
+							<QuantCard key={q.code}>
+								<QuantCardHead>
+									<QuantCode>{q.code}</QuantCode>
+									<QuantBadge>{q.badge}</QuantBadge>
+								</QuantCardHead>
+								<QuantText>{q.summary}</QuantText>
+							</QuantCard>
+						))}
+					</QuantGuideGrid>
+				</QuantGuideSection>
 			</Page>
 		</AppLayout>
 	);

@@ -15,7 +15,7 @@ export interface FolderSnapshot {
 export interface FolderSearch {
 	folder: FolderSnapshot;
 	/** The passages that match the question, best first. */
-	excerpts: { path: string; text: string }[];
+	excerpts: { path: string; text: string; page_hint?: number }[];
 	/** Unreadable files the question seems to be about. */
 	unreadable_matches: string[];
 }

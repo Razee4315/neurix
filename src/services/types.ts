@@ -95,7 +95,12 @@ export interface ActiveModel {
 	/** Context window allocated for this model, in tokens. */
 	context_length: number;
 	threads: number;
+	kv_cache_quant?: KvCacheQuant;
+	flash_attention?: boolean;
+	gpu_layers?: number;
 }
+
+export type KvCacheQuant = "q8_0" | "f16" | "q4_0";
 
 /** Why the backend stopped generating. */
 export type StopReason = "eos" | "length" | "cancelled" | "repetition";
@@ -220,6 +225,11 @@ export interface Settings {
 	context_size?: number;
 	/** Inference threads; 0 lets the app use the device's fast cores. */
 	threads?: number;
+	kv_cache_quant?: KvCacheQuant;
+	flash_attention?: boolean;
+	gpu_layers?: number;
+	air_gap?: boolean;
+	strip_thinking_history?: boolean;
 }
 
 export interface StorageInfo {
@@ -267,6 +277,14 @@ export interface Conversation {
 	messages: ChatMessage[];
 }
 
+export interface StoredMessageVariant {
+	content: string;
+	reasoning?: string;
+	sources?: string[];
+	stop_reason?: StopReason;
+	thought_ms?: number;
+}
+
 export interface ChatMessage {
 	role: "user" | "assistant";
 	content: string;
@@ -279,6 +297,10 @@ export interface ChatMessage {
 	stop_reason?: StopReason;
 	/** How long the model thought before answering. */
 	thought_ms?: number;
+	/** Regenerated alternative replies for `< 1 / N >` branch switching. */
+	variants?: StoredMessageVariant[];
+	/** Index of the active entry in `variants`. */
+	active_variant?: number;
 }
 
 export interface ConversationMeta {

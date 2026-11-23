@@ -128,17 +128,30 @@ export const tokens = {
 		wide: "900px",
 	},
 
+	// Motion language (MOTION.md): short, tactile, no idle loops.
 	transitions: {
-		fast: "150ms cubic-bezier(0.4, 0, 0.2, 1)",
-		normal: "200ms cubic-bezier(0.4, 0, 0.2, 1)",
-		slow: "300ms cubic-bezier(0.4, 0, 0.2, 1)",
+		/** Micro-response: hovers, toggles, segmented pills, tabs. */
+		fast: "150ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+		/** Standard panel: dropdowns, flyouts, palette reveal, backdrop fades. */
+		normal: "200ms cubic-bezier(0.22, 1, 0.36, 1)",
+		/** Expressive sheet or route: bottom sheets, drawers, new turns. */
+		slow: "240ms cubic-bezier(0.16, 1, 0.3, 1)",
+		/** State gauges: memory ring arc, storage bars, model warming bar. */
+		gauge: "360ms ease-out",
 	},
 
 	animation: {
 		easing: {
-			standard: "cubic-bezier(0.4, 0, 0.2, 1)",
-			enter: "cubic-bezier(0, 0, 0.2, 1)",
+			standard: "cubic-bezier(0.22, 1, 0.36, 1)",
+			micro: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+			enter: "cubic-bezier(0.16, 1, 0.3, 1)",
 			exit: "cubic-bezier(0.4, 0, 1, 1)",
+		},
+		duration: {
+			fast: "150ms",
+			normal: "200ms",
+			slow: "240ms",
+			gauge: "360ms",
 		},
 	},
 

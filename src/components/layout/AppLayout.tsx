@@ -6,7 +6,8 @@ import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import { BottomNav } from "./BottomNav";
-import { Sidebar } from "./Sidebar";
+import { Sidebar, SidebarGlyph, SidebarToggle, toggleSidebar, useSidebarCollapsed } from "./Sidebar";
+import { EngineStatusChip } from "./TitleBar";
 
 interface AppLayoutProps {
 	children: ReactNode;
@@ -64,7 +65,7 @@ const TopBar = styled.header<{ $hasSubtitle: boolean }>`
   min-height: 52px;
   flex-shrink: 0;
   background: ${tokens.colors.background};
-  border-bottom: 1px solid ${alpha(tokens.colors.outlineVariant, "4d")};
+  border-bottom: 1px solid ${alpha(tokens.colors.outlineVariant, "80")};
   gap: 0.5rem;
   /* On desktop this row is the window's title bar: room for the window
      buttons at the right, and for macOS's traffic lights at the left when
@@ -72,12 +73,21 @@ const TopBar = styled.header<{ $hasSubtitle: boolean }>`
   padding-right: calc(0.75rem + var(--window-controls-w, 0px));
   padding-left: calc(0.75rem + var(--window-inset-left, 0px));
 
+  /* Desktop: a 40px integrated title bar over the reading plane. Empty
+     stretches drag the window (data-tauri-drag-region). */
   @media (min-width: ${tokens.breakpoints.wide}) {
-    min-height: 48px;
-    padding: ${({ $hasSubtitle }) => ($hasSubtitle ? "0.25rem 1rem" : "0 1rem")};
-    padding-right: calc(1rem + var(--window-controls-w, 0px));
+    min-height: 40px;
+    padding: ${({ $hasSubtitle }) => ($hasSubtitle ? "0.125rem 1rem" : "0 1rem")};
+    padding-right: calc(0.75rem + var(--window-controls-w, 0px));
     border-bottom-color: transparent;
   }
+`;
+
+/* Shown on desktop only while the sidebar is hidden. */
+const ShowSidebar = styled(SidebarToggle)`
+  display: none;
+  margin-left: -0.375rem;
+  @media (min-width: ${tokens.breakpoints.wide}) { display: inline-flex; }
 `;
 
 /* The sidebar carries the brand on desktop. */
@@ -186,12 +196,23 @@ const Content = styled.main`
 export function AppLayout({ children, title, subtitle, rightActions, hideLogo, back }: AppLayoutProps) {
 	const navigate = useNavigate();
 	const hasSubtitle = subtitle != null && subtitle !== false;
+	const sidebarHidden = useSidebarCollapsed();
 	return (
 		<Shell>
 			{/* data-tauri-drag-region: dragging the empty parts of this row moves
 			    the desktop window, and a double-click maximizes it. */}
 			<TopBar $hasSubtitle={hasSubtitle && !!title} data-tauri-drag-region>
 				<TitleGroup data-tauri-drag-region>
+					{sidebarHidden && (
+						<ShowSidebar
+							type="button"
+							aria-label="Show sidebar"
+							title="Show sidebar (Ctrl+B)"
+							onClick={toggleSidebar}
+						>
+							<SidebarGlyph />
+						</ShowSidebar>
+					)}
 					{back ? (
 						<BackBtn
 							type="button"
@@ -220,7 +241,10 @@ export function AppLayout({ children, title, subtitle, rightActions, hideLogo, b
 						hasSubtitle && <PrimarySlot data-tauri-drag-region>{subtitle}</PrimarySlot>
 					)}
 				</TitleGroup>
-				{rightActions && <Actions>{rightActions}</Actions>}
+				<Actions>
+					<EngineStatusChip />
+					{rightActions}
+				</Actions>
 			</TopBar>
 			<Content>{children}</Content>
 			<Sidebar />

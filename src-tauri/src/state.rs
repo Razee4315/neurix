@@ -21,6 +21,9 @@ pub struct ActiveModel {
     /// Context window actually allocated, in tokens.
     pub context_length: usize,
     pub threads: u32,
+    pub kv_cache_quant: String,
+    pub flash_attention: bool,
+    pub gpu_layers: u32,
 }
 
 #[derive(Default)]

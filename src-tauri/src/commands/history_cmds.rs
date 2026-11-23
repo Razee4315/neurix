@@ -50,5 +50,14 @@ pub async fn clear_all_conversations(app: AppHandle) -> Result<(), String> {
     let chats_dir = storage::get_chats_dir(
         &app.path().app_local_data_dir().map_err(|e| e.to_string())?,
     ).await?;
-    storage::clear_all(&chats_dir).await
+    storage::clear_all(&chats_dir).await?;
+    clear_prompt_cache(&app).await
+}
+
+pub(super) async fn clear_prompt_cache(app: &AppHandle) -> Result<(), String> {
+    let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || crate::inference::engine::clear_prompt_cache(&dir))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
 }

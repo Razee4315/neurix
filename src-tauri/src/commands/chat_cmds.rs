@@ -1,10 +1,10 @@
 use log::info;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, State};
 use tokio_util::sync::CancellationToken;
 
-use crate::inference::engine::{GenerationRequest, InferenceEvent, LoadedModel};
+use crate::inference::engine::{prompt_cache_epoch, GenerationRequest, InferenceEvent, LoadedModel};
 use crate::model_slot::Ticket;
 use crate::settings::MAX_REPLY_TOKENS;
 use crate::state::{ActiveModel, ModelOps, SharedState};
@@ -66,6 +66,7 @@ async fn model_lost(state: &State<'_, SharedState>, ticket: Ticket) {
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn run_inference(
+    app: AppHandle,
     state: State<'_, SharedState>,
     prompt: String,
     system_prompt: String,
@@ -80,6 +81,7 @@ pub async fn run_inference(
     enable_thinking: Option<bool>,
     on_event: Channel<InferenceEvent>,
 ) -> Result<(), String> {
+    let cache_epoch = crate::settings::load(&app)?.save_history.then(prompt_cache_epoch).flatten();
     let cancel_token = CancellationToken::new();
     let (mut model, ticket) = checkout_model(&state, &cancel_token).await?;
 
@@ -100,7 +102,7 @@ pub async fn run_inference(
         let mut emit = |event: InferenceEvent| {
             let _ = on_event.send(event);
         };
-        let result = model.generate(&request, &mut emit, &cancel_token);
+        let result = model.generate_reply(&request, &mut emit, &cancel_token, cache_epoch);
         (model, result)
     })
     .await;

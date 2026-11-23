@@ -22,6 +22,20 @@ pub struct Conversation {
     pub messages: Vec<ChatMessage>,
 }
 
+/// One regenerated alternative for an assistant reply.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageVariant {
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sources: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_ms: Option<u64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: MessageRole,
@@ -41,6 +55,12 @@ pub struct ChatMessage {
     /// How long the model thought before answering, in milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thought_ms: Option<u64>,
+    /// Regenerated alternative replies for `< 1 / N >` branch switching.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variants: Option<Vec<MessageVariant>>,
+    /// Index of the active entry in `variants`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_variant: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -243,6 +263,30 @@ const MAX_MESSAGE_BYTES: usize = 128 * 1024;
 /// Sources kept per reply, and the length of each name.
 const MAX_SOURCES: usize = 12;
 const MAX_SOURCE_BYTES: usize = 300;
+const MAX_VARIANTS: usize = 32;
+
+fn bound_reply_fields(
+    content: &mut String,
+    reasoning: &mut Option<String>,
+    sources: &mut Option<Vec<String>>,
+    stop_reason: &mut Option<String>,
+) {
+    use crate::settings::truncate_in_place;
+
+    truncate_in_place(content, MAX_MESSAGE_BYTES);
+    if let Some(r) = reasoning.as_mut() {
+        truncate_in_place(r, MAX_MESSAGE_BYTES);
+    }
+    if let Some(sources) = sources.as_mut() {
+        sources.truncate(MAX_SOURCES);
+        for source in sources.iter_mut() {
+            truncate_in_place(source, MAX_SOURCE_BYTES);
+        }
+    }
+    if let Some(reason) = stop_reason.as_mut() {
+        truncate_in_place(reason, MAX_SOURCE_BYTES);
+    }
+}
 
 /// Clamp a conversation to the ceilings above, keeping the newest messages,
 /// and pull timestamps from the future back to now (a future `updated_at`
@@ -263,18 +307,25 @@ fn bound(conv: &mut Conversation) {
     }
     let now = Utc::now();
     for msg in conv.messages.iter_mut() {
-        truncate_in_place(&mut msg.content, MAX_MESSAGE_BYTES);
-        if let Some(r) = msg.reasoning.as_mut() {
-            truncate_in_place(r, MAX_MESSAGE_BYTES);
-        }
-        if let Some(sources) = msg.sources.as_mut() {
-            sources.truncate(MAX_SOURCES);
-            for source in sources.iter_mut() {
-                truncate_in_place(source, MAX_SOURCE_BYTES);
+        bound_reply_fields(&mut msg.content, &mut msg.reasoning, &mut msg.sources, &mut msg.stop_reason);
+        if let Some(variants) = msg.variants.as_mut() {
+            variants.truncate(MAX_VARIANTS);
+            for variant in variants.iter_mut() {
+                bound_reply_fields(
+                    &mut variant.content,
+                    &mut variant.reasoning,
+                    &mut variant.sources,
+                    &mut variant.stop_reason,
+                );
             }
-        }
-        if let Some(reason) = msg.stop_reason.as_mut() {
-            truncate_in_place(reason, MAX_SOURCE_BYTES);
+            if variants.is_empty() {
+                msg.variants = None;
+                msg.active_variant = None;
+            } else if let Some(idx) = msg.active_variant.as_mut() {
+                *idx = (*idx).min(variants.len() - 1);
+            }
+        } else {
+            msg.active_variant = None;
         }
         msg.timestamp = msg.timestamp.min(now);
     }
@@ -344,6 +395,8 @@ mod tests {
             sources: None,
             stop_reason: None,
             thought_ms: None,
+            variants: None,
+            active_variant: None,
         };
         let mut messages: Vec<ChatMessage> = (0..MAX_MESSAGES).map(|i| msg(i.to_string())).collect();
         messages.push(msg("[".repeat(1_000_000)));

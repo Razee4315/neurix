@@ -18,7 +18,7 @@ body {
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background: rgb(var(--c-background, 14 14 15));
+  background: rgb(var(--c-background, 21 26 32));
 }
 
 * {

@@ -3,13 +3,20 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { ModelMeters } from "@/components/ui/Meter";
 import { OfflineBanner } from "@/components/ui/OfflineBanner";
+import { useAppContext } from "@/context/AppContext";
 import { useDownloads } from "@/context/DownloadContext";
 import { modelService, settingsService } from "@/services";
 import type { ModelInfo } from "@/services/types";
 import { alpha } from "@/theme/alpha";
 import { tokens } from "@/theme/tokens";
 import { formatGB } from "@/utils/format";
-import { fitSummary, modelFit, nominalRamGb, recommendModel } from "@/utils/modelFit";
+import {
+	type Fit,
+	fitSummary,
+	modelFit,
+	nominalRamGb,
+	recommendModel,
+} from "@/utils/modelFit";
 import { useModelDownload } from "@/utils/useModelDownload";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -18,46 +25,145 @@ import styled, { keyframes } from "styled-components";
 // Matches the tags in src-tauri/src/models/catalog.rs.
 const FILTERS = ["All", "Tiny", "Fast", "Balanced", "Smart", "Specialist"];
 
+const FALLBACK_DESKTOP_RAM_BYTES = 8 * 1024 ** 3;
+
+function quantSummary(quantization: string): string {
+	const code = quantization.split(" ")[0] || quantization;
+	if (code.startsWith("Q4_K")) return `${code} · balanced speed/quality`;
+	if (code.startsWith("Q4_0")) return `${code} · fast 4-bit QAT`;
+	if (code.startsWith("Q5_K")) return `${code} · higher accuracy 5-bit`;
+	if (code.startsWith("Q6_K")) return `${code} · near-lossless 6-bit`;
+	if (code.startsWith("Q8_0")) return `${code} · max 8-bit fidelity`;
+	return `${code} · local GGUF`;
+}
+
+function fitBadgeMeta(fit: Fit): {
+	label: "Fits comfortably" | "Tight fit" | "May be slow";
+	tone: "good" | "tight" | "slow";
+} {
+	if (fit === "too_big") return { label: "May be slow", tone: "slow" };
+	if (fit === "tight") return { label: "Tight fit", tone: "tight" };
+	return { label: "Fits comfortably", tone: "good" };
+}
+
 /* ── Styles ── */
 
 const Page = styled.div`
-  padding: 1.25rem;
-  max-width: 44rem;
-  margin: 0 auto;
+	padding: 1.25rem;
+	max-width: 46rem;
+	margin: 0 auto;
+`;
+
+const AirGapBanner = styled.div`
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	margin-bottom: 1rem;
+	padding: 0.75rem 1rem;
+	border-radius: ${tokens.borderRadius.lg};
+	background: ${alpha(tokens.colors.secondary, "14")};
+	border: 1px solid ${alpha(tokens.colors.secondary, "45")};
+	color: ${tokens.colors.onSurface};
+	font-size: ${tokens.typography.fontSize.sm};
+`;
+
+const AirGapText = styled.div`
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex: 1;
+	min-width: 14rem;
+
+	strong {
+		font-weight: ${tokens.typography.fontWeight.bold};
+		color: ${tokens.colors.secondary};
+	}
+`;
+
+const AirGapBtn = styled.button`
+	padding: 0.375rem 0.75rem;
+	border-radius: ${tokens.borderRadius.md};
+	border: 1px solid ${tokens.colors.outlineVariant};
+	background: ${tokens.colors.surfaceContainerHigh};
+	color: ${tokens.colors.onSurface};
+	font-size: ${tokens.typography.fontSize.xs};
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	cursor: pointer;
+
+	&:hover {
+		background: ${tokens.colors.surfaceContainerHighest};
+	}
+`;
+
+const TopBar = styled.div`
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.625rem;
+	margin-bottom: 1rem;
 `;
 
 const SearchBox = styled.div`
-  position: relative;
-  margin-bottom: 1rem;
+	position: relative;
+	flex: 1 1 15rem;
+	min-width: 0;
 `;
 
 const SearchInput = styled.input`
-  width: 100%;
-  height: 44px;
-  padding: 0 1rem 0 2.5rem;
-  background: ${tokens.colors.surfaceContainerHighest};
-  border: none;
-  border-radius: ${tokens.borderRadius.lg};
-  font-size: ${tokens.typography.fontSize.base};
-  color: ${tokens.colors.onSurface};
-  outline: none;
+	width: 100%;
+	height: 44px;
+	padding: 0 1rem 0 2.5rem;
+	background: ${tokens.colors.surfaceContainerHighest};
+	border: 1px solid ${tokens.colors.outlineVariant};
+	border-radius: ${tokens.borderRadius.lg};
+	font-size: ${tokens.typography.fontSize.base};
+	color: ${tokens.colors.onSurface};
+	outline: none;
 
-  &::placeholder {
-    color: ${tokens.colors.outline};
-  }
-  &:focus {
-    box-shadow: inset 0 -2px 0 ${tokens.colors.primary};
-  }
+	&::placeholder {
+		color: ${tokens.colors.outline};
+	}
+	&:focus {
+		border-color: ${tokens.colors.primary};
+		box-shadow: inset 0 -2px 0 ${tokens.colors.primary};
+	}
 `;
 
 const SearchIconWrap = styled.div`
-  position: absolute;
-  left: 0.75rem;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  color: ${tokens.colors.onSurfaceVariant};
-  display: flex;
+	position: absolute;
+	left: 0.75rem;
+	top: 50%;
+	transform: translateY(-50%);
+	pointer-events: none;
+	color: ${tokens.colors.onSurfaceVariant};
+	display: flex;
+`;
+
+const AddHfHeaderBtn = styled.button`
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	height: 44px;
+	padding: 0 0.875rem;
+	border-radius: ${tokens.borderRadius.lg};
+	border: 1px solid ${alpha(tokens.colors.primary, "55")};
+	background: ${alpha(tokens.colors.primary, "14")};
+	color: ${tokens.colors.primary};
+	font-size: ${tokens.typography.fontSize.sm};
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	white-space: nowrap;
+	cursor: pointer;
+	transition: all ${tokens.transitions.fast};
+
+	&:hover {
+		background: ${alpha(tokens.colors.primary, "24")};
+	}
+	&:active {
+		transform: scale(0.98);
+	}
 `;
 
 const slideIn = keyframes`
@@ -367,34 +473,72 @@ const CardBottom = styled.div`
 
 const CardMeters = styled.div`
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.875rem;
+  gap: 0.375rem 0.875rem;
 `;
 
 const CardTags = styled.div`
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-left: auto;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.375rem;
+	margin-left: auto;
 
-  &:empty { display: none; }
+	&:empty {
+		display: none;
+	}
+`;
+
+const FitBadge = styled.span<{ $tone: "good" | "tight" | "slow" }>`
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	font-size: 10px;
+	font-weight: ${tokens.typography.fontWeight.bold};
+	padding: 0.175rem 0.45rem;
+	border-radius: ${tokens.borderRadius.sm};
+	white-space: nowrap;
+	color: ${({ $tone }) =>
+		$tone === "good"
+			? tokens.colors.primary
+			: $tone === "tight"
+				? tokens.colors.secondary
+				: tokens.colors.error};
+	background: ${({ $tone }) =>
+		$tone === "good"
+			? alpha(tokens.colors.primary, "16")
+			: $tone === "tight"
+				? alpha(tokens.colors.secondary, "18")
+				: alpha(tokens.colors.error, "18")};
+`;
+
+const QuantTag = styled.span`
+	font-family: ${tokens.typography.fontFamily.mono};
+	font-size: 10px;
+	font-weight: ${tokens.typography.fontWeight.medium};
+	padding: 0.15rem 0.45rem;
+	border-radius: ${tokens.borderRadius.sm};
+	color: ${tokens.colors.onSurfaceVariant};
+	background: ${tokens.colors.surfaceContainerHigh};
+	white-space: nowrap;
 `;
 
 const Badge = styled.span<{ $tone: "ok" | "busy" | "muted" }>`
-  flex-shrink: 0;
-  font-size: 10px;
-  font-weight: ${tokens.typography.fontWeight.bold};
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.2rem 0.5rem;
-  border-radius: ${tokens.borderRadius.sm};
-  color: ${({ $tone }) =>
+	flex-shrink: 0;
+	font-size: 10px;
+	font-weight: ${tokens.typography.fontWeight.bold};
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	padding: 0.2rem 0.5rem;
+	border-radius: ${tokens.borderRadius.sm};
+	color: ${({ $tone }) =>
 		$tone === "ok"
 			? tokens.colors.secondary
 			: $tone === "busy"
 				? tokens.colors.tertiary
 				: tokens.colors.onSurfaceVariant};
-  background: ${({ $tone }) =>
+	background: ${({ $tone }) =>
 		$tone === "ok"
 			? alpha(tokens.colors.secondary, "18")
 			: $tone === "busy"
@@ -403,74 +547,79 @@ const Badge = styled.span<{ $tone: "ok" | "busy" | "muted" }>`
 `;
 
 const Tag = styled.span`
-  font-size: 10px;
-  font-weight: ${tokens.typography.fontWeight.semibold};
-  padding: 0.125rem 0.375rem;
-  border-radius: ${tokens.borderRadius.sm};
-  color: ${tokens.colors.onSurfaceVariant};
-  border: 1px solid ${alpha(tokens.colors.outlineVariant, "80")};
-  white-space: nowrap;
+	font-size: 10px;
+	font-weight: ${tokens.typography.fontWeight.semibold};
+	padding: 0.125rem 0.375rem;
+	border-radius: ${tokens.borderRadius.sm};
+	color: ${tokens.colors.onSurfaceVariant};
+	border: 1px solid ${alpha(tokens.colors.outlineVariant, "80")};
+	white-space: nowrap;
 `;
 
 const FitNote = styled.div<{ $severe: boolean }>`
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.5rem;
-  font-size: ${tokens.typography.fontSize.xs};
-  color: ${({ $severe }) => ($severe ? tokens.colors.error : tokens.colors.tertiary)};
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	margin-top: 0.5rem;
+	font-size: ${tokens.typography.fontSize.xs};
+	color: ${({ $severe }) =>
+		$severe ? tokens.colors.error : tokens.colors.tertiary};
 `;
 
 const Footnote = styled.p`
-  margin-top: 1rem;
-  font-size: ${tokens.typography.fontSize.xs};
-  line-height: ${tokens.typography.lineHeight.relaxed};
-  color: ${tokens.colors.outline};
-  text-align: center;
+	margin-top: 1rem;
+	font-size: ${tokens.typography.fontSize.xs};
+	line-height: ${tokens.typography.lineHeight.relaxed};
+	color: ${tokens.colors.outline};
+	text-align: center;
 `;
 
 /* The way to models the store doesn't list: a link from Hugging Face. */
 const AddCard = styled.button`
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  margin-top: 1.25rem;
-  padding: 1rem;
-  border-radius: ${tokens.borderRadius.lg};
-  border: 1px dashed ${tokens.colors.outlineVariant};
-  background: transparent;
-  color: ${tokens.colors.onSurface};
-  text-align: left;
-  cursor: pointer;
+	width: 100%;
+	display: flex;
+	align-items: center;
+	gap: 0.875rem;
+	margin-top: 1.25rem;
+	padding: 1rem;
+	border-radius: ${tokens.borderRadius.lg};
+	border: 1px dashed ${tokens.colors.outlineVariant};
+	background: transparent;
+	color: ${tokens.colors.onSurface};
+	text-align: left;
+	cursor: pointer;
 
-  &:hover { background: ${tokens.colors.surfaceContainerLow}; }
+	&:hover {
+		background: ${tokens.colors.surfaceContainerLow};
+	}
 `;
 
 const AddIcon = styled.span`
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-  border-radius: ${tokens.borderRadius.md};
-  background: ${alpha(tokens.colors.primary, "18")};
-  color: ${tokens.colors.primary};
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	flex-shrink: 0;
+	border-radius: ${tokens.borderRadius.md};
+	background: ${alpha(tokens.colors.primary, "18")};
+	color: ${tokens.colors.primary};
 `;
 
 const AddText = styled.span`
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
 
-  strong { font-weight: ${tokens.typography.fontWeight.semibold}; }
-  span {
-    font-size: ${tokens.typography.fontSize.sm};
-    color: ${tokens.colors.onSurfaceVariant};
-    line-height: ${tokens.typography.lineHeight.relaxed};
-  }
+	strong {
+		font-weight: ${tokens.typography.fontWeight.semibold};
+	}
+	span {
+		font-size: ${tokens.typography.fontSize.sm};
+		color: ${tokens.colors.onSurfaceVariant};
+		line-height: ${tokens.typography.lineHeight.relaxed};
+	}
 `;
 
 function AddFromLink({ onClick }: { onClick: () => void }) {
@@ -481,7 +630,9 @@ function AddFromLink({ onClick }: { onClick: () => void }) {
 			</AddIcon>
 			<AddText>
 				<strong>Add a model from Hugging Face</strong>
-				<span>Paste a link to a GGUF chat model and Neurix checks it will run here.</span>
+				<span>
+					Paste a link to a GGUF chat model and Neurix checks it will run here.
+				</span>
 			</AddText>
 			<Icon name="chevron_right" size={18} color={tokens.colors.outline} />
 		</AddCard>
@@ -492,12 +643,15 @@ function AddFromLink({ onClick }: { onClick: () => void }) {
 
 export function ModelStorePage() {
 	const navigate = useNavigate();
+	const { settings } = useAppContext();
 	const { downloads, installedVersion } = useDownloads();
 	const download = useModelDownload();
 	const [filter, setFilter] = useState(0);
 	const [search, setSearch] = useState("");
 	const [catalog, setCatalog] = useState<ModelInfo[]>([]);
-	const [catalogStatus, setCatalogStatus] = useState<"loading" | "ready" | "error">("loading");
+	const [catalogStatus, setCatalogStatus] = useState<
+		"loading" | "ready" | "error"
+	>("loading");
 	const [catalogError, setCatalogError] = useState<string>("");
 	const [downloadedIds, setDownloadedIds] = useState<Set<string> | null>(null);
 	const [freeSpace, setFreeSpace] = useState<string | null>(null);
@@ -506,20 +660,26 @@ export function ModelStorePage() {
 	const loadCatalog = useCallback(() => {
 		setCatalogStatus("loading");
 		setCatalogError("");
-		modelService.getCatalog()
+		modelService
+			.getCatalog()
 			.then((c) => {
 				setCatalog(c);
 				setCatalogStatus("ready");
 			})
 			.catch((e) => {
-				setCatalogError(typeof e === "string" ? e : (e?.message ?? "Could not load model catalog"));
+				setCatalogError(
+					typeof e === "string"
+						? e
+						: (e?.message ?? "Could not load model catalog"),
+				);
 				setCatalogStatus("error");
 			});
 	}, []);
 
 	useEffect(() => {
 		loadCatalog();
-		settingsService.getDeviceInfo()
+		settingsService
+			.getDeviceInfo()
 			.then((info) => setDeviceMemory(info.total_memory_bytes))
 			.catch(() => {});
 	}, [loadCatalog]);
@@ -528,10 +688,12 @@ export function ModelStorePage() {
 	// or is discarded — not on every progress tick.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: installedVersion is the refresh trigger
 	useEffect(() => {
-		modelService.getDownloadedModels()
+		modelService
+			.getDownloadedModels()
 			.then((models) => setDownloadedIds(new Set(models.map((m) => m.id))))
 			.catch(() => setDownloadedIds(new Set()));
-		settingsService.getAvailableSpace()
+		settingsService
+			.getAvailableSpace()
 			.then((bytes) => setFreeSpace(formatGB(bytes)))
 			.catch(() => {});
 	}, [installedVersion]);
@@ -542,11 +704,17 @@ export function ModelStorePage() {
 	// one, in which case its page should still be reachable. Models the user
 	// added live in My Models, not here.
 	const offered = useMemo(
-		() => catalog.filter((m) => m.tag !== "Added" && (!m.legacy || downloadedIds?.has(m.id))),
+		() =>
+			catalog.filter(
+				(m) => m.tag !== "Added" && (!m.legacy || downloadedIds?.has(m.id)),
+			),
 		[catalog, downloadedIds],
 	);
 
-	const pick = useMemo(() => recommendModel(catalog, deviceMemory), [catalog, deviceMemory]);
+	const pick = useMemo(
+		() => recommendModel(catalog, deviceMemory),
+		[catalog, deviceMemory],
+	);
 
 	const query = search.trim().toLowerCase();
 	const filtered = offered.filter((m) => {
@@ -561,30 +729,41 @@ export function ModelStorePage() {
 	});
 
 	const openModel = (model: ModelInfo) => {
-		const inProgress = downloads[model.id] && downloads[model.id].status !== "finished";
+		const inProgress =
+			downloads[model.id] && downloads[model.id].status !== "finished";
 		// The ?id query lets either page recover after a reload.
-		navigate(`${inProgress ? "/downloading" : "/store/model"}?id=${encodeURIComponent(model.id)}`, {
-			state: { model },
-		});
+		navigate(
+			`${inProgress ? "/downloading" : "/store/model"}?id=${encodeURIComponent(model.id)}`,
+			{
+				state: { model },
+			},
+		);
 	};
 
 	const statusBadge = (m: ModelInfo) => {
 		const dl = downloads[m.id];
 		if (installed.has(m.id)) return <Badge $tone="ok">Installed</Badge>;
 		if (dl?.status === "downloading") {
-			const pct = Math.round((dl.downloadedBytes / Math.max(dl.totalBytes, 1)) * 100);
+			const pct = Math.round(
+				(dl.downloadedBytes / Math.max(dl.totalBytes, 1)) * 100,
+			);
 			return <Badge $tone="busy">{pct}%</Badge>;
 		}
-		if (dl?.status === "verifying") return <Badge $tone="busy">Checking…</Badge>;
+		if (dl?.status === "verifying")
+			return <Badge $tone="busy">Checking…</Badge>;
 		if (dl?.status === "paused") return <Badge $tone="busy">Paused</Badge>;
 		if (dl?.status === "failed") return <Badge $tone="busy">Failed</Badge>;
 		if (m.legacy) return <Badge $tone="muted">Legacy</Badge>;
-		return <Icon name="chevron_right" size={18} color={tokens.colors.outline} />;
+		return (
+			<Icon name="chevron_right" size={18} color={tokens.colors.outline} />
+		);
 	};
 
 	// The pick is for someone deciding what to get. Once they are searching
 	// or filtering, or already have it, it is in the way.
-	const pickBusy = pick ? downloads[pick.id] && downloads[pick.id].status !== "finished" : false;
+	const pickBusy = pick
+		? downloads[pick.id] && downloads[pick.id].status !== "finished"
+		: false;
 	const showPick =
 		catalogStatus === "ready" &&
 		downloadedIds !== null &&
@@ -594,23 +773,54 @@ export function ModelStorePage() {
 		!query &&
 		filter === 0;
 	const ramGb = nominalRamGb(deviceMemory);
+	const effectiveMemory = deviceMemory ?? FALLBACK_DESKTOP_RAM_BYTES;
 
 	return (
 		<AppLayout title="Model Store">
 			<OfflineBanner />
 			<Page>
-				<SearchBox>
-					<SearchIconWrap>
-						<Icon name="search" size={18} />
-					</SearchIconWrap>
-					<SearchInput
-						type="search"
-						placeholder="Search models…"
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
-						aria-label="Search models"
-					/>
-				</SearchBox>
+				{settings?.air_gap && (
+					<AirGapBanner role="status">
+						<AirGapText>
+							<Icon
+								name="enhanced_encryption"
+								size={16}
+								color={tokens.colors.secondary}
+							/>
+							<span>
+								<strong>Air-Gap Mode Active:</strong> Outbound model downloads
+								are locked. Installed models in My Models continue to run 100%
+								offline.
+							</span>
+						</AirGapText>
+						<AirGapBtn type="button" onClick={() => navigate("/settings")}>
+							Manage Air-Gap
+						</AirGapBtn>
+					</AirGapBanner>
+				)}
+
+				<TopBar>
+					<SearchBox>
+						<SearchIconWrap>
+							<Icon name="search" size={18} />
+						</SearchIconWrap>
+						<SearchInput
+							type="search"
+							placeholder="Search models…"
+							value={search}
+							onChange={(e) => setSearch(e.target.value)}
+							aria-label="Search models"
+						/>
+					</SearchBox>
+					<AddHfHeaderBtn
+						type="button"
+						onClick={() => navigate("/store/add")}
+						aria-label="Add model from Hugging Face"
+					>
+						<Icon name="add" size={16} />
+						Add from Hugging Face
+					</AddHfHeaderBtn>
+				</TopBar>
 
 				{showPick && pick && (
 					<Pick aria-labelledby="pick-name">
@@ -625,10 +835,18 @@ export function ModelStorePage() {
 						<PickText>{pick.description}</PickText>
 						<MeterRow>
 							<ModelMeters quality={pick.quality} speed={pick.speed} />
+							<QuantTag>{quantSummary(pick.quantization)}</QuantTag>
+							<FitBadge $tone="good">
+								<Icon name="check_circle" size={11} />
+								Fits comfortably
+							</FitBadge>
 							{pick.reasoning !== "none" && <Tag>Can think</Tag>}
 						</MeterRow>
 						<PickActions>
-							<PickButton type="button" onClick={() => download(pick, deviceMemory)}>
+							<PickButton
+								type="button"
+								onClick={() => download(pick, deviceMemory)}
+							>
 								<Icon name="download" size={18} />
 								Download · {pick.size_label}
 							</PickButton>
@@ -683,8 +901,16 @@ export function ModelStorePage() {
 					<Cards aria-busy="true" aria-label="Loading models">
 						{[1, 2, 3, 4].map((i) => (
 							<SkeletonCard key={i}>
-								<SkeletonLine $w="45%" $h="16px" style={{ marginBottom: "8px" }} />
-								<SkeletonLine $w="95%" $h="12px" style={{ marginBottom: "6px" }} />
+								<SkeletonLine
+									$w="45%"
+									$h="16px"
+									style={{ marginBottom: "8px" }}
+								/>
+								<SkeletonLine
+									$w="95%"
+									$h="12px"
+									style={{ marginBottom: "6px" }}
+								/>
 								<SkeletonLine $w="60%" $h="12px" />
 							</SkeletonCard>
 						))}
@@ -702,8 +928,15 @@ export function ModelStorePage() {
 					<>
 						<Cards>
 							{filtered.map((m, i) => {
-								const fit = modelFit(m, deviceMemory);
-								const warn = (fit === "tight" || fit === "too_big") && !installed.has(m.id);
+								const rawFit = modelFit(m, deviceMemory);
+								const resolvedFit =
+									rawFit === "unknown"
+										? modelFit(m, effectiveMemory)
+										: rawFit;
+								const fitMeta = fitBadgeMeta(resolvedFit);
+								const warn =
+									(rawFit === "tight" || rawFit === "too_big") &&
+									!installed.has(m.id);
 								return (
 									<Card
 										key={m.id}
@@ -723,15 +956,27 @@ export function ModelStorePage() {
 										<CardBottom>
 											<CardMeters>
 												<ModelMeters quality={m.quality} speed={m.speed} />
+												<QuantTag>{quantSummary(m.quantization)}</QuantTag>
 											</CardMeters>
 											<CardTags>
+												<FitBadge $tone={fitMeta.tone}>
+													<Icon
+														name={
+															fitMeta.tone === "good"
+																? "check_circle"
+																: "warning"
+														}
+														size={11}
+													/>
+													{fitMeta.label}
+												</FitBadge>
 												{m.reasoning === "always" && <Tag>Thinks first</Tag>}
 												{m.reasoning === "optional" && <Tag>Can think</Tag>}
 												{statusBadge(m)}
 											</CardTags>
 										</CardBottom>
 										{warn && (
-											<FitNote $severe={fit === "too_big"}>
+											<FitNote $severe={rawFit === "too_big"}>
 												<Icon name="warning" size={12} />
 												{fitSummary(m, deviceMemory)}
 											</FitNote>
@@ -741,8 +986,8 @@ export function ModelStorePage() {
 							})}
 						</Cards>
 						<Footnote>
-							Quality and speed compare the models in this list with each other. Use the speed test
-							in My Models to measure one on this device.
+							Quality and speed compare the models in this list with each other.
+							Use the speed test in My Models to measure one on this device.
 						</Footnote>
 						<AddFromLink onClick={() => navigate("/store/add")} />
 					</>

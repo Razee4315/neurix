@@ -299,17 +299,25 @@ const DEFAULT_SETTINGS: Settings = {
 	top_p: 0.9,
 	max_tokens: 512,
 	font_size: "medium",
-	theme: "obsidian",
+	theme: "karakoram",
 	onboarding_done: false,
 	last_model_id: null,
 	active_character_id: "preset:default",
 	custom_characters: [],
+	kv_cache_quant: "q8_0",
+	flash_attention: true,
+	gpu_layers: 0,
+	air_gap: false,
+	strip_thinking_history: true,
 };
 
 function loadState(): MockState {
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
-		if (raw) return JSON.parse(raw) as MockState;
+		if (raw) {
+			const stored = JSON.parse(raw) as MockState;
+			return { ...stored, settings: { ...DEFAULT_SETTINGS, ...stored.settings } };
+		}
 	} catch {
 		// Fall through to a fresh state.
 	}
@@ -693,6 +701,9 @@ const handlers: Record<string, (args: Args) => unknown> = {
 			reasoning: info.reasoning,
 			context_length: state.settings.context_size || info.context_length,
 			threads: state.settings.threads || 4,
+			kv_cache_quant: state.settings.flash_attention === false ? "f16" : state.settings.kv_cache_quant,
+			flash_attention: state.settings.flash_attention,
+			gpu_layers: 0,
 		};
 		state.settings.last_model_id = info.id;
 		persist();
@@ -754,6 +765,9 @@ const handlers: Record<string, (args: Args) => unknown> = {
 	patch_settings: (a) => {
 		if (knobs.failSettings) throw "Could not write settings";
 		state.settings = { ...state.settings, ...(a.patch as Partial<Settings>) };
+		const quant = state.settings.kv_cache_quant;
+		if (quant !== "f16" && quant !== "q4_0" && quant !== "q8_0") state.settings.kv_cache_quant = "q8_0";
+		state.settings.gpu_layers = Math.min(999, Math.max(0, Math.trunc(state.settings.gpu_layers ?? 0)));
 		persist();
 		return state.settings;
 	},
@@ -838,8 +852,19 @@ const handlers: Record<string, (args: Args) => unknown> = {
 	"plugin:notification|request_permission": () => "granted",
 };
 
+const networkCommands = new Set([
+	"inspect_hf_link",
+	"add_hf_model",
+	"download_model",
+	"gmail_fetch",
+	"github_fetch",
+]);
+
 mockIPC(async (cmd, payload) => {
 	knobs.calls[cmd] = (knobs.calls[cmd] ?? 0) + 1;
+	if (state.settings.air_gap && networkCommands.has(cmd)) {
+		throw "Air-Gap mode is enabled. Turn it off in Settings to allow network access.";
+	}
 	const handler = handlers[cmd];
 	if (handler) return handler((payload ?? {}) as Args);
 	// Unhandled plugin calls (notifications, opener) are harmless no-ops here.

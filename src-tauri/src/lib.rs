@@ -1,4 +1,5 @@
 use log::info;
+#[cfg(not(target_os = "android"))]
 use std::env;
 
 mod characters;
@@ -7,6 +8,7 @@ mod commands;
 mod device;
 #[cfg(desktop)]
 mod documents;
+mod folder_index;
 mod folder_search;
 mod imap_lite;
 mod inference;

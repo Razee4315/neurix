@@ -5,6 +5,9 @@ export { alpha } from "./alpha";
 export {
 	THEMES,
 	DEFAULT_THEME_ID,
+	SYSTEM_THEME_ID,
+	isSystemTheme,
+	resolveThemeId,
 	applyTheme,
 	applyFontSize,
 	getTheme,
