@@ -48,3 +48,6 @@ src-tauri/gen/android/keystore.properties
 
 # Factory
 .factory/
+
+# Raw generated graphic assets (Part 7; only optimized WebPs are committed)
+raw-assets/
